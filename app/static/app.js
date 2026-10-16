@@ -33,12 +33,14 @@ const closeModal = () => $('#modalRoot').innerHTML = '';
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 /* ---------- état ---------- */
-const S = { books: [], owners: [], cart: [], view: 'dashboard', range: 'all', from: '', to: '' };
+const S = { books: [], owners: [], options: { category: [], type: [], payment: [], publisher: [] }, cart: [], view: 'dashboard', range: 'all', from: '', to: '' };
 const stockBadge = b => b.stock <= 0 ? '<span class="badge b-out">Rupture</span>' :
   b.stock <= b.min_stock ? `<span class="badge b-low">${b.stock} · bas</span>` : `<span class="badge b-ok">${b.stock}</span>`;
 const ownerChips = b => (b.by_owner || []).map(o => `<span class="chip"><i style="background:${o.color}"></i>${esc(o.owner)} ${o.qty}</span>`).join('');
 
-async function loadRef() { [S.books, S.owners] = await Promise.all([api('/api/books'), api('/api/owners')]); }
+async function loadRef() { 
+  [S.books, S.owners, S.options] = await Promise.all([api('/api/books'), api('/api/owners'), api('/api/options')]); 
+}
 
 /* ---------- navigation ---------- */
 const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', settle: 'Reversements', orders: 'Réservations', data: 'Données & Excel' };
@@ -141,7 +143,7 @@ VIEWS.pos = async () => {
     <div class="books" id="books"></div></div>
     <div class="card cart" id="cart"><h3>Panier <button class="btn ghost sm" id="clear">Vider</button></h3><div class="cart-items" id="items"></div>
     <div class="total"><span>Total</span><b id="tot">0 €</b></div>
-    <div class="row" style="margin-bottom:10px"><select id="pay" style="flex:1"><option>Espèces</option><option>Carte</option><option>Chèque</option><option>Virement</option><option>Don / Offert</option></select><input type="date" id="sdate" value="${today()}"></div>
+    <div class="row" style="margin-bottom:10px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
     <button class="btn good" id="valid" style="padding:13px;font-size:15px">✔ Valider la vente</button></div></div>`;
   const draw = () => {
     const q = $('#q').value.trim().toLowerCase(), ow = $('#fOwner').value, ins = $('#inStock').checked;
@@ -249,12 +251,18 @@ async function lotsModal(id) {
 /* ---- Catalogue & packs ---- */
 function bookForm(b = {}) {
   const f = (k, l, t = 'text') => `<label class="f"><span>${l}</span><input id="f_${k}" type="${t}" value="${esc(b[k] ?? '')}"></label>`;
-  modal(`<h2>${b.id ? 'Modifier' : 'Nouveau'} ${b.is_pack ? 'pack' : 'livre'}</h2><div class="form">${f('code', 'Code (ISBN)')}${f('title', 'Titre')}${f('series', 'Série')}${f('volume', 'Volume')}${f('author', 'Auteur')}${f('publisher', 'Éditeur')}
-  <label class="f">Catégorie<select id="f_category">${['Standard', 'Bible', 'Pack', 'Autre'].map(c => `<option ${b.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></label>${f('type', 'Type (Souple/Rigide…)')}${f('location', 'Emplacement')}${f('price', 'Prix de vente €', 'number')}${f('min_stock', 'Seuil d\'alerte', 'number')}</div>
+  const cats = S.options.category || [];
+  const types = S.options.type || [];
+  const pubs = S.options.publisher || [];
+  modal(`<h2>${b.id ? 'Modifier' : 'Nouveau'} ${b.is_pack ? 'pack' : 'livre'}</h2><div class="form">${f('code', 'Code (ISBN)')}${f('title', 'Titre')}${f('series', 'Série')}${f('volume', 'Volume')}${f('author', 'Auteur')}
+  <label class="f"><span>Éditeur</span><input id="f_publisher" list="dl_pubs" value="${esc(b.publisher ?? '')}"><datalist id="dl_pubs">${pubs.map(p => `<option value="${esc(p.label)}">`).join('')}</datalist></label>
+  <label class="f"><span>Catégorie</span><input id="f_category" list="dl_cats" value="${esc(b.category || 'Standard')}"><datalist id="dl_cats">${cats.map(c => `<option value="${esc(c.label)}">`).join('')}</datalist></label>
+  <label class="f"><span>Type / Reliure</span><input id="f_type" list="dl_types" value="${esc(b.type || 'Souple')}"><datalist id="dl_types">${types.map(t => `<option value="${esc(t.label)}">`).join('')}</datalist></label>
+  ${f('location', 'Emplacement')}${f('price', 'Prix de vente €', 'number')}${f('min_stock', 'Seuil d\'alerte', 'number')}</div>
   <div class="actions">${b.id ? '<button class="btn bad" id="del">Archiver</button>' : ''}<button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`, m => {
     $('#ok', m).onclick = safe(async () => {
-      const g = k => $('#f_' + k, m).value;
-      const body = { code: g('code'), title: g('title'), series: g('series') || null, volume: g('volume') || null, author: g('author') || null, publisher: g('publisher') || null, category: g('category'), type: g('type') || null, location: g('location') || null, price: +g('price') || 0, min_stock: +g('min_stock') || 0, is_pack: b.is_pack || 0 };
+      const g = k => $('#f_' + k, m).value.trim();
+      const body = { code: g('code'), title: g('title'), series: g('series') || null, volume: g('volume') || null, author: g('author') || null, publisher: g('publisher') || null, category: g('category') || 'Standard', type: g('type') || null, location: g('location') || null, price: +g('price') || 0, min_stock: +g('min_stock') || 0, is_pack: b.is_pack || 0 };
       if (!body.code || !body.title) throw new Error('Code et titre requis');
       b.id ? await api(`/api/books/${b.id}`, 'PUT', body) : await api('/api/books', 'POST', body);
       closeModal(); toast('Enregistré'); go('catalog');
@@ -348,7 +356,28 @@ VIEWS.data = async () => {
   <p class="muted" style="margin-top:14px;line-height:1.7">Un <b>fichier Excel miroir</b> est mis à jour automatiquement après chaque modification :<br><code>${esc(info.mirror)}</code><br>Une archive datée (Excel + base) est créée chaque jour dans :<br><code>${esc(info.backups)}</code><br>La base <b>librairie.db</b> (SQLite) est lisible avec LibreOffice Base, DB Browser for SQLite, etc.</p></div></div>
   <div class="card" style="margin-top:16px"><h3>🏛️ Origines du stock &amp; règles de reversement <button class="btn sm" id="no">＋ Ajouter</button></h3><table><thead><tr><th>Nom</th><th>Type</th><th class="num">% reversé</th><th class="num">Ordre (import Excel uniquement)</th><th></th></tr></thead><tbody>
   ${S.owners.map(o => `<tr><td><span class="chip"><i style="background:${o.color}"></i>${esc(o.name)}</span></td><td>${o.kind === 'maison_mere' ? 'Maison mère (dépôt)' : 'Église locale (acquis)'}</td><td class="num">${o.reverse_pct} %</td><td class="num">${o.priority}</td><td class="num"><button class="btn ghost sm" data-o="${o.id}">Modifier</button></td></tr>`).join('')}</tbody></table>
-  <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>% reversé</b> = part du prix de vente rendue à l'origine (100 = tout le prix revient à la maison mère ; 0 = stock acquis, marge entière gardée). Pour un lot acquis avec marge négociée, indiquez le <i>coût unitaire</i> à la réception du stock. <b>Ordre</b> : n'est utilisé que pour répartir les ventes de l'<i>import Excel historique</i>. En caisse, c'est toujours vous qui choisissez l'origine de chaque exemplaire.</p></div>`;
+  <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>% reversé</b> = part du prix de vente rendue à l'origine (100 = tout le prix revient à la maison mère ; 0 = stock acquis, marge entière gardée). Pour un lot acquis avec marge négociée, indiquez le <i>coût unitaire</i> à la réception du stock. <b>Ordre</b> : n'est utilisé que pour répartir les ventes de l'<i>import Excel historique</i>. En caisse, c'est toujours vous qui choisissez l'origine de chaque exemplaire.</p></div>
+  
+  <div class="card" style="margin-top:16px"><h3>⚙️ Listes &amp; Paramètres personnalisables (Catégories, Types, Paiements, Éditeurs)</h3>
+    <div class="grid g-eq" style="margin-top:12px">
+      ${[
+        ['category', 'Catégories de livres'],
+        ['type', 'Types & Reliures (Souple, Rigide...)'],
+        ['payment', 'Moyens de paiement en caisse'],
+        ['publisher', 'Éditeurs fréquents']
+      ].map(([grp, titre]) => `
+        <div style="background:var(--panel2);padding:14px;border-radius:12px;border:1px solid var(--line)">
+          <div class="row" style="justify-content:space-between;margin-bottom:10px">
+            <b>${titre}</b>
+            <button class="btn sm" data-add-opt="${grp}">＋ Ajouter</button>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:6px">
+            ${(S.options[grp] || []).map(opt => `<span class="chip" style="padding:4px 10px">${esc(opt.label)} <b class="tag-x" data-del-opt="${opt.id}">×</b></span>`).join('') || '<span class="muted" style="font-size:12px">Aucune option</span>'}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  </div>`;
   const send = safe(async f => {
     if (!f) return; const fd = new FormData(); fd.append('file', f);
     const r = await api(`/api/import?replace=${$('#rep').checked}`, 'POST', fd);
@@ -365,7 +394,33 @@ VIEWS.data = async () => {
     <div class="actions"><button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`, m => {
     $('#ok', m).onclick = safe(async () => { const body = { name: $('#n', m).value, kind: $('#k', m).value, reverse_pct: +$('#r', m).value, priority: +$('#p', m).value, color: $('#c', m).value }; o.id ? await api(`/api/owners/${o.id}`, 'PUT', body) : await api('/api/owners', 'POST', body); closeModal(); go('data') });
   });
-  $('#no').onclick = () => ownerForm(); $('#view').onclick = e => { const b = e.target.closest('button[data-o]'); if (b) ownerForm(S.owners.find(x => x.id == b.dataset.o)) };
+  $('#no').onclick = () => ownerForm(); 
+  $('#view').onclick = safe(async e => { 
+    const b = e.target.closest('button[data-o]'); 
+    if (b) return ownerForm(S.owners.find(x => x.id == b.dataset.o));
+    const addBtn = e.target.closest('button[data-add-opt]');
+    if (addBtn) {
+      const grp = addBtn.dataset.addOpt;
+      const val = prompt('Nouveau libellé :');
+      if (val && val.trim()) {
+        await api('/api/options', 'POST', { group_key: grp, label: val.trim() });
+        toast('Option ajoutée');
+        await loadRef();
+        VIEWS.data();
+      }
+      return;
+    }
+    const delBtn = e.target.closest('.tag-x[data-del-opt]');
+    if (delBtn) {
+      if (confirm('Supprimer cette option de la liste ?')) {
+        await api(`/api/options/${delBtn.dataset.delOpt}`, 'DELETE');
+        toast('Option supprimée');
+        await loadRef();
+        VIEWS.data();
+      }
+      return;
+    }
+  });
 };
 
 go('dashboard');

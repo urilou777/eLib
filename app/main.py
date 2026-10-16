@@ -142,6 +142,43 @@ class ResIn(BaseModel):
     note: Optional[str] = None
 
 
+class DropdownItemIn(BaseModel):
+    group_key: str
+    label: str
+
+
+# ---------- options paramétrables (dropdowns) ----------
+@app.get("/api/options")
+def get_options():
+    with db.tx() as c:
+        rows = db.rows(c, "SELECT id, group_key, label FROM dropdown_options ORDER BY group_key, label")
+        res = {"category": [], "type": [], "payment": [], "publisher": []}
+        for r in rows:
+            if r["group_key"] in res:
+                res[r["group_key"]].append({"id": r["id"], "label": r["label"]})
+        return res
+
+
+@app.post("/api/options")
+def add_option(opt: DropdownItemIn):
+    lbl = opt.label.strip()
+    if not lbl:
+        raise HTTPException(400, "Le libellé ne peut pas être vide")
+    with db.tx() as c:
+        try:
+            cur = c.execute("INSERT INTO dropdown_options(group_key, label) VALUES(?,?)", (opt.group_key, lbl))
+            return {"id": cur.lastrowid, "label": lbl, "group_key": opt.group_key}
+        except Exception:
+            raise HTTPException(400, "Cette option existe déjà")
+
+
+@app.delete("/api/options/{opt_id}")
+def delete_option(opt_id: int):
+    with db.tx() as c:
+        c.execute("DELETE FROM dropdown_options WHERE id=?", (opt_id,))
+    return {"ok": True}
+
+
 # ---------- propriétaires ----------
 @app.get("/api/owners")
 def owners():

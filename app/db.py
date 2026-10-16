@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS settlements(
 CREATE TABLE IF NOT EXISTS reservations(
   id INTEGER PRIMARY KEY, name TEXT, phone TEXT, title TEXT, qty INTEGER DEFAULT 1,
   date TEXT, status TEXT DEFAULT 'En attente', note TEXT);
+CREATE TABLE IF NOT EXISTS dropdown_options(
+  id INTEGER PRIMARY KEY,
+  group_key TEXT NOT NULL, -- 'category' | 'type' | 'payment' | 'publisher'
+  label TEXT NOT NULL,
+  UNIQUE(group_key, label));
 CREATE INDEX IF NOT EXISTS ix_alloc_date ON allocations(date);
 CREATE INDEX IF NOT EXISTS ix_alloc_book ON allocations(book_id);
 CREATE INDEX IF NOT EXISTS ix_lots_book ON lots(book_id);
@@ -90,6 +95,16 @@ def init():
         if not c.execute("SELECT 1 FROM owners").fetchone():
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('Cité Royale','maison_mere',100,1,'#ffb454')")
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('ICC Rennes','locale',0,2,'#5ee6b0')")
+        
+        # Initialisation des options de base si table vide
+        if not c.execute("SELECT 1 FROM dropdown_options").fetchone():
+            default_opts = [
+                ('category', 'Standard'), ('category', 'Bible'), ('category', 'Pack'), ('category', 'Enfant'), ('category', 'Vie chrétienne'),
+                ('type', 'Souple'), ('type', 'Rigide'), ('type', 'Poche'), ('type', 'Broché'),
+                ('payment', 'Espèces'), ('payment', 'Carte'), ('payment', 'Chèque'), ('payment', 'Virement'), ('payment', 'Don / Offert'),
+                ('publisher', 'Metanoia & Vie'), ('publisher', 'Société Biblique de Genève'), ('publisher', 'Excelsis'), ('publisher', 'RADD')
+            ]
+            c.executemany("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES(?,?)", default_opts)
 
 
 def rows(c, sql, args=()):
