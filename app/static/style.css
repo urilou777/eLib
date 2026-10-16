@@ -72,37 +72,26 @@ body {
 
 .brand {
   display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 6px 10px 10px;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px 14px;
   border-bottom: 1px solid var(--line);
 }
-.logo-icc {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--icc-purple), var(--icc-deep));
-  color: var(--icc-cream);
-  box-shadow: 0 6px 20px rgba(143, 22, 173, 0.45);
-  flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-.brand-text { display: flex; flex-direction: column; }
-.brand-title {
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  color: var(--icc-cream);
-  text-transform: uppercase;
+.brand-logo-img {
+  height: 38px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(143, 22, 173, 0.4));
 }
 .brand-sub {
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--icc-light);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding-left: 2px;
 }
 
 .user-badge {
