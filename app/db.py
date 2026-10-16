@@ -43,7 +43,16 @@ CREATE TABLE IF NOT EXISTS adjustments(
   id INTEGER PRIMARY KEY, lot_id INTEGER NOT NULL REFERENCES lots(id),
   date TEXT NOT NULL, delta INTEGER NOT NULL, reason TEXT);
 CREATE TABLE IF NOT EXISTS sales(
-  id INTEGER PRIMARY KEY, date TEXT NOT NULL, payment TEXT DEFAULT 'Espèces', note TEXT);
+  id INTEGER PRIMARY KEY, date TEXT NOT NULL, payment TEXT DEFAULT 'Espèces', note TEXT,
+  user_name TEXT DEFAULT 'Anonyme');
+CREATE TABLE IF NOT EXISTS cash_movements(
+  id INTEGER PRIMARY KEY,
+  date TEXT NOT NULL,
+  user_name TEXT NOT NULL,
+  type TEXT NOT NULL,        -- 'DEPOSIT' (le libraire dépose l'argent dans la caisse), 'WITHDRAWAL' (retrait/remboursement par la caisse), 'ADJUST'
+  channel TEXT NOT NULL,     -- 'ESPECES' | 'WERO' | 'PAYPAL'
+  amount REAL NOT NULL,
+  note TEXT);
 CREATE TABLE IF NOT EXISTS sale_lines(
   id INTEGER PRIMARY KEY, sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
   book_id INTEGER NOT NULL REFERENCES books(id), qty INTEGER NOT NULL, unit_price REAL NOT NULL);
@@ -134,6 +143,10 @@ def safe_backup_db(target_path):
 def init():
     with tx() as c:
         c.executescript(SCHEMA)
+        # Migration dynamique pour tables existantes
+        cols_sales = [r["name"] for r in rows(c, "PRAGMA table_info(sales)")]
+        if "user_name" not in cols_sales:
+            c.execute("ALTER TABLE sales ADD COLUMN user_name TEXT DEFAULT 'Anonyme'")
         if not c.execute("SELECT 1 FROM owners").fetchone():
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('Cité Royale','maison_mere',100,1,'#ffb454')")
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('ICC Rennes','locale',0,2,'#5ee6b0')")
@@ -143,10 +156,14 @@ def init():
             default_opts = [
                 ('category', 'Standard'), ('category', 'Bible'), ('category', 'Pack'), ('category', 'Enfant'), ('category', 'Vie chrétienne'),
                 ('type', 'Souple'), ('type', 'Rigide'), ('type', 'Poche'), ('type', 'Broché'),
-                ('payment', 'Espèces'), ('payment', 'Carte'), ('payment', 'Chèque'), ('payment', 'Virement'), ('payment', 'Don / Offert'),
+                ('payment', 'Espèces'), ('payment', 'PayPal POS'), ('payment', 'Wero (Compte perso libraire)'), ('payment', 'Virement perso libraire'), ('payment', 'Chèque'), ('payment', 'Don / Offert'),
                 ('publisher', 'Metanoia & Vie'), ('publisher', 'Société Biblique de Genève'), ('publisher', 'Excelsis'), ('publisher', 'RADD')
             ]
             c.executemany("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES(?,?)", default_opts)
+        else:
+            # S'assurer que PayPal POS et Wero sont proposés dans les options de paiement
+            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'PayPal POS')")
+            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'Wero (Compte perso libraire)')")
 
         # Initialisation d'un premier profil utilisateur si vide
         if not c.execute("SELECT 1 FROM users").fetchone():
@@ -238,7 +255,7 @@ def _insert_alloc(c, line_id, book_id, lot_id, qty, unit_rev, day):
               (line_id, book_id, lot_id, lot["owner_id"], qty, unit_rev * qty, due, day))
 
 
-def create_sale(c, day, payment, note, lines, manual=True):
+def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme"):
     """lines: [{book_id, qty, unit_price, allocations:[{book_id, lot_id, qty}]}] -> (sale_id, warnings).
     manual=True : le libraire désigne explicitement les lots (aucun choix automatique).
     manual=False : réservé à l'import de l'historique Excel (répartition auto, priorité des origines)."""
@@ -246,7 +263,8 @@ def create_sale(c, day, payment, note, lines, manual=True):
     if not lines:
         raise ValueError("Panier vide")
     warnings = []
-    sale_id = c.execute("INSERT INTO sales(date,payment,note) VALUES(?,?,?)", (day, payment or "Espèces", note)).lastrowid
+    sale_id = c.execute("INSERT INTO sales(date,payment,note,user_name) VALUES(?,?,?,?)",
+                        (day, payment or "Espèces", note, user_name or "Anonyme")).lastrowid
     for ln in lines:
         b = c.execute("SELECT * FROM books WHERE id=?", (ln["book_id"],)).fetchone()
         qty = int(ln["qty"])

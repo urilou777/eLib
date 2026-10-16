@@ -57,7 +57,7 @@ async function loadRef() {
 }
 
 /* ---------- navigation ---------- */
-const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', settle: 'Reversements', orders: 'Réservations', audit: 'Historique & Sécurité des opérations', data: 'Données & Excel' };
+const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', treasury: 'Trésorerie & Caisse', settle: 'Trésorerie & Caisse', orders: 'Réservations', audit: 'Historique & Sécurité des opérations', data: 'Données & Excel' };
 async function go(v) {
   S.view = v; $('#title').textContent = TITLES[v]; $('#topActions').innerHTML = ''; $('#view').onclick = null;
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
@@ -323,25 +323,253 @@ VIEWS.catalog = async () => {
 /* ---- Ventes ---- */
 VIEWS.sales = async () => {
   const rows = await api('/api/sales?limit=500');
-  $('#view').innerHTML = `<div class="card" style="padding:0"><div class="scroll" style="max-height:calc(100vh - 150px);overflow:auto"><table><thead><tr><th>Date</th><th>Détail</th><th>Paiement</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
-  ${rows.map(s => `<tr><td>${s.date}</td><td style="max-width:520px">${esc(s.detail)}</td><td>${esc(s.payment)}</td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`).join('') || '<tr><td colspan=6 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
+  $('#view').innerHTML = `<div class="card" style="padding:0"><div class="scroll" style="max-height:calc(100vh - 150px);overflow:auto"><table><thead><tr><th>Date</th><th>Détail</th><th>Paiement</th><th>Libraire</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
+  ${rows.map(s => `<tr><td>${s.date}</td><td style="max-width:480px">${esc(s.detail)}</td><td><span class="chip">${esc(s.payment)}</span></td><td><span class="chip"><i style="background:var(--a1)"></i>${esc(s.user_name || 'Anonyme')}</span></td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`).join('') || '<tr><td colspan=7 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
   $('#view').onclick = safe(async e => { const b = e.target.closest('button[data-id]'); if (b && confirm('Annuler cette vente ? Le stock sera restitué.')) { await api(`/api/sales/${b.dataset.id}`, 'DELETE'); toast('Vente annulée'); go('sales') } });
 };
 
-/* ---- Reversements ---- */
-VIEWS.settle = async () => {
-  const os = await api('/api/settlements');
-  $('#view').innerHTML = `<div class="grid g-eq">${os.map(o => `<div class="card owner-card" style="--c:${o.color}"><h3>${esc(o.name)} <span class="chip">${o.kind === 'maison_mere' ? 'Maison mère' : 'Église locale'}</span></h3>
-  <div class="grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px"><div><div class="muted">CA généré</div><div class="big" style="font-size:22px">${eur(o.revenue)}</div></div><div><div class="muted">Dû à l'origine</div><div class="big" style="font-size:22px">${eur(o.due)}</div></div><div><div class="muted">Marge gardée</div><div class="big" style="font-size:22px;color:var(--good)">${eur(o.margin)}</div></div></div>
-  <div class="row" style="justify-content:space-between;padding:12px;border-radius:12px;background:var(--panel2)"><div><div class="muted">Reste à régler</div><div class="big" style="color:${o.remaining > 0.005 ? 'var(--warn)' : 'var(--good)'}">${eur(o.remaining)}</div></div><button class="btn good" data-o="${o.id}" data-r="${Math.max(0, o.remaining).toFixed(2)}">Enregistrer un règlement</button></div>
-  <div style="margin-top:12px">${o.history.map(h => `<div class="tl"><span>${h.date} ${esc(h.note || '')}</span><b>− ${eur(h.amount)}</b></div>`).join('')}</div>
-  <p class="muted" style="margin-top:10px;font-size:12px">${o.qty} exemplaires vendus · règle par défaut : ${o.reverse_pct} % reversé</p></div>`).join('')}</div>`;
-  $('#view').onclick = e => {
-    const b = e.target.closest('button[data-o]'); if (!b) return;
-    modal(`<h2>Règlement</h2><div class="form"><label class="f">Montant €<input id="am" type="number" step="0.01" value="${b.dataset.r}"></label><label class="f">Date<input id="dt" type="date" value="${today()}"></label><label class="f full">Note<input id="nt" placeholder="Virement, chèque n°…"></label></div><div class="actions"><button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn good" id="ok">Valider</button></div>`, m => {
-      $('#ok', m).onclick = safe(async () => { await api('/api/settlements', 'POST', { owner_id: +b.dataset.o, amount: +$('#am', m).value, date: $('#dt', m).value, note: $('#nt', m).value }); closeModal(); toast('Règlement enregistré'); go('settle') });
+/* ---- Trésorerie & Caisse ---- */
+VIEWS.treasury = async () => {
+  const [tr, os] = await Promise.all([api('/api/treasury'), api('/api/settlements')]);
+  $('#topActions').innerHTML = `
+    <div class="row">
+      <button class="btn good" id="btnDeposit">📥 Déposer argent en caisse</button>
+      <button class="btn ghost" id="btnWithdraw">📤 Sortie / Remboursement caisse</button>
+    </div>
+  `;
+
+  $('#view').innerHTML = `
+    <div class="grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+      <div class="card" style="border-top:4px solid var(--good)">
+        <div class="muted">💵 Espèces dans le tiroir-caisse</div>
+        <div class="big" style="color:var(--good);margin-top:6px">${eur(tr.cash_in_drawer)}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Ventes directes (${eur(tr.sales_cash)}) + Dépôts (${eur(tr.deposits_cash)}) - Sorties (${eur(tr.withdrawals_cash)})</div>
+      </div>
+      <div class="card" style="border-top:4px solid #ffb454">
+        <div class="muted">💳 Ventes PayPal POS (Cité Royale)</div>
+        <div class="big" style="color:#ffb454;margin-top:6px">${eur((tr.sales_by_pay.find(p => p.payment.toLowerCase().includes('paypal')) || {}).total || 0)}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Encaissé directement sur la borne Cité Royale</div>
+      </div>
+      <div class="card" style="border-top:4px solid var(--a2)">
+        <div class="muted">📱 Ventes Wero (Comptes libraires)</div>
+        <div class="big" style="color:var(--a2);margin-top:6px">${eur((tr.sales_by_pay.find(p => p.payment.toLowerCase().includes('wero')) || {}).total || 0)}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Argent reçu sur comptes perso à déposer en caisse</div>
+      </div>
+      <div class="card" style="border-top:4px solid var(--warn)">
+        <div class="muted">⚖️ Total à régulariser en caisse</div>
+        <div class="big" style="color:${tr.user_balances.some(u => u.net_to_deposit > 0.005) ? 'var(--warn)' : 'var(--good)'};margin-top:6px">
+          ${eur(tr.user_balances.reduce((s, u) => s + Math.max(0, u.net_to_deposit), 0))}
+        </div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Somme due par les libraires ayant reçu des Wero</div>
+      </div>
+    </div>
+
+    <!-- Balance par libraire -->
+    <div class="card" style="margin-bottom:16px">
+      <h3>👥 Balance &amp; Traçabilité par Libraire</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.6">
+        Lorsqu'un client paye par <b>Wero</b> ou virement personnel, l'argent arrive sur le compte personnel du libraire connecté.<br>
+        Ce tableau indique avec exactitude <b>qui a perçu combien</b> et <b>combien chaque libraire doit déposer dans la caisse physique</b>.<br>
+        <span style="color:var(--a1)">🔒 Sécurité &amp; Intégrité : Seul le libraire connecté (<b>${esc(getCurrentUser())}</b>) peut enregistrer ou modifier ses propres opérations.</span>
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Libraire</th>
+            <th class="num">Wero perçus sur compte</th>
+            <th class="num">Espèces directes encaissées</th>
+            <th class="num">Ventes PayPal POS</th>
+            <th class="num">Déjà déposé en caisse</th>
+            <th class="num">Remboursé / Retiré</th>
+            <th class="num">Reste à déposer</th>
+            <th class="num">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tr.user_balances.map(u => {
+            const isMe = u.user_name === getCurrentUser();
+            return `
+            <tr style="${isMe ? 'background:rgba(124,92,255,0.08)' : ''}">
+              <td>
+                <b><span class="chip"><i style="background:${isMe ? 'var(--good)' : 'var(--a1)'}"></i>${esc(u.user_name)} ${isMe ? '⭐ (Vous)' : ''}</span></b>
+              </td>
+              <td class="num">${eur(u.wero_received)}</td>
+              <td class="num muted">${eur(u.cash_received)}</td>
+              <td class="num muted">${eur(u.paypal_sales)}</td>
+              <td class="num" style="color:var(--good)">${eur(u.deposited)}</td>
+              <td class="num muted">${eur(u.withdrawn)}</td>
+              <td class="num">
+                <b style="font-size:14px;color:${u.net_to_deposit > 0.005 ? 'var(--warn)' : u.net_to_deposit < -0.005 ? 'var(--bad)' : 'var(--good)'}">
+                  ${u.net_to_deposit > 0.005 ? `Doit déposer ${eur(u.net_to_deposit)}` : u.net_to_deposit < -0.005 ? `Trop déposé (${eur(Math.abs(u.net_to_deposit))})` : '✔ À jour (0 €)'}
+                </b>
+              </td>
+              <td class="num">
+                ${isMe ? (u.net_to_deposit > 0.005 ? `
+                  <button class="btn good sm" data-quick-deposit="${esc(u.user_name)}" data-amount="${u.net_to_deposit.toFixed(2)}">
+                    📥 Déposer ${eur(u.net_to_deposit)}
+                  </button>
+                ` : `
+                  <button class="btn ghost sm" data-quick-deposit="${esc(u.user_name)}" data-amount="0">
+                    + Déposer
+                  </button>
+                `) : `<span class="muted" style="font-size:11px" title="Connectez-vous avec ce profil pour enregistrer ses opérations">🔒 Verrouillé</span>`}
+              </td>
+            </tr>
+          `}).join('') || '<tr><td colspan=8 class="muted">Aucun libraire enregistré</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Mouvements et régularisations de caisse -->
+    <div class="grid g-eq">
+      <div class="card" style="padding:0">
+        <div style="padding:16px 18px 10px;border-bottom:1px solid var(--line)">
+          <h3 style="margin:0">📝 Journal des Dépôts &amp; Mouvements de caisse</h3>
+          <p class="muted" style="font-size:12px;margin:4px 0 0">Traçabilité complète des remises d'espèces et régularisations</p>
+        </div>
+        <div class="scroll" style="max-height:300px;overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Libraire</th>
+                <th>Type</th>
+                <th class="num">Montant</th>
+                <th>Note</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tr.movements.map(m => {
+                const canDel = m.user_name === getCurrentUser();
+                return `
+                <tr>
+                  <td class="muted">${esc(m.date)}</td>
+                  <td><b>${esc(m.user_name)}</b> ${canDel ? '<span class="chip" style="font-size:10px;padding:2px 5px">Vous</span>' : ''}</td>
+                  <td>
+                    <span class="badge ${m.type === 'DEPOSIT' ? 'b-ok' : 'b-low'}">
+                      ${m.type === 'DEPOSIT' ? '📥 Dépôt en caisse' : '📤 Sortie / Remboursement'}
+                    </span>
+                  </td>
+                  <td class="num"><b style="color:${m.type === 'DEPOSIT' ? 'var(--good)' : 'var(--bad)'}">${m.type === 'DEPOSIT' ? '+' : '−'} ${eur(m.amount)}</b></td>
+                  <td class="muted" style="font-size:12px">${esc(m.note || '')}</td>
+                  <td class="num">
+                    ${canDel ? `<button class="btn bad sm" data-del-mov="${m.id}" title="Annuler votre mouvement">✕</button>` : `<span class="muted" style="font-size:12px" title="Seul l'auteur peut annuler cette ligne">🔒</span>`}
+                  </td>
+                </tr>
+              `}).join('') || '<tr><td colspan=6 class="muted" style="padding:16px">Aucun mouvement enregistré.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Répartition globale des encaissements -->
+      <div class="card">
+        <h3>💳 Encaissements cumulés par canal</h3>
+        <p class="muted" style="font-size:12px;margin-bottom:14px">Historique total de tous les paiements enregistrés</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Mode d'encaissement</th>
+              <th class="num">Nombre de ventes</th>
+              <th class="num">Total perçu</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tr.sales_by_pay.map(p => `
+              <tr>
+                <td><b>${esc(p.payment)}</b></td>
+                <td class="num muted">${p.count}</td>
+                <td class="num"><b>${eur(p.total)}</b></td>
+              </tr>
+            `).join('') || '<tr><td colspan=3 class="muted">Aucune vente</td></tr>'}
+          </tbody>
+        </table>
+
+        <!-- Synthèse globale propriétaire (archives) -->
+        <h4 style="margin-top:20px;font-size:13px;color:var(--mut)">Synthèse par origine du stock (Gestion responsables)</h4>
+        <div style="margin-top:8px">
+          ${os.map(o => `
+            <div class="tl" style="align-items:center">
+              <span><span class="chip"><i style="background:${o.color}"></i>${esc(o.name)}</span></span>
+              <span class="muted" style="font-size:12px">Ventes: ${eur(o.revenue)} · Part origine: ${eur(o.due)}</span>
+              <b>Reste réglé: ${eur(o.remaining)}</b>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Gestion des dépôts et retraits pour l'utilisateur connecté uniquement
+  const showMovementModal = (type = 'DEPOSIT', defaultAmount = '') => {
+    const me = getCurrentUser();
+    modal(`
+      <h2>${type === 'DEPOSIT' ? '📥 Déposer de l\'argent dans la caisse' : '📤 Enregistrer une sortie de caisse'}</h2>
+      <div class="form">
+        <label class="f">Libraire connecté (fixe)
+          <input id="mUser" value="${esc(me)}" disabled style="opacity:.8;cursor:not-allowed">
+        </label>
+        <label class="f">Montant €
+          <input id="mAmount" type="number" step="0.01" min="0.01" value="${defaultAmount || ''}" placeholder="ex: 35.00" autofocus>
+        </label>
+        <label class="f">Date
+          <input id="mDate" type="date" value="${today()}">
+        </label>
+        <label class="f">Canal physique
+          <select id="mChannel">
+            <option value="ESPECES">Espèces (remise physique dans le tiroir)</option>
+          </select>
+        </label>
+        <label class="f full">Motif / Commentaire
+          <input id="mNote" placeholder="${type === 'DEPOSIT' ? 'Régularisation encaissement Wero du dimanche...' : 'Remboursement avance de frais...'}">
+        </label>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" onclick="closeModal()">Annuler</button>
+        <button class="btn ${type === 'DEPOSIT' ? 'good' : 'bad'}" id="mOk">Enregistrer pour ${esc(me)}</button>
+      </div>
+    `, m => {
+      $('#mOk', m).onclick = safe(async () => {
+        const amt = +$('#mAmount', m).value;
+        if (!amt || amt <= 0) return toast('Veuillez indiquer un montant valide', 'warn');
+        await api('/api/treasury/movements', 'POST', {
+          user_name: me,
+          type: type,
+          channel: $('#mChannel', m).value,
+          amount: amt,
+          date: $('#mDate', m).value,
+          note: $('#mNote', m).value
+        });
+        closeModal();
+        toast(type === 'DEPOSIT' ? 'Dépôt enregistré avec succès' : 'Sortie de caisse enregistrée');
+        VIEWS.treasury();
+      });
     });
   };
+
+  $('#btnDeposit').onclick = () => showMovementModal('DEPOSIT');
+  $('#btnWithdraw').onclick = () => showMovementModal('WITHDRAWAL');
+
+  $('#view').onclick = safe(async e => {
+    const qd = e.target.closest('button[data-quick-deposit]');
+    if (qd) {
+      if (qd.dataset.quickDeposit !== getCurrentUser()) {
+        return toast('Connectez-vous d\'abord avec ce profil pour enregistrer son opération', 'warn');
+      }
+      showMovementModal('DEPOSIT', +qd.dataset.amount > 0 ? qd.dataset.amount : '');
+      return;
+    }
+    const delMov = e.target.closest('button[data-del-mov]');
+    if (delMov) {
+      if (confirm('Annuler ce mouvement de caisse ?')) {
+        await api(`/api/treasury/movements/${delMov.dataset.delMov}`, 'DELETE');
+        toast('Mouvement annulé');
+        VIEWS.treasury();
+      }
+      return;
+    }
+  });
 };
 
 /* ---- Réservations ---- */

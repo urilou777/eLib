@@ -143,6 +143,15 @@ class SaleIn(BaseModel):
     lines: List[LineIn]
 
 
+class CashMovementIn(BaseModel):
+    user_name: str
+    type: str                  # 'DEPOSIT' | 'WITHDRAWAL' | 'ADJUST'
+    channel: str               # 'ESPECES' | 'WERO' | 'PAYPAL'
+    amount: float
+    date: Optional[str] = None
+    note: Optional[str] = None
+
+
 class SettleIn(BaseModel):
     owner_id: int
     amount: float
@@ -285,6 +294,17 @@ def undo_audit(log_id: int, request: Request):
                 c.execute("INSERT INTO reservations(id, name, phone, title, qty, date, status, note) VALUES(?,?,?,?,?,?,?,?)",
                           (sb.get("id"), sb.get("name"), sb.get("phone"), sb.get("title"), sb.get("qty", 1), sb.get("date"), sb.get("status"), sb.get("note")))
                           
+        elif ttype == "cash_movement":
+            if act == "INSERT" and sa:
+                c.execute("DELETE FROM cash_movements WHERE id=?", (sa.get("id"),))
+            elif act == "DELETE" and sb:
+                c.execute("INSERT INTO cash_movements(id, date, user_name, type, channel, amount, note) VALUES(?,?,?,?,?,?,?)",
+                          (sb.get("id"), sb.get("date"), sb.get("user_name"), sb.get("type"), sb.get("channel"), sb.get("amount"), sb.get("note")))
+                          
+        elif ttype == "settlement":
+            if act == "INSERT" and sa:
+                c.execute("DELETE FROM settlements WHERE id=?", (sa.get("id"),))
+
         elif ttype == "option":
             if act == "INSERT" and sa:
                 c.execute("DELETE FROM dropdown_options WHERE id=?", (sa.get("id"),))
@@ -482,20 +502,21 @@ def lot_adjust(lid: int, a: AdjIn, request: Request):
 # ---------- ventes ----------
 @app.post("/api/sales")
 def sale_add(s: SaleIn, request: Request):
+    user = get_current_user(request)
     with db.tx() as c:
-        sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines], manual=True)
+        sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines], manual=True, user_name=user)
         total = sum((l.unit_price if l.unit_price is not None else
                      c.execute("SELECT price FROM books WHERE id=?", (l.book_id,)).fetchone()["price"]) * l.qty for l in s.lines)
-        db.log_audit(c, get_current_user(request), "INSERT", "sale", sid,
-                     f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {s.payment})",
-                     snapshot_after={"id": sid, "date": s.date, "total": total, "lines": [l.dict() for l in s.lines]})
+        db.log_audit(c, user, "INSERT", "sale", sid,
+                     f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {s.payment}) par {user}",
+                     snapshot_after={"id": sid, "date": s.date, "total": total, "payment": s.payment, "user_name": user, "lines": [l.dict() for l in s.lines]})
     return {"id": sid, "total": total, "warnings": warns}
 
 
 @app.get("/api/sales")
 def sales(limit: int = 200):
     with db.tx() as c:
-        return db.rows(c, """SELECT s.id,s.date,s.payment,s.note,
+        return db.rows(c, """SELECT s.id,s.date,s.payment,s.note,COALESCE(s.user_name,'Anonyme') user_name,
             SUM(l.qty*l.unit_price) total, SUM(l.qty) qty,
             GROUP_CONCAT(l.qty||'× '||b.title, ' · ') detail
             FROM sales s JOIN sale_lines l ON l.sale_id=s.id JOIN books b ON b.id=l.book_id
@@ -512,7 +533,151 @@ def sale_del(sid: int, request: Request):
     return {"ok": True}
 
 
-# ---------- reversements ----------
+# ---------- trésorerie & caisse ----------
+@app.get("/api/treasury")
+def treasury_summary():
+    with db.tx() as c:
+        # 1. Total par mode de paiement dans les ventes
+        sales_by_pay = db.rows(c, """
+            SELECT payment, COALESCE(SUM(l.qty * l.unit_price), 0) total, COUNT(DISTINCT s.id) count
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            GROUP BY payment
+        """)
+        
+        # 2. Total des mouvements de caisse enregistrés
+        movements = db.rows(c, "SELECT * FROM cash_movements ORDER BY date DESC, id DESC")
+        
+        # 3. Calcul de la caisse physique (Espèces)
+        # Entrées en espèces directes des ventes
+        sales_cash = c.execute("""
+            SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
+            FROM sales s JOIN sale_lines l ON l.sale_id = s.id
+            WHERE s.payment LIKE '%Espèce%'
+        """).fetchone()["s"]
+        
+        # Dépôts d'espèces régularisés en caisse par les libraires (ex: conversion de leurs encaissements Wero)
+        deposits_cash = c.execute("""
+            SELECT COALESCE(SUM(amount), 0) s FROM cash_movements WHERE type = 'DEPOSIT' AND channel = 'ESPECES'
+        """).fetchone()["s"]
+        
+        # Sorties de caisse (remboursements aux libraires qui ont avancé leurs fonds ou retraits)
+        withdrawals_cash = c.execute("""
+            SELECT COALESCE(SUM(amount), 0) s FROM cash_movements WHERE type = 'WITHDRAWAL' AND channel = 'ESPECES'
+        """).fetchone()["s"]
+        
+        cash_in_drawer = sales_cash + deposits_cash - withdrawals_cash
+        
+        # 4. Solde & Dettes par utilisateur / libraire
+        # Quels utilisateurs ont encaissé quoi ?
+        users = [u["name"] for u in db.rows(c, "SELECT name FROM users ORDER BY name")]
+        # On inclut aussi les noms trouvés dans les ventes ou mouvements
+        extra_users = [r["u"] for r in db.rows(c, "SELECT DISTINCT user_name u FROM sales WHERE user_name IS NOT NULL AND user_name != '' UNION SELECT DISTINCT user_name u FROM cash_movements")]
+        all_user_names = sorted(list(set(users + extra_users)))
+        
+        user_balances = []
+        for uname in all_user_names:
+            # Ventes encaissées sur le compte perso du libraire (Wero / Virement perso)
+            wero_received = c.execute("""
+                SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
+                FROM sales s JOIN sale_lines l ON l.sale_id = s.id
+                WHERE s.user_name = ? AND (s.payment LIKE '%Wero%' OR s.payment LIKE '%perso%')
+            """, (uname,)).fetchone()["s"]
+            
+            # Ventes où le libraire a encaissé des espèces en main propre
+            cash_received = c.execute("""
+                SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
+                FROM sales s JOIN sale_lines l ON l.sale_id = s.id
+                WHERE s.user_name = ? AND s.payment LIKE '%Espèce%'
+            """, (uname,)).fetchone()["s"]
+            
+            # Ventes payées via PayPal POS (borne Cité Royale)
+            paypal_sales = c.execute("""
+                SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
+                FROM sales s JOIN sale_lines l ON l.sale_id = s.id
+                WHERE s.user_name = ? AND s.payment LIKE '%PayPal%'
+            """, (uname,)).fetchone()["s"]
+            
+            # Montant déjà déposé dans la caisse par ce libraire
+            deposited = c.execute("""
+                SELECT COALESCE(SUM(amount), 0) s
+                FROM cash_movements
+                WHERE user_name = ? AND type = 'DEPOSIT'
+            """, (uname,)).fetchone()["s"]
+            
+            # Montant remboursé ou retiré par ce libraire depuis la caisse
+            withdrawn = c.execute("""
+                SELECT COALESCE(SUM(amount), 0) s
+                FROM cash_movements
+                WHERE user_name = ? AND type = 'WITHDRAWAL'
+            """, (uname,)).fetchone()["s"]
+            
+            # Dette nette : ce que le libraire a encaissé sur son compte personnel (Wero) ou doit déposer,
+            # moins ce qu'il a déjà déposé dans la caisse physique, plus ce qu'il a retiré.
+            net_to_deposit = wero_received - deposited + withdrawn
+            
+            user_balances.append({
+                "user_name": uname,
+                "wero_received": wero_received,
+                "cash_received": cash_received,
+                "paypal_sales": paypal_sales,
+                "deposited": deposited,
+                "withdrawn": withdrawn,
+                "net_to_deposit": net_to_deposit
+            })
+            
+        return {
+            "cash_in_drawer": cash_in_drawer,
+            "sales_cash": sales_cash,
+            "deposits_cash": deposits_cash,
+            "withdrawals_cash": withdrawals_cash,
+            "sales_by_pay": sales_by_pay,
+            "user_balances": user_balances,
+            "movements": movements
+        }
+
+
+@app.post("/api/treasury/movements")
+def cash_movement_add(m: CashMovementIn, request: Request):
+    op_user = get_current_user(request)
+    # Règle stricte d'intégrité : un libraire ne peut enregistrer un mouvement que pour lui-même
+    if m.user_name and m.user_name != op_user:
+        raise HTTPException(403, f"Opération refusée : vous êtes connecté en tant que « {op_user} » et ne pouvez pas enregistrer un mouvement pour « {m.user_name} »")
+    
+    m_user = op_user
+    m_date = m.date or date.today().isoformat()
+    with db.tx() as c:
+        cur = c.execute("""
+            INSERT INTO cash_movements(date, user_name, type, channel, amount, note)
+            VALUES(?,?,?,?,?,?)
+        """, (m_date, m_user, m.type, m.channel, m.amount, m.note))
+        mid = cur.lastrowid
+        desc = (f"Dépôt de {m.amount:.2f} € en caisse par {m_user} (régularisation Wero/espèces)"
+                if m.type == 'DEPOSIT' else
+                f"Retrait/Remboursement de {m.amount:.2f} € de la caisse pour {m_user}")
+        db.log_audit(c, op_user, "INSERT", "cash_movement", mid, desc,
+                     snapshot_after={"id": mid, "date": m_date, "user_name": m_user, "type": m.type, "channel": m.channel, "amount": m.amount, "note": m.note})
+    return {"ok": True, "id": mid}
+
+
+@app.delete("/api/treasury/movements/{mid}")
+def cash_movement_del(mid: int, request: Request):
+    op_user = get_current_user(request)
+    with db.tx() as c:
+        mov = c.execute("SELECT * FROM cash_movements WHERE id=?", (mid,)).fetchone()
+        if not mov:
+            raise HTTPException(404, "Mouvement introuvable")
+        # Règle stricte : un libraire ne peut annuler/supprimer que ses propres mouvements
+        if mov["user_name"] != op_user:
+            raise HTTPException(403, f"Opération refusée : seul « {mov['user_name']} » peut modifier ou annuler ses propres opérations")
+        c.execute("DELETE FROM cash_movements WHERE id=?", (mid,))
+        db.log_audit(c, op_user, "DELETE", "cash_movement", mid,
+                     f"Annulation mouvement caisse #{mid} ({mov['user_name']} - {mov['amount']:.2f} €)",
+                     snapshot_before=dict(mov))
+    return {"ok": True}
+
+
+# ---------- reversements (archives / responsables) ----------
 @app.get("/api/settlements")
 def settlements():
     with db.tx() as c:
