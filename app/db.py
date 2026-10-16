@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS adjustments(
   date TEXT NOT NULL, delta INTEGER NOT NULL, reason TEXT);
 CREATE TABLE IF NOT EXISTS sales(
   id INTEGER PRIMARY KEY, date TEXT NOT NULL, payment TEXT DEFAULT 'Espèces', note TEXT,
-  user_name TEXT DEFAULT 'Anonyme');
+  user_name TEXT DEFAULT 'Anonyme', customer_gender TEXT, customer_age_group TEXT, is_star INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS cash_movements(
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL,
@@ -147,6 +147,12 @@ def init():
         cols_sales = [r["name"] for r in rows(c, "PRAGMA table_info(sales)")]
         if "user_name" not in cols_sales:
             c.execute("ALTER TABLE sales ADD COLUMN user_name TEXT DEFAULT 'Anonyme'")
+        if "customer_gender" not in cols_sales:
+            c.execute("ALTER TABLE sales ADD COLUMN customer_gender TEXT")
+        if "customer_age_group" not in cols_sales:
+            c.execute("ALTER TABLE sales ADD COLUMN customer_age_group TEXT")
+        if "is_star" not in cols_sales:
+            c.execute("ALTER TABLE sales ADD COLUMN is_star INTEGER DEFAULT 0")
         if not c.execute("SELECT 1 FROM owners").fetchone():
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('Cité Royale','maison_mere',100,1,'#ffb454')")
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('ICC Rennes','locale',0,2,'#5ee6b0')")
@@ -156,14 +162,14 @@ def init():
             default_opts = [
                 ('category', 'Standard'), ('category', 'Bible'), ('category', 'Pack'), ('category', 'Enfant'), ('category', 'Vie chrétienne'),
                 ('type', 'Souple'), ('type', 'Rigide'), ('type', 'Poche'), ('type', 'Broché'),
-                ('payment', 'Espèces'), ('payment', 'PayPal POS'), ('payment', 'Wero (Compte perso libraire)'), ('payment', 'Virement perso libraire'), ('payment', 'Chèque'), ('payment', 'Don / Offert'),
+                ('payment', 'Espèces'), ('payment', 'PayPal POS (CB)'), ('payment', 'Wero'), ('payment', 'Don / Offert'),
                 ('publisher', 'Metanoia & Vie'), ('publisher', 'Société Biblique de Genève'), ('publisher', 'Excelsis'), ('publisher', 'RADD')
             ]
             c.executemany("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES(?,?)", default_opts)
         else:
-            # S'assurer que PayPal POS et Wero sont proposés dans les options de paiement
-            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'PayPal POS')")
-            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'Wero (Compte perso libraire)')")
+            # S'assurer que PayPal POS (CB) et Wero sont proposés dans les options de paiement
+            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'PayPal POS (CB)')")
+            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'Wero')")
 
         # Initialisation d'un premier profil utilisateur si vide
         if not c.execute("SELECT 1 FROM users").fetchone():
@@ -255,7 +261,7 @@ def _insert_alloc(c, line_id, book_id, lot_id, qty, unit_rev, day):
               (line_id, book_id, lot_id, lot["owner_id"], qty, unit_rev * qty, due, day))
 
 
-def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme"):
+def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme", customer_gender=None, customer_age_group=None, is_star=0):
     """lines: [{book_id, qty, unit_price, allocations:[{book_id, lot_id, qty}]}] -> (sale_id, warnings).
     manual=True : le libraire désigne explicitement les lots (aucun choix automatique).
     manual=False : réservé à l'import de l'historique Excel (répartition auto, priorité des origines)."""
@@ -263,8 +269,8 @@ def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme"):
     if not lines:
         raise ValueError("Panier vide")
     warnings = []
-    sale_id = c.execute("INSERT INTO sales(date,payment,note,user_name) VALUES(?,?,?,?)",
-                        (day, payment or "Espèces", note, user_name or "Anonyme")).lastrowid
+    sale_id = c.execute("INSERT INTO sales(date,payment,note,user_name,customer_gender,customer_age_group,is_star) VALUES(?,?,?,?,?,?,?)",
+                        (day, payment or "Espèces", note, user_name or "Anonyme", customer_gender, customer_age_group, int(bool(is_star)))).lastrowid
     for ln in lines:
         b = c.execute("SELECT * FROM books WHERE id=?", (ln["book_id"],)).fetchone()
         qty = int(ln["qty"])

@@ -107,7 +107,7 @@ def main():
                 time.sleep(1)
         else:
             import webview
-            webview.create_window("Librairie – Gestion de stock", url, width=1400, height=900, min_size=(1000, 650))
+            webview.create_window("Librairi-E – Chrétienne et impactante", url, width=1440, height=900, min_size=(1120, 670))
             webview.start()
     except KeyboardInterrupt:
         pass

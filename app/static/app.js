@@ -160,15 +160,15 @@ function trendChart(el, monthly, fc, ownerMonth) {
 }
 function donut(el, data, fmt = eur) {
   const tot = data.reduce((s, d) => s + d.value, 0); if (!tot) { el.innerHTML = '<div class="empty">—</div>'; return; }
-  let a = -Math.PI / 2, s = '<svg viewBox="-110 -110 220 220" style="width:100%;height:210px">';
+  let a = -Math.PI / 2, s = '<svg viewBox="-105 -105 210 210" class="donut-svg">';
   data.forEach(d => {
-    const ang = d.value / tot * Math.PI * 2, r = 90, x1 = r * Math.cos(a), y1 = r * Math.sin(a); a += ang;
+    const ang = d.value / tot * Math.PI * 2, r = 92, x1 = r * Math.cos(a), y1 = r * Math.sin(a); a += ang;
     const x2 = r * Math.cos(a), y2 = r * Math.sin(a), big = ang > Math.PI ? 1 : 0;
-    if (d.value / tot > .999) s += `<circle r="${r}" fill="none" stroke="${d.color}" stroke-width="26"/>`;
-    else s += `<path d="M${x1} ${y1} A${r} ${r} 0 ${big} 1 ${x2} ${y2}" fill="none" stroke="${d.color}" stroke-width="26"><title>${esc(d.label)} : ${fmt(d.value)}</title></path>`;
+    if (d.value / tot > .999) s += `<circle r="${r}" fill="none" stroke="${d.color}" stroke-width="25"/>`;
+    else s += `<path d="M${x1} ${y1} A${r} ${r} 0 ${big} 1 ${x2} ${y2}" fill="none" stroke="${d.color}" stroke-width="25"><title>${esc(d.label)} : ${fmt(d.value)}</title></path>`;
   });
-  s += `<text text-anchor="middle" y="-2" class="donut-total-val" style="font-size:22px;font-weight:800">${fmt(tot)}</text><text text-anchor="middle" y="16" class="donut-sub-text">total</text></svg>`;
-  el.innerHTML = s + `<div class="legend" style="justify-content:center">${data.map(d => `<span><i style="background:${d.color}"></i>${esc(d.label)} · ${Math.round(d.value / tot * 100)}%</span>`).join('')}</div>`;
+  s += `<text text-anchor="middle" y="-2" class="donut-total-val" style="font-size:23px;font-weight:800">${fmt(tot)}</text><text text-anchor="middle" y="16" class="donut-sub-text">total</text></svg>`;
+  el.innerHTML = `<div class="donut-wrap">${s}<div class="legend" style="justify-content:center">${data.map(d => `<span><i style="background:${d.color}"></i>${esc(d.label)} · ${Math.round(d.value / tot * 100)}%</span>`).join('')}</div></div>`;
 }
 function hbars(el, rows, key = 'revenue', fmt = eur, sub) {
   if (!rows.length) { el.innerHTML = '<div class="empty">—</div>'; return; }
@@ -192,23 +192,36 @@ VIEWS.dashboard = async () => {
     <input type="date" id="dFrom" value="${S.from}"><input type="date" id="dTo" value="${S.to}"></div>`;
   $('#seg').onclick = e => { if (e.target.dataset.r) { S.range = e.target.dataset.r; VIEWS.dashboard() } };
   $('#dFrom').onchange = $('#dTo').onchange = () => { S.from = $('#dFrom').value; S.to = $('#dTo').value; S.range = 'custom'; VIEWS.dashboard() };
-  const kp = [['Chiffre d\'affaires', eur(k.revenue), `${nf(k.qty)} exemplaires`, '#7c5cff'], ['Marge conservée', eur(k.margin), k.revenue ? Math.round(k.margin / k.revenue * 100) + ' % du CA' : '', '#27d3c3'],
-  ['Ventes', nf(k.sales), `Panier moyen ${eur(k.avg_basket)}`, '#5a9bff'], ['À reverser', eur(k.due_open), 'reste à régler (global)', '#ffb454'], ['Valeur du stock', eur(k.stock_value), `${nf(k.stock_units)} exemplaires`, '#c77dff']];
+  const kp = [
+    ['Chiffre d\'affaires', eur(k.revenue), `${nf(k.qty)} exemplaires`, '#7c5cff'],
+    ['Marge conservée', eur(k.margin), k.revenue ? Math.round(k.margin / k.revenue * 100) + ' % du CA' : '', '#27d3c3'],
+    ['Prix moyen / livre', eur(k.avg_book_price), k.pos_sales ? `Panier caisse ${eur(k.pos_avg_basket)} (${k.pos_sales} ticket${k.pos_sales > 1 ? 's' : ''})` : `${nf(k.qty)} livres vendus`, '#5a9bff'],
+    ['À reverser', eur(k.due_open), 'reste à régler (global)', '#ffb454'],
+    ['Valeur du stock', eur(k.stock_value), `${nf(k.stock_units)} exemplaires`, '#c77dff']
+  ];
   $('#view').innerHTML = `<div class="grid g-kpi">${kp.map((x, i) => `<div class="card kpi" style="--c:${x[3]};animation-delay:${i * 60}ms"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}</div>
-  <div class="grid g2" style="margin-bottom:16px"><div class="card"><h3>Évolution mensuelle du CA par origine · tendance & prévision</h3><div id="cTrend"></div></div>
-    <div class="card"><h3>Répartition par origine du stock</h3><div id="cOwner"></div></div></div>
+  <div class="grid g2" style="margin-bottom:16px"><div class="card card-fill"><h3>Évolution mensuelle du CA par origine · tendance & prévision</h3><div id="cTrend"></div></div>
+    <div class="card card-fill"><h3>Répartition par origine du stock</h3><div id="cOwner"></div></div></div>
   <div class="grid g3" style="margin-bottom:16px"><div class="card"><h3>Top 10 des ventes</h3><div id="cTop"></div></div>
     <div class="card"><h3>Par catégorie</h3><div id="cCat"></div><h3 style="margin-top:22px">Par éditeur</h3><div id="cPub"></div></div>
     <div class="card"><h3>Jours de la semaine</h3><div id="cWd"></div><h3 style="margin-top:22px">Moyens de paiement</h3><div id="cPay"></div></div></div>
-  <div class="card"><h3>Alertes de stock bas (${st.low_stock.length})</h3><div class="scroll" style="max-height:300px;overflow:auto"><table><thead><tr><th>Titre</th><th>Origine</th><th class="num">Stock</th><th class="num">Seuil</th><th class="num">Autonomie estimée</th></tr></thead><tbody>
+  <div class="grid g3" style="margin-bottom:16px">
+    <div class="card"><h3>Profil acheteurs · Tranche d'âge</h3><div id="cAge"></div></div>
+    <div class="card"><h3>Profil acheteurs · Genre</h3><div id="cGen"></div></div>
+    <div class="card"><h3>Engagement · Serviteurs STAR ⭐</h3><div id="cStar"></div></div>
+  </div>
+  <div class="card"><h3>Alertes de stock bas (${st.low_stock.length})</h3><div class="table-wrap" style="max-height:clamp(200px, 34vh, 420px)"><table><thead><tr><th>Titre</th><th>Origine</th><th class="num">Stock</th><th class="num">Seuil</th><th class="num">Autonomie estimée</th></tr></thead><tbody>
   ${st.low_stock.map(b => `<tr><td>${esc(b.title)} ${b.volume ? `<span class="muted">Vol. ${esc(b.volume)}</span>` : ''}</td><td>${ownerChips(b)}</td><td class="num">${stockBadge(b)}</td><td class="num">${b.min_stock}</td><td class="num">${b.days_left == null ? '<span class="muted">pas de ventes récentes</span>' : b.days_left + ' j'}</td></tr>`).join('') || '<tr><td colspan=5 class="muted">Stock optimal sur l\'ensemble des titres.</td></tr>'}</tbody></table></div></div>`;
   trendChart($('#cTrend'), st.monthly, st.forecast, st.by_owner_month);
   donut($('#cOwner'), st.by_owner.map((o, i) => ({ label: o.label, value: o.revenue, color: o.color })));
   hbars($('#cTop'), st.top, 'qty', nf, r => eur(r.revenue));
   hbars($('#cCat'), st.by_category); hbars($('#cPub'), st.by_publisher.slice(0, 6));
   const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']; const wd = {}; st.weekday.forEach(w => wd[w.d] = w.revenue);
-  hbars($('#cWd'), [1, 2, 3, 4, 5, 6, 0].map(d => ({ label: days[d], revenue: wd[d] || 0 })));
+  hbars($('#cWd'), [0, 1, 2, 3, 4, 5, 6].map(d => ({ label: days[d], revenue: wd[d] || 0 })));
   hbars($('#cPay'), st.payments.map(p => ({ label: p.label, n: p.n })), 'n', nf);
+  hbars($('#cAge'), (st.by_age || []).map(a => ({ label: a.label, revenue: a.revenue, n: a.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
+  hbars($('#cGen'), (st.by_gender || []).map(g => ({ label: g.label, revenue: g.revenue, n: g.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
+  hbars($('#cStar'), (st.by_star || []).map(s => ({ label: s.label, revenue: s.revenue, n: s.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
 };
 
 /* ---- Caisse ---- */
@@ -259,9 +272,9 @@ VIEWS.pos = async () => {
 
             <div style="text-align:center;padding:12px;background:#fff;border-radius:12px;display:inline-block;margin:0 auto">
               ${pairingUrl ? `
-                <img src="/api/qr?data=${encodeURIComponent(pairingUrl)}" alt="QR Code" style="display:block;width:200px;height:200px">
+                <img src="/api/qr?data=${encodeURIComponent(pairingUrl)}" alt="QR Code" style="display:block;width:clamp(160px, 28vw, 220px);height:clamp(160px, 28vw, 220px);margin:0 auto">
               ` : `
-                <div style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;color:#666">
+                <div style="width:clamp(160px, 28vw, 220px);height:clamp(160px, 28vw, 220px);display:flex;align-items:center;justify-content:center;color:#666;margin:0 auto">
                   <button class="btn good sm" id="btnGenPair">Générer le QR Code (5 min)</button>
                 </div>
               `}
@@ -348,8 +361,56 @@ VIEWS.pos = async () => {
     <div class="books" id="books"></div></div>
     <div class="card cart" id="cart"><h3>Panier <button class="btn ghost sm" id="clear">Vider</button></h3><div class="cart-items" id="items"></div>
     <div class="total"><span>Total</span><b id="tot">0 €</b></div>
-    <div class="row" style="margin-bottom:10px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
-    <button class="btn good" id="valid" style="padding:13px;font-size:15px"><svg class="ico sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Valider la vente</button></div></div>`;
+    <div class="row" style="margin-bottom:8px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
+    
+    <div class="card" style="padding:10px;margin-bottom:10px;background:var(--panel2);border:1px solid var(--line)">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Profil client (statistique)</span>
+        <button type="button" class="btn sm ghost demo-btn" id="btnStar" data-star="0" style="padding:2px 8px!important;font-weight:700">⭐ Serviteur STAR</button>
+      </div>
+      <div class="row" style="gap:6px;margin-bottom:6px" id="demoGender">
+        <button type="button" class="btn sm ghost demo-btn on" data-g="">Indéfini</button>
+        <button type="button" class="btn sm ghost demo-btn" data-g="Femme">Femme</button>
+        <button type="button" class="btn sm ghost demo-btn" data-g="Homme">Homme</button>
+      </div>
+      <div class="row" style="gap:6px" id="demoAge">
+        <button type="button" class="btn sm ghost demo-btn on" data-a="">Indéfini</button>
+        <button type="button" class="btn sm ghost demo-btn" data-a="Enfant / Ado">Ado (&lt;18)</button>
+        <button type="button" class="btn sm ghost demo-btn" data-a="Jeune adulte">18-29</button>
+        <button type="button" class="btn sm ghost demo-btn" data-a="Adulte">30-59</button>
+        <button type="button" class="btn sm ghost demo-btn" data-a="Senior">60+</button>
+      </div>
+    </div>
+
+    <button class="btn good" id="valid" style="padding:13px;font-size:15px"><svg class="ico sm" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Valider la vente <span class="kbd-hint" style="margin-left:8px;background:rgba(0,0,0,0.2);border-color:rgba(255,255,255,0.3);color:#fff">F12</span></button></div></div>`;
+  
+  let curGender = '';
+  let curAge = '';
+  let curStar = 0;
+  const btnStar = $('#btnStar');
+  if (btnStar) {
+    btnStar.onclick = () => {
+      curStar = curStar ? 0 : 1;
+      btnStar.classList.toggle('on', !!curStar);
+      btnStar.style.background = curStar ? '#e6a73c' : '';
+      btnStar.style.borderColor = curStar ? '#e6a73c' : '';
+      btnStar.style.color = curStar ? '#000' : '';
+    };
+  }
+  $('#demoGender').onclick = e => {
+    const b = e.target.closest('button[data-g]');
+    if (b) {
+      $('#demoGender').querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
+      curGender = b.dataset.g;
+    }
+  };
+  $('#demoAge').onclick = e => {
+    const b = e.target.closest('button[data-a]');
+    if (b) {
+      $('#demoAge').querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
+      curAge = b.dataset.a;
+    }
+  };
   const draw = () => {
     const q = $('#q').value.trim().toLowerCase(), ow = $('#fOwner').value, ins = $('#inStock').checked;
     const list = S.books.filter(b => (!q || (b.title + ' ' + (b.series || '') + ' ' + b.code + ' ' + (b.author || '')).toLowerCase().includes(q))
@@ -362,16 +423,48 @@ VIEWS.pos = async () => {
   const got = (l, bid) => Object.entries(l.alloc).filter(([k]) => k.startsWith(bid + '|')).reduce((s, [, v]) => s + v, 0);
   const complete = l => comps(l).every(c => got(l, c.book_id) === c.need);
   const add = id => { const l = S.cart.find(x => x.id === id); if (l) l.qty++; else { const b = S.books.find(x => x.id === id); S.cart.push({ id, qty: 1, price: b.price, alloc: {} }) } cart() };
+
+  const updatePayDropdown = () => {
+    const paySel = $('#pay');
+    if (!paySel) return;
+    const curVal = paySel.value;
+    const usedOwners = new Set();
+    for (const l of S.cart) {
+      const b = S.books.find(x => x.id === l.id);
+      const allLots = b.is_pack ? (b.items || []).flatMap(i => i.lots) : (b.lots || []);
+      for (const [k, q] of Object.entries(l.alloc)) {
+        if (q > 0) {
+          const [, lid] = k.split('|');
+          const lot = allLots.find(x => x.id === +lid);
+          if (lot && lot.owner) usedOwners.add(lot.owner.trim().toLowerCase());
+        }
+      }
+    }
+    const hasNonCR = Array.from(usedOwners).some(o => o !== 'cité royale');
+    const allPayOpts = S.options.payment || [];
+    const availableOpts = allPayOpts.filter(p => {
+      const isPaypal = p.label.toLowerCase().includes('paypal');
+      if (isPaypal && hasNonCR) return false;
+      return true;
+    });
+
+    paySel.innerHTML = availableOpts.map(p => `<option value="${esc(p.label)}" ${p.label === curVal ? 'selected' : ''}>${esc(p.label)}</option>`).join('') || '<option value="Espèces">Espèces</option>';
+    if (curVal.toLowerCase().includes('paypal') && hasNonCR) {
+      paySel.value = availableOpts[0] ? availableOpts[0].label : 'Espèces';
+    }
+  };
+
   const cart = () => {
     const el = $('#items');
     el.innerHTML = S.cart.map((l, i) => { const b = S.books.find(x => x.id === l.id); return `<div class="ci" style="grid-template-columns:1fr"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div class="t">${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}</div>
       <div class="qty"><button data-i="${i}" data-d="-1">−</button><b>${l.qty}</b><button data-i="${i}" data-d="1">+</button></div></div>
       <div class="row" style="justify-content:flex-end"><span class="muted">Prix</span><input class="pr" type="number" step="0.5" value="${l.price}" data-p="${i}"> €</div>
       ${comps(l).map(c => { const g = got(l, c.book_id), ok = g === c.need; return `<div style="padding:8px 10px;border-radius:10px;background:var(--panel2);border:1px solid ${ok ? 'var(--good)' : 'var(--warn)'}"><div class="row" style="justify-content:space-between;font-size:12px"><span>${b.is_pack ? esc(c.title) : 'Origine des exemplaires'}</span><b style="color:${ok ? 'var(--good)' : 'var(--warn)'}">${g}/${c.need} ${ok ? 'complet' : 'à répartir'}</b></div>
-        ${c.lots.map(t => `<div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="chip"><i style="background:${t.color}"></i>${esc(t.owner)} · ${t.date} · dispo ${t.remaining}</span><span class="row" style="gap:4px;flex-wrap:nowrap"><input type="number" min="0" max="${t.remaining}" style="width:56px;padding:4px 6px" value="${l.alloc[c.book_id + '|' + t.id] || 0}" data-a="${i}" data-k="${c.book_id}|${t.id}" data-max="${t.remaining}"><button class="btn ghost sm" data-fill="${i}" data-k="${c.book_id}|${t.id}" data-b="${c.book_id}" data-max="${t.remaining}" data-need="${c.need}">Max</button></span></div>`).join('') || '<div class="muted" style="font-size:12px;margin-top:6px">Aucun lot en stock.</div>'}
-        <div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="muted" style="font-size:12px">Hors stock (non tracé)</span><input type="number" min="0" style="width:56px;padding:4px 6px" value="${l.alloc[c.book_id + '|none'] || 0}" data-a="${i}" data-k="${c.book_id}|none"></div></div>` }).join('')}</div>`}).join('') ||
+        ${c.lots.map(t => `<div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="chip"><i style="background:${t.color}"></i>${esc(t.owner)} · ${t.date} · dispo ${t.remaining}</span><span class="row" style="gap:4px;flex-wrap:nowrap"><input type="number" min="0" max="${t.remaining}" style="width:clamp(48px, 5vw, 68px);padding:4px 6px" value="${l.alloc[c.book_id + '|' + t.id] || 0}" data-a="${i}" data-k="${c.book_id}|${t.id}" data-max="${t.remaining}"><button class="btn ghost sm" data-fill="${i}" data-k="${c.book_id}|${t.id}" data-b="${c.book_id}" data-max="${t.remaining}" data-need="${c.need}">Max</button></span></div>`).join('') || '<div class="muted" style="font-size:12px;margin-top:6px">Aucun lot en stock.</div>'}
+        <div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="muted" style="font-size:12px">Hors stock (non tracé)</span><input type="number" min="0" style="width:clamp(48px, 5vw, 68px);padding:4px 6px" value="${l.alloc[c.book_id + '|none'] || 0}" data-a="${i}" data-k="${c.book_id}|none"></div></div>` }).join('')}</div>`}).join('') ||
       '<div class="empty"><svg class="ico" style="width:28px;height:28px;margin-bottom:8px" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg><br>Glissez un livre ici<br>ou cliquez sur une carte</div>';
     $('#tot').textContent = eur(S.cart.reduce((s, l) => s + l.qty * l.price, 0));
+    updatePayDropdown();
   };
   $('#q').oninput = $('#fOwner').onchange = $('#inStock').onchange = draw;
   $('#q').onkeydown = e => { if (e.key === 'Enter') { const q = $('#q').value.trim(); const b = S.books.find(x => x.code === q); if (b) { add(b.id); $('#q').value = ''; draw() } } };
@@ -395,10 +488,36 @@ VIEWS.pos = async () => {
     if (!S.cart.length) return toast('Panier vide', 'warn');
     const bad = S.cart.find(l => !complete(l));
     if (bad) return toast('Indiquez l\'origine de chaque exemplaire avant de valider (cadres orange).', 'warn');
-    const r = await api('/api/sales', 'POST', { date: $('#sdate').value, payment: $('#pay').value, lines: S.cart.map(l => ({ book_id: l.id, qty: l.qty, unit_price: l.price,
-      allocations: Object.entries(l.alloc).filter(([, q]) => q > 0).map(([k, q]) => { const [bid, lid] = k.split('|'); return { book_id: +bid, lot_id: lid === 'none' ? null : +lid, qty: q } }) })) });
+    const payVal = $('#pay').value;
+    const isPaypal = payVal.toLowerCase().includes('paypal');
+    if (isPaypal) {
+      for (const l of S.cart) {
+        const b = S.books.find(x => x.id === l.id);
+        const allLots = b.is_pack ? (b.items || []).flatMap(i => i.lots) : (b.lots || []);
+        for (const [k, q] of Object.entries(l.alloc)) {
+          if (q > 0) {
+            const [, lid] = k.split('|');
+            const lot = allLots.find(x => x.id === +lid);
+            if (lot && lot.owner.trim().toLowerCase() !== 'cité royale') {
+              return toast(`Le paiement PayPal POS est exclusivement réservé aux livres de Cité Royale. « ${lot.owner} » détecté.`, 'err');
+            }
+          }
+        }
+      }
+    }
+    const r = await api('/api/sales', 'POST', {
+      date: $('#sdate').value,
+      payment: payVal,
+      customer_gender: curGender || null,
+      customer_age_group: curAge || null,
+      is_star: curStar ? 1 : 0,
+      lines: S.cart.map(l => ({
+        book_id: l.id, qty: l.qty, unit_price: l.price,
+        allocations: Object.entries(l.alloc).filter(([, q]) => q > 0).map(([k, q]) => { const [bid, lid] = k.split('|'); return { book_id: +bid, lot_id: lid === 'none' ? null : +lid, qty: q } })
+      }))
+    });
     toast(`Vente enregistrée : ${eur(r.total)}`);
-    S.cart = []; await loadRef(); draw(); cart();
+    S.cart = []; curGender = ''; curAge = ''; curStar = 0; await loadRef(); draw(); cart();
   });
   draw(); cart();
 };
@@ -408,7 +527,7 @@ VIEWS.stock = async () => {
   $('#topActions').innerHTML = '<button class="btn" id="newLot">＋ Réception de stock</button>';
   $('#view').innerHTML = `<div class="toolbar"><input class="search" id="q" placeholder="Filtrer…"><select id="fo"><option value="">Toutes origines</option>${S.owners.map(o => `<option>${esc(o.name)}</option>`).join('')}</select>
   <select id="fs"><option value="">Tout le stock</option><option value="low">Stock bas</option><option value="out">Ruptures</option><option value="ok">Disponibles</option></select></div>
-  <div class="card" style="padding:0"><div class="scroll" style="max-height:calc(100vh - 220px);overflow:auto"><table><thead><tr><th>Titre</th><th>Code</th><th>Origine du stock</th><th class="num">Prix</th><th class="num">Valeur</th><th class="num">Stock</th></tr></thead><tbody id="tb"></tbody></table></div></div>`;
+  <div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Titre</th><th>Code</th><th>Origine du stock</th><th class="num">Prix</th><th class="num">Valeur</th><th class="num">Stock</th></tr></thead><tbody id="tb"></tbody></table></div></div>`;
   const draw = () => {
     const q = $('#q').value.toLowerCase(), fo = $('#fo').value, fs = $('#fs').value;
     const l = S.books.filter(b => (!q || (b.title + b.code + (b.series || '') + (b.publisher || '')).toLowerCase().includes(q)) && (!fo || b.by_owner.some(o => o.owner === fo)) &&
@@ -439,9 +558,10 @@ async function lotsModal(id) {
   if (b.is_pack) return packModal(b);
   const lots = await api(`/api/books/${id}/lots`);
   modal(`<h2>${esc(b.title)}</h2><p class="muted" style="margin-bottom:12px">${esc(b.code)} · prix ${eur(b.price)} · seuil ${b.min_stock}</p>
-  <table><thead><tr><th>Date</th><th>Origine</th><th class="num">Reçu</th><th class="num">Restant</th><th>Règle</th><th></th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>Date</th><th>Origine</th><th class="num">Reçu</th><th class="num">Restant</th><th>Règle</th><th></th></tr></thead><tbody>
   ${lots.map(l => `<tr><td>${l.date}</td><td><span class="chip"><i style="background:${l.color}"></i>${esc(l.owner)}</span></td><td class="num">${l.qty_in}</td><td class="num"><b>${l.remaining}</b></td>
-  <td class="muted">${l.unit_cost != null ? 'acquis ' + eur(l.unit_cost) + '/u' : (l.reverse_pct ?? l.o_pct) + ' % reversé'}</td><td class="num"><button class="btn ghost sm" data-adj="${l.id}">Ajuster / Retour</button></td></tr>`).join('') || '<tr><td colspan=6 class="muted">Aucune entrée</td></tr>'}</tbody></table>
+  <td class="muted">${l.unit_cost != null ? 'acquis ' + eur(l.unit_cost) + '/u' : (l.reverse_pct ?? l.o_pct) + ' % reversé'}</td><td class="num"><button class="btn ghost sm" data-adj="${l.id}">Ajuster / Retour</button></td></tr>`).join('') || '<tr><td colspan=6 class="muted">Aucune entrée</td></tr>'}</tbody></table></div>
+
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Fermer</button><button class="btn" id="add">＋ Réception</button></div>`, m => {
     $('#add', m).onclick = () => lotForm(id);
     m.onclick = safe(async e => {
@@ -478,7 +598,7 @@ function bookForm(b = {}) {
 function packModal(p) {
   let items = (p.items || []).map(i => ({ ...i }));
   modal(`<h2><svg class="ico" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg> ${esc(p.title)}</h2><p class="muted" style="margin-bottom:10px">Glissez des livres dans la composition. Le prix du pack (${eur(p.price)}) est réparti sur les composants au prorata de leurs prix publics.</p>
-  <div class="grid g-eq"><div><input id="pq" class="search" placeholder="Chercher un livre…" style="width:100%;margin-bottom:8px"><div id="pl" style="max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:5px"></div></div>
+  <div class="grid g-eq"><div><input id="pq" class="search" placeholder="Chercher un livre…" style="width:100%;margin-bottom:8px"><div id="pl" style="max-height:clamp(180px, 32vh, 360px);overflow:auto;display:flex;flex-direction:column;gap:5px"></div></div>
   <div><div class="packzone" id="pz"></div><p class="muted" style="margin-top:8px" id="pinfo"></p></div></div>
   <div class="actions"><button class="btn ghost" onclick="closeModal()">Fermer</button><button class="btn" id="ok">Enregistrer la composition</button></div>`, m => {
     const phys = S.books.filter(b => !b.is_pack);
@@ -501,7 +621,7 @@ function packModal(p) {
 VIEWS.catalog = async () => {
   $('#topActions').innerHTML = '<div class="row"><button class="btn ghost" id="np"><svg class="ico sm" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg> Nouveau pack</button><button class="btn" id="nb">＋ Nouveau livre</button></div>';
   $('#nb').onclick = () => bookForm(); $('#np').onclick = () => bookForm({ is_pack: 1, category: 'Pack', code: 'PACK-' + String(S.books.filter(b => b.is_pack).length + 1).padStart(3, '0') });
-  $('#view').innerHTML = `<div class="toolbar"><input class="search" id="q" placeholder="Rechercher…"></div><div class="card" style="padding:0"><div class="scroll" style="max-height:calc(100vh - 220px);overflow:auto"><table><thead><tr><th>Titre</th><th>Code</th><th>Auteur</th><th>Éditeur</th><th>Type</th><th class="num">Prix</th><th></th></tr></thead><tbody id="tb"></tbody></table></div></div>`;
+  $('#view').innerHTML = `<div class="toolbar"><input class="search" id="q" placeholder="Rechercher…"></div><div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Titre</th><th>Code</th><th>Auteur</th><th>Éditeur</th><th>Type</th><th class="num">Prix</th><th></th></tr></thead><tbody id="tb"></tbody></table></div></div>`;
   const draw = () => {
     const q = $('#q').value.toLowerCase();
     $('#tb').innerHTML = S.books.filter(b => !q || (b.title + b.code + (b.author || '') + (b.publisher || '') + (b.series || '')).toLowerCase().includes(q)).map(b => `<tr><td>${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)} ${b.volume ? `<span class="muted">Vol. ${esc(b.volume)}</span>` : ''}${b.is_pack ? `<div class="muted" style="font-size:12px">${(b.items || []).map(i => i.qty + '× ' + esc(i.title)).join(' + ') || 'composition vide'}</div>` : ''}</td><td class="muted">${esc(b.code)}</td><td>${esc(b.author || '')}</td><td>${esc(b.publisher || '')}</td><td>${esc(b.type || '')}</td><td class="num">${eur(b.price)}</td>
@@ -514,8 +634,8 @@ VIEWS.catalog = async () => {
 /* ---- Ventes ---- */
 VIEWS.sales = async () => {
   const rows = await api('/api/sales?limit=500');
-  $('#view').innerHTML = `<div class="card" style="padding:0"><div class="scroll" style="max-height:calc(100vh - 150px);overflow:auto"><table><thead><tr><th>Date</th><th>Détail</th><th>Paiement</th><th>Libraire</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
-  ${rows.map(s => `<tr><td>${s.date}</td><td style="max-width:480px">${esc(s.detail)}</td><td><span class="chip">${esc(s.payment)}</span></td><td><span class="chip"><i style="background:var(--a1)"></i>${esc(s.user_name || 'Anonyme')}</span></td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`).join('') || '<tr><td colspan=7 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
+  $('#view').innerHTML = `<div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Détail</th><th>Paiement</th><th>Libraire</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
+  ${rows.map(s => `<tr><td>${s.date}</td><td class="td-wrap">${esc(s.detail)}</td><td><span class="chip">${esc(s.payment)}</span></td><td><span class="chip"><i style="background:var(--a1)"></i>${esc(s.user_name || 'Anonyme')}</span></td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`).join('') || '<tr><td colspan=7 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
   $('#view').onclick = safe(async e => { const b = e.target.closest('button[data-id]'); if (b && confirm('Annuler cette vente ? Le stock sera restitué.')) { await api(`/api/sales/${b.dataset.id}`, 'DELETE'); toast('Vente annulée'); go('sales') } });
 };
 
@@ -524,34 +644,34 @@ VIEWS.treasury = async () => {
   const [tr, os] = await Promise.all([api('/api/treasury'), api('/api/settlements')]);
   $('#topActions').innerHTML = `
     <div class="row">
-      <button class="btn good" id="btnDeposit"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg> Déposer argent en caisse</button>
-      <button class="btn ghost" id="btnWithdraw"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg> Sortie / Remboursement caisse</button>
+      <button class="btn good" id="btnDeposit"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg> Déposer argent en caisse ICC</button>
+      <button class="btn ghost" id="btnWithdraw"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg> Sortie / Remboursement caisse ICC</button>
     </div>
   `;
 
   $('#view').innerHTML = `
-    <div class="grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    <div class="grid g4">
       <div class="card" style="border-top:4px solid var(--good)">
-        <div class="muted">Espèces dans le tiroir-caisse</div>
+        <div class="muted">Tiroir-Caisse physique (ICC Rennes)</div>
         <div class="big" style="color:var(--good);margin-top:6px">${eur(tr.cash_in_drawer)}</div>
-        <div class="muted" style="font-size:11px;margin-top:4px">Ventes directes (${eur(tr.sales_cash)}) + Dépôts (${eur(tr.deposits_cash)}) - Sorties (${eur(tr.withdrawals_cash)})</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Espèces directes ICC (${eur(tr.sales_cash)}) + Dépôts (${eur(tr.deposits_cash)}) - Sorties (${eur(tr.withdrawals_cash)})</div>
       </div>
       <div class="card" style="border-top:4px solid #ffb454">
-        <div class="muted">Ventes PayPal POS (Cité Royale)</div>
-        <div class="big" style="color:#ffb454;margin-top:6px">${eur((tr.sales_by_pay.find(p => p.payment.toLowerCase().includes('paypal')) || {}).total || 0)}</div>
-        <div class="muted" style="font-size:11px;margin-top:4px">Encaissé directement sur la borne Cité Royale</div>
-      </div>
-      <div class="card" style="border-top:4px solid var(--a2)">
-        <div class="muted">Ventes Wero (Comptes libraires)</div>
-        <div class="big" style="color:var(--a2);margin-top:6px">${eur((tr.sales_by_pay.find(p => p.payment.toLowerCase().includes('wero')) || {}).total || 0)}</div>
-        <div class="muted" style="font-size:11px;margin-top:4px">Argent reçu sur comptes perso à déposer en caisse</div>
+        <div class="muted">Borne PayPal POS (Cité Royale 100%)</div>
+        <div class="big" style="color:#ffb454;margin-top:6px">${eur(tr.cr_paypal_total || 0)}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">100% encaissé directement chez Cité Royale (exclu de la caisse)</div>
       </div>
       <div class="card" style="border-top:4px solid var(--warn)">
-        <div class="muted">Total à régulariser en caisse</div>
+        <div class="muted">À régulariser sur PayPal POS (Cité Royale)</div>
+        <div class="big" style="color:${(tr.cr_non_paypal_total || 0) > 0.005 ? 'var(--warn)' : 'var(--good)'};margin-top:6px">${eur(tr.cr_non_paypal_total || 0)}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Cité Royale payée hors PayPal : le libraire doit payer sur la borne</div>
+      </div>
+      <div class="card" style="border-top:4px solid var(--a2)">
+        <div class="muted">À déposer en caisse locale (ICC Rennes)</div>
         <div class="big" style="color:${tr.user_balances.some(u => u.net_to_deposit > 0.005) ? 'var(--warn)' : 'var(--good)'};margin-top:6px">
           ${eur(tr.user_balances.reduce((s, u) => s + Math.max(0, u.net_to_deposit), 0))}
         </div>
-        <div class="muted" style="font-size:11px;margin-top:4px">Somme due par les libraires ayant reçu des Wero</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Somme due par les libraires ayant perçu des Wero ICC</div>
       </div>
     </div>
 
@@ -559,21 +679,21 @@ VIEWS.treasury = async () => {
     <div class="card" style="margin-bottom:16px">
       <h3>Balance &amp; Traçabilité par Libraire</h3>
       <p class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.6">
-        Lorsqu'un client paye par <b>Wero</b> ou virement personnel, l'argent arrive sur le compte personnel du libraire connecté.<br>
-        Ce tableau indique avec exactitude <b>qui a perçu combien</b> et <b>combien chaque libraire doit déposer dans la caisse physique</b>.<br>
-        <span style="color:var(--a1)">Sécurité &amp; Intégrité : Seul le libraire connecté (<b>${esc(getCurrentUser())}</b>) peut enregistrer ou modifier ses propres opérations.</span>
+        <b>1. Cité Royale</b> : 100% du produit revient à Cité Royale via PayPal POS (CB). Si un client a payé un livre Cité Royale autrement (espèces ou Wero), le libraire connecté <b>doit régulariser en payant lui-même sur la borne PayPal POS (CB)</b>.<br>
+        <b>2. ICC Rennes (Wero)</b> : Les paiements Wero arrivent directement sur le compte personnel du <b>libraire connecté lors de la vente</b>. Ce dernier doit <b>déposer les fonds en espèces dans le tiroir-caisse physique</b> pour régulariser sa balance.<br>
+        <span style="color:var(--a1)">Sécurité &amp; Intégrité : La balance Wero est automatiquement attribuée au libraire connecté (<b>${esc(getCurrentUser())}</b>).</span>
       </p>
-      <table>
+      <div class="table-wrap">
+        <table>
         <thead>
           <tr>
             <th>Libraire</th>
-            <th class="num">Wero perçus sur compte</th>
-            <th class="num">Espèces directes encaissées</th>
-            <th class="num">Ventes PayPal POS</th>
-            <th class="num">Déjà déposé en caisse</th>
+            <th class="num">À régulariser sur PayPal POS<br><span class="muted" style="font-size:10px">(Cité Royale)</span></th>
+            <th class="num">Wero perçus sur compte<br><span class="muted" style="font-size:10px">(ICC Rennes)</span></th>
+            <th class="num">Déjà déposé en tiroir<br><span class="muted" style="font-size:10px">(Caisse ICC)</span></th>
             <th class="num">Remboursé / Retiré</th>
-            <th class="num">Reste à déposer</th>
-            <th class="num">Action</th>
+            <th class="num">Reste à déposer en tiroir<br><span class="muted" style="font-size:10px">(Caisse ICC)</span></th>
+            <th class="num">Action tiroir</th>
           </tr>
         </thead>
         <tbody>
@@ -584,9 +704,12 @@ VIEWS.treasury = async () => {
               <td>
                 <b><span class="chip"><i style="background:${isMe ? 'var(--good)' : 'var(--a1)'}"></i>${esc(u.user_name)} ${isMe ? '(Vous)' : ''}</span></b>
               </td>
-              <td class="num">${eur(u.wero_received)}</td>
-              <td class="num muted">${eur(u.cash_received)}</td>
-              <td class="num muted">${eur(u.paypal_sales)}</td>
+              <td class="num">
+                <b style="color:${u.cr_due_to_paypal > 0.005 ? '#ffb454' : 'var(--good)'}">
+                  ${u.cr_due_to_paypal > 0.005 ? `Payer ${eur(u.cr_due_to_paypal)} sur borne` : 'À jour (0 €)'}
+                </b>
+              </td>
+              <td class="num">${eur(u.icc_wero_received)}</td>
               <td class="num" style="color:var(--good)">${eur(u.deposited)}</td>
               <td class="num muted">${eur(u.withdrawn)}</td>
               <td class="num">
@@ -606,19 +729,21 @@ VIEWS.treasury = async () => {
                 `) : `<span class="muted" style="font-size:11px" title="Connectez-vous avec ce profil pour enregistrer ses opérations">Verrouillé</span>`}
               </td>
             </tr>
-          `}).join('') || '<tr><td colspan=8 class="muted">Aucun libraire enregistré</td></tr>'}
+          `}).join('') || '<tr><td colspan=7 class="muted">Aucun libraire enregistré</td></tr>'}
         </tbody>
       </table>
+      </div>
     </div>
+
 
     <!-- Mouvements et régularisations de caisse -->
     <div class="grid g-eq">
       <div class="card" style="padding:0">
         <div style="padding:16px 18px 10px;border-bottom:1px solid var(--line)">
-          <h3 style="margin:0">Journal des Dépôts &amp; Mouvements de caisse</h3>
-          <p class="muted" style="font-size:12px;margin:4px 0 0">Traçabilité complète des remises d'espèces et régularisations</p>
+          <h3 style="margin:0">Journal des Dépôts &amp; Mouvements de caisse physique (ICC)</h3>
+          <p class="muted" style="font-size:12px;margin:4px 0 0">Traçabilité complète des remises d'espèces et régularisations locales</p>
         </div>
-        <div class="scroll" style="max-height:300px;overflow:auto">
+        <div class="table-wrap" style="max-height:clamp(200px, 34vh, 420px)">
           <table>
             <thead>
               <tr>
@@ -658,7 +783,8 @@ VIEWS.treasury = async () => {
       <div class="card">
         <h3>Encaissements cumulés par canal</h3>
         <p class="muted" style="font-size:12px;margin-bottom:14px">Historique total de tous les paiements enregistrés</p>
-        <table>
+        <div class="table-wrap">
+          <table>
           <thead>
             <tr>
               <th>Mode d'encaissement</th>
@@ -676,6 +802,8 @@ VIEWS.treasury = async () => {
             `).join('') || '<tr><td colspan=3 class="muted">Aucune vente</td></tr>'}
           </tbody>
         </table>
+        </div>
+
 
         <!-- Synthèse globale propriétaire (archives) -->
         <h4 style="margin-top:20px;font-size:13px;color:var(--mut)">Synthèse par origine du stock (Gestion responsables)</h4>
@@ -767,7 +895,7 @@ VIEWS.treasury = async () => {
 VIEWS.orders = async () => {
   $('#topActions').innerHTML = '<button class="btn" id="nr">＋ Nouvelle réservation</button>';
   const rows = await api('/api/reservations');
-  $('#view').innerHTML = `<div class="card" style="padding:0"><table><thead><tr><th>Client</th><th>Téléphone</th><th>Titre</th><th class="num">Qté</th><th>Statut</th><th></th></tr></thead><tbody>
+  $('#view').innerHTML = `<div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>Titre</th><th class="num">Qté</th><th>Statut</th><th></th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.phone || '')}</td><td>${esc(r.title)}</td><td class="num">${r.qty}</td><td><span class="badge ${r.status === 'Servie' ? 'b-ok' : 'b-low'}">${esc(r.status)}</span></td>
   <td class="num"><button class="btn ghost sm" data-s="${r.id}">${r.status === 'Servie' ? 'Rouvrir' : 'Servie'}</button> <button class="btn bad sm" data-d="${r.id}">✕</button></td></tr>`).join('') || '<tr><td colspan=6 class="muted">Aucune réservation</td></tr>'}</tbody></table></div>`;
   $('#nr').onclick = () => modal(`<h2>Réservation</h2><div class="form"><label class="f">Nom<input id="n"></label><label class="f">Téléphone<input id="p"></label><label class="f full">Titre demandé<input id="t" list="dl"></label><datalist id="dl">${S.books.map(b => `<option value="${esc(b.title)}">`).join('')}</datalist><label class="f">Quantité<input id="q" type="number" value="1"></label></div><div class="actions"><button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`, m => {
@@ -788,9 +916,13 @@ VIEWS.data = async () => {
   <div class="card"><h3>Export complet Excel</h3><div class="row"><a class="btn" href="/api/export" download>Exporter tout en Excel (.xlsx)</a></div>
   <p class="muted" style="margin-top:14px;line-height:1.7">Un <b>fichier Excel miroir</b> est synchronisé en continu :<br><code>${esc(info.mirror)}</code><br>Dossier de stockage des archives :<br><code>${esc(info.backups)}</code><br>Base SQLite (WAL mode, transactions atomiques, anti-crash coupure secteur).<br><i>Les sauvegardes horodatées, points de restauration et l'audit sont consultables dans l'onglet <b>Historique &amp; Audit</b>.</i></p></div></div>
 
-  <div class="card" style="margin-top:16px"><h3>Origines du stock &amp; règles de reversement <button class="btn sm" id="no">＋ Ajouter</button></h3><table><thead><tr><th>Nom</th><th>Type</th><th class="num">% reversé</th><th class="num">Ordre (import Excel uniquement)</th><th></th></tr></thead><tbody>
-  ${S.owners.map(o => `<tr><td><span class="chip"><i style="background:${o.color}"></i>${esc(o.name)}</span></td><td>${o.kind === 'maison_mere' ? 'Maison mère (dépôt)' : 'Église locale (acquis)'}</td><td class="num">${o.reverse_pct} %</td><td class="num">${o.priority}</td><td class="num"><button class="btn ghost sm" data-o="${o.id}">Modifier</button></td></tr>`).join('')}</tbody></table>
-  <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>% reversé</b> = part du prix de vente rendue à l'origine (100 = tout le prix revient à la maison mère ; 0 = stock acquis, marge entière gardée). Pour un lot acquis avec marge négociée, indiquez le <i>coût unitaire</i> à la réception du stock. <b>Ordre</b> : n'est utilisé que pour répartir les ventes de l'<i>import Excel historique</i>. En caisse, c'est toujours vous qui choisissez l'origine de chaque exemplaire.</p></div>
+  <div class="card" style="margin-top:16px"><h3>Origines du stock &amp; règles de reversement <button class="btn sm" id="no">＋ Ajouter</button></h3><div class="table-wrap"><table><thead><tr><th>Nom</th><th>Type</th><th class="num">% reversé</th><th class="num">Ordre (import Excel uniquement)</th><th></th></tr></thead><tbody>
+  ${S.owners.map(o => {
+    const isFixed = ['cité royale', 'icc rennes'].includes(o.name.trim().toLowerCase());
+    return `<tr><td><span class="chip"><i style="background:${o.color}"></i>${esc(o.name)}</span> ${isFixed ? '<span class="badge b-ok" style="font-size:10px">Fixe</span>' : ''}</td><td>${o.kind === 'maison_mere' ? 'Maison mère (dépôt)' : 'Église locale (acquis)'}</td><td class="num">${o.reverse_pct} %</td><td class="num">${o.priority}</td><td class="num">${isFixed ? '<span class="muted" style="font-size:12px;font-style:italic">Protégé</span>' : `<button class="btn ghost sm" data-o="${o.id}">Modifier</button>`}</td></tr>`;
+  }).join('')}</tbody></table></div>
+
+  <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>Cité Royale</b> et <b>ICC Rennes</b> sont les 2 origines fondamentales fixes et non modifiables. <b>% reversé</b> = part du prix de vente rendue à l'origine (100 = Cité Royale 100% de reversement ; 0 = stock acquis ICC Rennes). En caisse, <b>PayPal POS</b> est réservé exclusivement aux ouvrages de Cité Royale.</p></div>
   
   <div class="card" style="margin-top:16px">
     <h3>Listes &amp; Paramètres personnalisables (Catégories, Types, Paiements, Éditeurs)</h3>
@@ -835,18 +967,22 @@ VIEWS.data = async () => {
   const dz = $('#drop'); dz.onclick = () => $('#file').click(); $('#file').onchange = e => send(e.target.files[0]);
   dz.ondragover = e => { e.preventDefault(); dz.classList.add('over') }; dz.ondragleave = () => dz.classList.remove('over');
   dz.ondrop = e => { e.preventDefault(); dz.classList.remove('over'); send(e.dataTransfer.files[0]) };
-  $('#bk').onclick = safe(async () => { 
-    await api('/api/backup', 'POST'); 
-    toast('Snapshot de sécurité créé'); 
-    VIEWS.data(); 
-  });
+  const bkBtn = $('#bk');
+  if (bkBtn) {
+    bkBtn.onclick = safe(async () => { 
+      await api('/api/backup', 'POST'); 
+      toast('Snapshot de sécurité créé'); 
+      VIEWS.data(); 
+    });
+  }
   const ownerForm = (o = {}) => modal(`<h2>${o.id ? 'Modifier' : 'Nouvelle'} origine</h2><div class="form"><label class="f full">Nom<input id="n" value="${esc(o.name || '')}"></label>
     <label class="f">Type<select id="k"><option value="maison_mere" ${o.kind === 'maison_mere' ? 'selected' : ''}>Maison mère (dépôt)</option><option value="locale" ${o.kind === 'locale' ? 'selected' : ''}>Église locale (acquis)</option></select></label>
     <label class="f">% reversé<input id="r" type="number" value="${o.reverse_pct ?? 100}"></label><label class="f">Ordre (import Excel uniquement)<input id="p" type="number" value="${o.priority ?? 5}"></label><label class="f">Couleur<input id="c" type="color" value="${o.color || '#6c8cff'}"></label></div>
     <div class="actions"><button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`, m => {
     $('#ok', m).onclick = safe(async () => { const body = { name: $('#n', m).value, kind: $('#k', m).value, reverse_pct: +$('#r', m).value, priority: +$('#p', m).value, color: $('#c', m).value }; o.id ? await api(`/api/owners/${o.id}`, 'PUT', body) : await api('/api/owners', 'POST', body); closeModal(); go('data') });
   });
-  $('#no').onclick = () => ownerForm(); 
+  const noBtn = $('#no');
+  if (noBtn) noBtn.onclick = () => ownerForm(); 
 
   // Modal interactif de renommage / fusion avec calcul d'impact
   const renameOptionModal = async (optId, grpKey, currentLabel) => {
@@ -895,7 +1031,7 @@ VIEWS.data = async () => {
           toast(`Option renommée en « ${val} » (${res.updated_books} livres mis à jour)`, 'ok');
         }
         await loadRef();
-        VIEWS.data();
+        go('data');
       });
     });
   };
@@ -912,23 +1048,23 @@ VIEWS.data = async () => {
         await api('/api/options', 'POST', { group_key: grp, label: val.trim() });
         toast('Option ajoutée');
         await loadRef();
-        VIEWS.data();
+        go('data');
       }
       return;
     }
 
-    const editBtn = e.target.closest('button[data-edit-opt]');
+    const editBtn = e.target.closest('button[data-edit-opt], .btn-chip-action[data-edit-opt]');
     if (editBtn) {
       return renameOptionModal(editBtn.dataset.editOpt, editBtn.dataset.grp, editBtn.dataset.lbl);
     }
 
-    const delBtn = e.target.closest('.tag-x[data-del-opt]');
+    const delBtn = e.target.closest('[data-del-opt]');
     if (delBtn) {
       if (confirm(`Supprimer l'option « ${delBtn.dataset.lbl || ''} » de la liste des choix ? (Les données existantes ne seront pas altérées)`)) {
         await api(`/api/options/${delBtn.dataset.delOpt}`, 'DELETE');
         toast('Option retirée de la liste');
         await loadRef();
-        VIEWS.data();
+        go('data');
       }
       return;
     }
@@ -953,7 +1089,7 @@ VIEWS.audit = async () => {
       Protection anti-corruption : chaque fichier est écrit via un fichier temporaire sécurisé (<code>.tmp</code>).
       Vous pouvez <b>télécharger</b> un fichier pour sauvegarde externe (clé USB), ou <b>restaurer</b> directement l'état de la base à un instant précis (une copie de précaution de l'état actuel est créée automatiquement).
     </p>
-    <div class="scroll" style="max-height:220px;overflow:auto">
+    <div class="table-wrap" style="max-height:clamp(280px, 45vh, 520px)">
       <table>
         <thead>
           <tr>
@@ -967,11 +1103,11 @@ VIEWS.audit = async () => {
         <tbody>
           ${backups.map(b => `
             <tr>
-              <td><b>${esc(b.filename)}</b></td>
-              <td><span class="chip">${b.kind === 'database' ? 'Base SQLite' : 'Classeur Excel'}</span></td>
+              <td class="td-wrap" style="min-width:240px"><b>${esc(b.filename)}</b></td>
+              <td style="white-space:nowrap"><span class="chip">${b.kind === 'database' ? 'Base SQLite' : 'Classeur Excel'}</span></td>
               <td class="num muted">${esc(b.size_human)}</td>
-              <td class="muted">${esc(b.modified)}</td>
-              <td class="num">
+              <td class="muted" style="white-space:nowrap">${esc(b.modified)}</td>
+              <td class="num" style="white-space:nowrap">
                 <a class="btn ghost sm" href="/api/backups/${encodeURIComponent(b.filename)}/download" download="${esc(b.filename)}" title="Télécharger sur clé USB ou disque externe">Télécharger</a>
                 ${b.kind === 'database' ? `<button class="btn bad sm" data-restore="${esc(b.filename)}" title="Restaurer l'état de cette date">Restaurer</button>` : ''}
                 <button class="btn ghost sm" data-del-bk="${esc(b.filename)}" style="color:var(--bad)" title="Supprimer ce fichier">✕</button>
@@ -981,6 +1117,7 @@ VIEWS.audit = async () => {
         </tbody>
       </table>
     </div>
+
   </div>
 
   <div class="card" style="margin-bottom:16px">
@@ -990,8 +1127,8 @@ VIEWS.audit = async () => {
       Vous pouvez <b>annuler</b> (Rollback / Undo) les erreurs d'un simple clic.
     </p>
   </div>
-  <div class="card" style="padding:0">
-    <div class="scroll" style="max-height:calc(100vh - 460px);overflow:auto">
+  <div class="card card-fill" style="padding:0">
+    <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -1011,7 +1148,7 @@ VIEWS.audit = async () => {
               <td><span class="chip"><i style="background:var(--a1)"></i>${esc(l.user_name)}</span></td>
               <td><span class="badge ${l.action === 'INSERT' ? 'b-ok' : l.action === 'DELETE' ? 'b-out' : 'b-low'}">${esc(l.action)}</span></td>
               <td><span class="muted">${esc(l.target_type)}</span></td>
-              <td style="max-width:420px">${esc(l.summary)}</td>
+              <td class="td-wrap">${esc(l.summary)}</td>
               <td>${l.undone ? `<span class="badge b-out">Annulé le ${esc(l.undone_at || '')} par ${esc(l.undone_by || '')}</span>` : '<span class="badge b-ok">Actif</span>'}</td>
               <td class="num">
                 ${!l.undone && l.action !== 'UNDO' ? `<button class="btn ghost sm" data-undo="${l.id}">⤺ Annuler</button>` : ''}
@@ -1069,7 +1206,7 @@ async function userModal() {
   const current = getCurrentUser();
   modal(`<h2>Profils Utilisateurs</h2>
     <p class="muted" style="margin-bottom:14px">Choisissez votre prénom pour signer vos opérations en caisse et vos modifications :</p>
-    <div style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto;margin-bottom:16px">
+    <div style="display:flex;flex-direction:column;gap:8px;max-height:clamp(180px, 36vh, 320px);overflow:auto;margin-bottom:16px">
       ${users.map(u => `
         <div class="row" style="justify-content:space-between;padding:10px 14px;border-radius:12px;background:var(--panel2);border:1px solid ${u.name === current ? 'var(--a1)' : 'var(--line)'}">
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1">
@@ -1177,7 +1314,7 @@ function applyTheme(pref) {
   const btn = $('#btnThemeToggle');
   if (label && btn) {
     if (pref === 'auto') {
-      label.textContent = `Auto (${effective === 'light' ? 'Clair' : 'Sombre'})`;
+      label.textContent = 'Auto';
       btn.title = 'Thème : Aligné sur votre système d\'exploitation (Cliquez pour forcer Clair)';
     } else if (pref === 'light') {
       label.textContent = 'Clair';
@@ -1211,8 +1348,62 @@ window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', ()
   }
 });
 
+/* ---------- Raccourcis clavier globaux (F1 à F12) ---------- */
+const KEY_TO_VIEW = {
+  F1: 'dashboard',
+  F2: 'pos',
+  F3: 'stock',
+  F4: 'catalog',
+  F5: 'sales',
+  F6: 'treasury',
+  F7: 'orders',
+  F8: 'audit',
+  F9: 'data'
+};
+
+document.addEventListener('keydown', e => {
+  // Navigation directe F1 -> F9
+  if (KEY_TO_VIEW[e.key]) {
+    e.preventDefault();
+    go(KEY_TO_VIEW[e.key]);
+    return;
+  }
+
+  // F10 : Basculer le thème (Auto / Clair / Sombre)
+  if (e.key === 'F10') {
+    e.preventDefault();
+    cycleTheme();
+    return;
+  }
+
+  // F11 : Activer / Désactiver le Mode Focus
+  if (e.key === 'F11') {
+    e.preventDefault();
+    toggleFocusMode();
+    return;
+  }
+
+  // F12 : Raccourci rapide d'action (Valider la vente en caisse, ou valider le modal ouvert)
+  if (e.key === 'F12') {
+    e.preventDefault();
+    // 1. Si un modal avec bouton de confirmation #ok ou #mOk est ouvert, on le valide
+    const modalOk = $('#modalRoot #ok, #modalRoot #mOk, #modalRoot #btnConfirmRen, #modalRoot #btnApplyUser');
+    if (modalOk && !modalOk.disabled && modalOk.offsetParent !== null) {
+      modalOk.click();
+      return;
+    }
+    // 2. Sinon, en caisse (POS), déclenche la validation de la vente
+    const validBtn = $('#valid');
+    if (validBtn && validBtn.offsetParent !== null) {
+      validBtn.click();
+      return;
+    }
+  }
+});
+
 applyTheme(getSavedThemePreference());
 updateUserDisplay();
 updateFocusUI();
 go(isFocusMode() ? 'pos' : 'dashboard');
+
 

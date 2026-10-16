@@ -159,7 +159,33 @@ function renderCart() {
   }
 
   const missingLot = cart.some(i => i.lot === undefined);
-  const missingPay = !$('#payMethod').value;
+  
+  // Règle PayPal POS : réservé exclusivement à Cité Royale
+  const hasNonCR = cart.some(i => {
+    if (i.lot === 'none') return true;
+    if (i.lot !== undefined) {
+      const lot = (i.book.lots || []).find(x => x.id === i.lot);
+      if (lot && (lot.owner || '').trim().toLowerCase() !== 'cité royale') return true;
+    }
+    return false;
+  });
+
+  const paySelect = $('#payMethod');
+  const curPay = paySelect.value;
+  const filteredPay = payOptions.filter(p => {
+    if (p.toLowerCase().includes('paypal') && hasNonCR) return false;
+    return true;
+  });
+
+  paySelect.replaceChildren(
+    el('option', { value: '', text: '— Mode de paiement —' }),
+    ...filteredPay.map(p => el('option', { value: p, text: p, selected: p === curPay }))
+  );
+  if (curPay.toLowerCase().includes('paypal') && hasNonCR) {
+    paySelect.value = '';
+  }
+
+  const missingPay = !paySelect.value;
   $('#btnValidate').disabled = !cart.length || missingLot || missingPay;
   $('#validHint').textContent = !cart.length ? '' : missingLot ? 'Choisissez l\'origine de chaque livre' : missingPay ? 'Choisissez le mode de paiement' : '';
 }
@@ -168,8 +194,45 @@ $('#payMethod').addEventListener('change', renderCart);
 
 async function loadPayOptions() {
   try { const o = await api('/api/options'); payOptions = (o.payment || []).map(p => p.label); } catch (e) { payOptions = []; }
-  if (!payOptions.length) payOptions = ['Espèces', 'PayPal POS', 'Wero (Compte perso libraire)'];
-  $('#payMethod').replaceChildren(el('option', { value: '', text: '— Mode de paiement —' }), ...payOptions.map(p => el('option', { value: p, text: p })));
+  if (!payOptions.length) payOptions = ['Espèces', 'PayPal POS (CB)', 'Wero'];
+  renderCart();
+}
+
+let mGender = '';
+let mAge = '';
+let mStar = 0;
+
+const mStarBtn = $('#mBtnStar');
+if (mStarBtn) {
+  mStarBtn.addEventListener('click', () => {
+    mStar = mStar ? 0 : 1;
+    mStarBtn.classList.toggle('on', !!mStar);
+    mStarBtn.style.background = mStar ? '#e6a73c' : '';
+    mStarBtn.style.borderColor = mStar ? '#e6a73c' : '';
+    mStarBtn.style.color = mStar ? '#000' : '';
+  });
+}
+
+const mGenEl = $('#mDemoGender');
+if (mGenEl) {
+  mGenEl.addEventListener('click', e => {
+    const b = e.target.closest('button[data-g]');
+    if (b) {
+      mGenEl.querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
+      mGender = b.dataset.g;
+    }
+  });
+}
+
+const mAgeEl = $('#mDemoAge');
+if (mAgeEl) {
+  mAgeEl.addEventListener('click', e => {
+    const b = e.target.closest('button[data-a]');
+    if (b) {
+      mAgeEl.querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
+      mAge = b.dataset.a;
+    }
+  });
 }
 
 $('#btnValidate').addEventListener('click', async () => {
@@ -179,7 +242,11 @@ $('#btnValidate').addEventListener('click', async () => {
     const r = await api('/api/sales', {
       method: 'POST',
       body: {
-        payment: $('#payMethod').value, note: 'Vente mobile',
+        payment: $('#payMethod').value,
+        note: 'Vente mobile',
+        customer_gender: mGender || null,
+        customer_age_group: mAge || null,
+        is_star: mStar ? 1 : 0,
         lines: cart.map(i => ({
           book_id: i.book.id, qty: i.qty, unit_price: i.book.price,
           allocations: [{ book_id: i.book.id, lot_id: i.lot === 'none' ? null : i.lot, qty: i.qty }]
@@ -189,6 +256,15 @@ $('#btnValidate').addEventListener('click', async () => {
     toast('Vente enregistrée : ' + eur(r.total));
     if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     cart = []; $('#payMethod').value = '';
+    mGender = ''; mAge = ''; mStar = 0;
+    if (mStarBtn) {
+      mStarBtn.classList.remove('on');
+      mStarBtn.style.background = '';
+      mStarBtn.style.borderColor = '';
+      mStarBtn.style.color = '';
+    }
+    if (mGenEl) mGenEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', !b.dataset.g));
+    if (mAgeEl) mAgeEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', !b.dataset.a));
   } catch (e) { toast(e.message, 'err'); }
   renderCart();
 });
@@ -716,10 +792,18 @@ async function startCamera(specificDeviceId = null) {
           audio: false
         });
       } catch (e2) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false
-        });
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false
+          });
+        } catch (e3) {
+          // Dernier repli : n'importe quelle caméra vidéo
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        }
       }
     }
 
@@ -728,7 +812,7 @@ async function startCamera(specificDeviceId = null) {
     await video.play();
     camStatus(false);
 
-    videoTrack = stream.getVideoTracks()[0];
+    videoTrack = stream ? stream.getVideoTracks()[0] : null;
 
     // Verrouillage de l'autofocus continu matériel si supporté
     if (videoTrack && videoTrack.applyConstraints) {
@@ -748,7 +832,7 @@ async function startCamera(specificDeviceId = null) {
             torchActive = !torchActive;
             await videoTrack.applyConstraints({ advanced: [{ torch: torchActive }] });
             btnTorch.classList.toggle('on', torchActive);
-          } catch (err) { }
+          } catch (e) { }
         };
       }
     }
@@ -845,10 +929,11 @@ async function startCamera(specificDeviceId = null) {
     }, 110);
 
   } catch (e) {
+    console.error('Camera startup error:', e);
     const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
     camStatus(true, denied ? 'Autorisation caméra refusée' : 'Caméra indisponible',
       denied ? 'Android : touchez le cadenas dans la barre d\'adresse → Autorisations → Appareil photo → Autoriser, puis réessayez.'
-             : 'Aucune caméra utilisable. Utilisez le bouton photo ou la saisie manuelle.');
+             : (e && e.message ? `Erreur caméra : ${e.message}. Touchez "Activer la caméra" pour réessayer.` : 'Aucune caméra utilisable. Utilisez le bouton photo ou la saisie manuelle.'));
   }
 }
 $('#btnCam').addEventListener('click', startCamera);

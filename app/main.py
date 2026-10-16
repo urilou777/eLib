@@ -153,6 +153,9 @@ class SaleIn(BaseModel):
     date: Optional[str] = Field(None, pattern=DATE_PATTERN)
     payment: Optional[str] = Field("Espèces", max_length=60)
     note: Optional[str] = Field(None, max_length=300)
+    customer_gender: Optional[str] = Field(None, max_length=20)
+    customer_age_group: Optional[str] = Field(None, max_length=40)
+    is_star: Optional[int] = 0
     lines: List[LineIn] = Field(min_length=1, max_length=200)
 
 
@@ -504,6 +507,8 @@ def delete_option(opt_id: int, request: Request):
 
 
 # ---------- propriétaires ----------
+FIXED_OWNERS = {"cité royale", "icc rennes"}
+
 @app.get("/api/owners")
 def owners():
     with db.tx() as c:
@@ -512,6 +517,8 @@ def owners():
 
 @app.post("/api/owners")
 def owner_add(o: OwnerIn):
+    if o.name.strip().lower() in FIXED_OWNERS:
+        raise HTTPException(400, f"Le nom « {o.name} » est réservé pour les origines fondamentales.")
     with db.tx() as c:
         c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES(?,?,?,?,?)",
                   (o.name, o.kind, o.reverse_pct, o.priority, o.color))
@@ -521,8 +528,30 @@ def owner_add(o: OwnerIn):
 @app.put("/api/owners/{oid}")
 def owner_upd(oid: int, o: OwnerIn):
     with db.tx() as c:
+        existing = c.execute("SELECT * FROM owners WHERE id=?", (oid,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "Origine introuvable")
+        if existing["name"].strip().lower() in FIXED_OWNERS:
+            raise HTTPException(403, f"L'origine « {existing['name']} » est une origine système fixe non modifiable.")
+        if o.name.strip().lower() in FIXED_OWNERS and o.name.strip().lower() != existing["name"].strip().lower():
+            raise HTTPException(400, f"Le nom « {o.name} » est réservé.")
         c.execute("UPDATE owners SET name=?,kind=?,reverse_pct=?,priority=?,color=? WHERE id=?",
                   (o.name, o.kind, o.reverse_pct, o.priority, o.color, oid))
+    return {"ok": True}
+
+
+@app.delete("/api/owners/{oid}")
+def owner_del(oid: int):
+    with db.tx() as c:
+        existing = c.execute("SELECT * FROM owners WHERE id=?", (oid,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "Origine introuvable")
+        if existing["name"].strip().lower() in FIXED_OWNERS:
+            raise HTTPException(403, f"L'origine « {existing['name']} » est une origine système fixe et ne peut pas être supprimée.")
+        used = c.execute("SELECT 1 FROM lots WHERE owner_id=? LIMIT 1", (oid,)).fetchone()
+        if used:
+            raise HTTPException(400, "Impossible de supprimer une origine associée à des lots de stock existants.")
+        c.execute("DELETE FROM owners WHERE id=?", (oid,))
     return {"ok": True}
 
 
@@ -648,13 +677,31 @@ def lot_adjust(lid: int, a: AdjIn, request: Request):
 @app.post("/api/sales")
 def sale_add(s: SaleIn, request: Request):
     user = require_known_user(request)
+    is_paypal = "paypal" in (s.payment or "").lower()
+    
     with db.tx() as c:
-        sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines], manual=True, user_name=user)
+        # Restriction PayPal POS : réservé exclusivement aux articles appartenant à Cité Royale
+        if is_paypal:
+            for l in s.lines:
+                allocs = l.allocations or []
+                for a in allocs:
+                    if a.lot_id is not None:
+                        ow = c.execute("SELECT o.name FROM lots l JOIN owners o ON o.id=l.owner_id WHERE l.id=?", (a.lot_id,)).fetchone()
+                        if ow and ow["name"].strip().lower() != "cité royale":
+                            raise HTTPException(400, f"Le paiement PayPal POS est exclusivement réservé aux ouvrages de « Cité Royale ». L'article sélectionné provient de « {ow['name']} ».")
+
+        sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines],
+                                    manual=True, user_name=user,
+                                    customer_gender=s.customer_gender,
+                                    customer_age_group=s.customer_age_group,
+                                    is_star=s.is_star or 0)
         total = sum((l.unit_price if l.unit_price is not None else
                      c.execute("SELECT price FROM books WHERE id=?", (l.book_id,)).fetchone()["price"]) * l.qty for l in s.lines)
         db.log_audit(c, user, "INSERT", "sale", sid,
                      f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {s.payment}) par {user}",
-                     snapshot_after={"id": sid, "date": s.date, "total": total, "payment": s.payment, "user_name": user, "lines": [l.dict() for l in s.lines]})
+                     snapshot_after={"id": sid, "date": s.date, "total": total, "payment": s.payment, "user_name": user,
+                                     "customer_gender": s.customer_gender, "customer_age_group": s.customer_age_group,
+                                     "is_star": s.is_star, "lines": [l.dict() for l in s.lines]})
     return {"id": sid, "total": total, "warnings": warns}
 
 
@@ -662,6 +709,7 @@ def sale_add(s: SaleIn, request: Request):
 def sales(limit: int = 200):
     with db.tx() as c:
         return db.rows(c, """SELECT s.id,s.date,s.payment,s.note,COALESCE(s.user_name,'Anonyme') user_name,
+            s.customer_gender, s.customer_age_group, COALESCE(s.is_star, 0) is_star,
             SUM(l.qty*l.unit_price) total, SUM(l.qty) qty,
             GROUP_CONCAT(l.qty||'× '||b.title, ' · ') detail
             FROM sales s JOIN sale_lines l ON l.sale_id=s.id JOIN books b ON b.id=l.book_id
@@ -693,57 +741,101 @@ def treasury_summary():
         # 2. Total des mouvements de caisse enregistrés
         movements = db.rows(c, "SELECT * FROM cash_movements ORDER BY date DESC, id DESC")
         
-        # 3. Calcul de la caisse physique (Espèces)
-        # Entrées en espèces directes des ventes
+        # 3. Calcul de la caisse physique locale (ICC Rennes)
+        # RÈGLE MÉTIER : 100% de Cité Royale revient à Cité Royale et ne va JAMAIS dans la trésorerie / caisse locale.
+        # Seules les ventes en espèces provenant d'exemplaires NON Cité Royale (ex: ICC Rennes) alimentent la caisse physique.
         sales_cash = c.execute("""
-            SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
-            FROM sales s JOIN sale_lines l ON l.sale_id = s.id
-            WHERE s.payment LIKE '%Espèce%'
+            SELECT COALESCE(SUM(a.revenue), 0) s
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            JOIN allocations a ON a.line_id = l.id
+            JOIN owners o ON o.id = a.owner_id
+            WHERE s.payment LIKE '%Espèce%' AND LOWER(TRIM(o.name)) != 'cité royale'
         """).fetchone()["s"]
         
-        # Dépôts d'espèces régularisés en caisse par les libraires (ex: conversion de leurs encaissements Wero)
+        # Dépôts d'espèces régularisés en caisse par les libraires (pour la part ICC Rennes)
         deposits_cash = c.execute("""
             SELECT COALESCE(SUM(amount), 0) s FROM cash_movements WHERE type = 'DEPOSIT' AND channel = 'ESPECES'
         """).fetchone()["s"]
         
-        # Sorties de caisse (remboursements aux libraires qui ont avancé leurs fonds ou retraits)
+        # Sorties de caisse (remboursements aux libraires ou retraits)
         withdrawals_cash = c.execute("""
             SELECT COALESCE(SUM(amount), 0) s FROM cash_movements WHERE type = 'WITHDRAWAL' AND channel = 'ESPECES'
         """).fetchone()["s"]
         
         cash_in_drawer = sales_cash + deposits_cash - withdrawals_cash
+
+        # Total Cité Royale payé directement sur PayPal POS
+        cr_paypal_total = c.execute("""
+            SELECT COALESCE(SUM(a.revenue), 0) s
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            JOIN allocations a ON a.line_id = l.id
+            JOIN owners o ON o.id = a.owner_id
+            WHERE s.payment LIKE '%PayPal%' AND LOWER(TRIM(o.name)) = 'cité royale'
+        """).fetchone()["s"]
+
+        # Total Cité Royale encaissé hors PayPal (que les libraires doivent passer sur PayPal POS)
+        cr_non_paypal_total = c.execute("""
+            SELECT COALESCE(SUM(a.revenue), 0) s
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            JOIN allocations a ON a.line_id = l.id
+            JOIN owners o ON o.id = a.owner_id
+            WHERE s.payment NOT LIKE '%PayPal%' AND LOWER(TRIM(o.name)) = 'cité royale'
+        """).fetchone()["s"]
         
         # 4. Solde & Dettes par utilisateur / libraire
-        # Quels utilisateurs ont encaissé quoi ?
         users = [u["name"] for u in db.rows(c, "SELECT name FROM users ORDER BY name")]
-        # On inclut aussi les noms trouvés dans les ventes ou mouvements
         extra_users = [r["u"] for r in db.rows(c, "SELECT DISTINCT user_name u FROM sales WHERE user_name IS NOT NULL AND user_name != '' UNION SELECT DISTINCT user_name u FROM cash_movements")]
         all_user_names = sorted(list(set(users + extra_users)))
         
         user_balances = []
         for uname in all_user_names:
-            # Ventes encaissées sur le compte perso du libraire (Wero / Virement perso)
+            # Ventes totales encaissées par ce libraire pour Cité Royale hors PayPal POS
+            # (Le libraire doit payer lui-même ce montant sur la borne PayPal POS pour régulariser Cité Royale)
+            cr_due_to_paypal = c.execute("""
+                SELECT COALESCE(SUM(a.revenue), 0) s
+                FROM sales s
+                JOIN sale_lines l ON l.sale_id = s.id
+                JOIN allocations a ON a.line_id = l.id
+                JOIN owners o ON o.id = a.owner_id
+                WHERE s.user_name = ? AND s.payment NOT LIKE '%PayPal%' AND LOWER(TRIM(o.name)) = 'cité royale'
+            """, (uname,)).fetchone()["s"]
+
+            # Ventes ICC Rennes encaissées sur compte personnel (Wero / virement perso)
+            # (Le libraire doit régulariser et déposer ce montant dans la caisse physique)
+            icc_wero_received = c.execute("""
+                SELECT COALESCE(SUM(a.revenue), 0) s
+                FROM sales s
+                JOIN sale_lines l ON l.sale_id = s.id
+                JOIN allocations a ON a.line_id = l.id
+                JOIN owners o ON o.id = a.owner_id
+                WHERE s.user_name = ? AND (s.payment LIKE '%Wero%' OR s.payment LIKE '%perso%') AND LOWER(TRIM(o.name)) != 'cité royale'
+            """, (uname,)).fetchone()["s"]
+
+            # Ventes totales tous canaux Wero (pour information)
             wero_received = c.execute("""
                 SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
                 FROM sales s JOIN sale_lines l ON l.sale_id = s.id
                 WHERE s.user_name = ? AND (s.payment LIKE '%Wero%' OR s.payment LIKE '%perso%')
             """, (uname,)).fetchone()["s"]
             
-            # Ventes où le libraire a encaissé des espèces en main propre
+            # Ventes où le libraire a encaissé des espèces (toutes origines)
             cash_received = c.execute("""
                 SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
                 FROM sales s JOIN sale_lines l ON l.sale_id = s.id
                 WHERE s.user_name = ? AND s.payment LIKE '%Espèce%'
             """, (uname,)).fetchone()["s"]
             
-            # Ventes payées via PayPal POS (borne Cité Royale)
+            # Ventes payées directement via PayPal POS
             paypal_sales = c.execute("""
                 SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
                 FROM sales s JOIN sale_lines l ON l.sale_id = s.id
                 WHERE s.user_name = ? AND s.payment LIKE '%PayPal%'
             """, (uname,)).fetchone()["s"]
             
-            # Montant déjà déposé dans la caisse par ce libraire
+            # Montant déjà déposé dans la caisse physique par ce libraire
             deposited = c.execute("""
                 SELECT COALESCE(SUM(amount), 0) s
                 FROM cash_movements
@@ -757,18 +849,19 @@ def treasury_summary():
                 WHERE user_name = ? AND type = 'WITHDRAWAL'
             """, (uname,)).fetchone()["s"]
             
-            # Dette nette : ce que le libraire a encaissé sur son compte personnel (Wero) ou doit déposer,
-            # moins ce qu'il a déjà déposé dans la caisse physique, plus ce qu'il a retiré.
-            net_to_deposit = wero_received - deposited + withdrawn
+            # Ce que le libraire doit déposer dans la caisse physique de l'église locale (ICC Rennes)
+            net_to_deposit = icc_wero_received - deposited + withdrawn
             
             user_balances.append({
                 "user_name": uname,
+                "cr_due_to_paypal": cr_due_to_paypal,       # À régulariser sur PayPal POS (Cité Royale)
+                "icc_wero_received": icc_wero_received,     # Wero ICC Rennes
                 "wero_received": wero_received,
                 "cash_received": cash_received,
                 "paypal_sales": paypal_sales,
                 "deposited": deposited,
                 "withdrawn": withdrawn,
-                "net_to_deposit": net_to_deposit
+                "net_to_deposit": net_to_deposit            # À déposer dans le tiroir-caisse (ICC Rennes)
             })
             
         return {
@@ -776,6 +869,8 @@ def treasury_summary():
             "sales_cash": sales_cash,
             "deposits_cash": deposits_cash,
             "withdrawals_cash": withdrawals_cash,
+            "cr_paypal_total": cr_paypal_total,
+            "cr_non_paypal_total": cr_non_paypal_total,
             "sales_by_pay": sales_by_pay,
             "user_balances": user_balances,
             "movements": movements
@@ -943,12 +1038,57 @@ def stats(start: Optional[str] = None, end: Optional[str] = None):
         rate = {r["book_id"]: r["q"] / 30 for r in db.rows(c, "SELECT book_id, SUM(qty) q FROM allocations WHERE date>=? GROUP BY book_id", (since,))}
         for b in low:
             b["days_left"] = round(b["stock"] / rate[b["id"]]) if rate.get(b["id"]) else None
+        # Ventes réelles de caisse (hors regroupement journalier Import Excel)
+        pos_sales = c.execute(f"""
+            SELECT COUNT(DISTINCT s.id) n, COALESCE(SUM(l.qty * l.unit_price), 0) rev
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+        """, A).fetchone()
+        pos_nb = pos_sales["n"]
+        pos_rev = pos_sales["rev"]
+        pos_avg_basket = (pos_rev / pos_nb) if pos_nb else 0
+        avg_book_price = (k["rev"] / k["qty"]) if k["qty"] else 0
+
+        # Répartition démographique anonyme (Ventes caisse qualifiées)
+        by_gender = db.rows(c, f"""
+            SELECT COALESCE(customer_gender, 'Non renseigné') label,
+                   COUNT(DISTINCT s.id) n,
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+            GROUP BY label ORDER BY revenue DESC
+        """, A)
+
+        by_age = db.rows(c, f"""
+            SELECT COALESCE(customer_age_group, 'Non renseigné') label,
+                   COUNT(DISTINCT s.id) n,
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+            GROUP BY label ORDER BY revenue DESC
+        """, A)
+
+        by_star = db.rows(c, f"""
+            SELECT CASE WHEN s.is_star = 1 THEN 'Serviteur STAR ⭐' ELSE 'Autre fidèle / Visiteur' END label,
+                   COUNT(DISTINCT s.id) n,
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+            GROUP BY (s.is_star = 1) ORDER BY (s.is_star = 1) DESC
+        """, A)
+
         return {"kpi": {"revenue": k["rev"], "due": k["due"], "margin": k["rev"] - k["due"], "qty": k["qty"],
-                        "sales": nb, "avg_basket": (k["rev"] / nb) if nb else 0,
+                        "sales": nb, "pos_sales": pos_nb, "pos_avg_basket": pos_avg_basket,
+                        "avg_book_price": avg_book_price,
+                        "avg_basket": (k["rev"] / nb) if nb else 0,
                         "stock_value": sv["v"], "stock_units": sv["u"], "due_open": due_open},
                 "monthly": monthly, "by_owner_month": by_owner_month, "forecast": fc,
                 "daily": daily, "top": top, "by_category": by_cat, "by_publisher": by_pub, "by_owner": by_owner,
-                "payments": pay, "weekday": wd, "low_stock": low[:30]}
+                "payments": pay, "weekday": wd, "by_gender": by_gender, "by_age": by_age, "by_star": by_star, "low_stock": low[:30]}
 
 
 # ---------- Excel / sauvegardes ----------
