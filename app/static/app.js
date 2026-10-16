@@ -366,8 +366,9 @@ VIEWS.data = async () => {
   const info = await api('/api/info');
   $('#view').innerHTML = `<div class="grid g-eq"><div class="card"><h3>📥 Importer un fichier Excel</h3><div class="drop" id="drop"><div style="font-size:38px">📄</div><b>Glissez votre fichier .xlsx ici</b><div class="muted">ou cliquez pour parcourir<br>(Catalogue STD, Catalogue PACK, Livraisons, Ventes, Commande)</div></div><input type="file" id="file" accept=".xlsx" hidden>
   <label class="row muted" style="margin-top:12px"><input type="checkbox" id="rep" checked> Remplacer les données actuelles (une copie de sécurité est faite avant)</label><div id="rep-out" style="margin-top:10px"></div></div>
-  <div class="card"><h3>📤 Export &amp; sauvegardes</h3><div class="row"><a class="btn" href="/api/export" download>Exporter tout en Excel</a><button class="btn ghost" id="bk">Sauvegarder maintenant</button></div>
-  <p class="muted" style="margin-top:14px;line-height:1.7">Un <b>fichier Excel miroir</b> est mis à jour automatiquement après chaque modification :<br><code>${esc(info.mirror)}</code><br>Une archive datée (Excel + base) est créée chaque jour dans :<br><code>${esc(info.backups)}</code><br>La base <b>librairie.db</b> (SQLite) est lisible avec LibreOffice Base, DB Browser for SQLite, etc.</p></div></div>
+  <div class="card"><h3>📤 Export complet Excel</h3><div class="row"><a class="btn" href="/api/export" download>Exporter tout en Excel (.xlsx)</a></div>
+  <p class="muted" style="margin-top:14px;line-height:1.7">Un <b>fichier Excel miroir</b> est synchronisé en continu :<br><code>${esc(info.mirror)}</code><br>Dossier de stockage des archives :<br><code>${esc(info.backups)}</code><br>Base SQLite (WAL mode, transactions atomiques, anti-crash coupure secteur).<br><i>Les sauvegardes horodatées, points de restauration et l'audit sont consultables dans l'onglet <b>Historique &amp; Audit</b>.</i></p></div></div>
+
   <div class="card" style="margin-top:16px"><h3>🏛️ Origines du stock &amp; règles de reversement <button class="btn sm" id="no">＋ Ajouter</button></h3><table><thead><tr><th>Nom</th><th>Type</th><th class="num">% reversé</th><th class="num">Ordre (import Excel uniquement)</th><th></th></tr></thead><tbody>
   ${S.owners.map(o => `<tr><td><span class="chip"><i style="background:${o.color}"></i>${esc(o.name)}</span></td><td>${o.kind === 'maison_mere' ? 'Maison mère (dépôt)' : 'Église locale (acquis)'}</td><td class="num">${o.reverse_pct} %</td><td class="num">${o.priority}</td><td class="num"><button class="btn ghost sm" data-o="${o.id}">Modifier</button></td></tr>`).join('')}</tbody></table>
   <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>% reversé</b> = part du prix de vente rendue à l'origine (100 = tout le prix revient à la maison mère ; 0 = stock acquis, marge entière gardée). Pour un lot acquis avec marge négociée, indiquez le <i>coût unitaire</i> à la réception du stock. <b>Ordre</b> : n'est utilisé que pour répartir les ventes de l'<i>import Excel historique</i>. En caisse, c'est toujours vous qui choisissez l'origine de chaque exemplaire.</p></div>
@@ -401,7 +402,11 @@ VIEWS.data = async () => {
   const dz = $('#drop'); dz.onclick = () => $('#file').click(); $('#file').onchange = e => send(e.target.files[0]);
   dz.ondragover = e => { e.preventDefault(); dz.classList.add('over') }; dz.ondragleave = () => dz.classList.remove('over');
   dz.ondrop = e => { e.preventDefault(); dz.classList.remove('over'); send(e.dataTransfer.files[0]) };
-  $('#bk').onclick = safe(async () => { await api('/api/backup', 'POST'); toast('Sauvegarde créée') });
+  $('#bk').onclick = safe(async () => { 
+    await api('/api/backup', 'POST'); 
+    toast('Snapshot de sécurité créé'); 
+    VIEWS.data(); 
+  });
   const ownerForm = (o = {}) => modal(`<h2>${o.id ? 'Modifier' : 'Nouvelle'} origine</h2><div class="form"><label class="f full">Nom<input id="n" value="${esc(o.name || '')}"></label>
     <label class="f">Type<select id="k"><option value="maison_mere" ${o.kind === 'maison_mere' ? 'selected' : ''}>Maison mère (dépôt)</option><option value="locale" ${o.kind === 'locale' ? 'selected' : ''}>Église locale (acquis)</option></select></label>
     <label class="f">% reversé<input id="r" type="number" value="${o.reverse_pct ?? 100}"></label><label class="f">Ordre (import Excel uniquement)<input id="p" type="number" value="${o.priority ?? 5}"></label><label class="f">Couleur<input id="c" type="color" value="${o.color || '#6c8cff'}"></label></div>
@@ -412,6 +417,7 @@ VIEWS.data = async () => {
   $('#view').onclick = safe(async e => { 
     const b = e.target.closest('button[data-o]'); 
     if (b) return ownerForm(S.owners.find(x => x.id == b.dataset.o));
+    
     const addBtn = e.target.closest('button[data-add-opt]');
     if (addBtn) {
       const grp = addBtn.dataset.addOpt;
@@ -439,16 +445,61 @@ VIEWS.data = async () => {
 
 /* ---- Vue Audit & Historique d'actions ---- */
 VIEWS.audit = async () => {
-  const logs = await api('/api/audit?limit=200');
-  $('#view').innerHTML = `<div class="card" style="margin-bottom:16px">
-    <h3>🛡️ Journal d'audit atomique &amp; Réversibilité</h3>
+  const [logs, backups] = await Promise.all([api('/api/audit?limit=200'), api('/api/backups')]);
+  $('#topActions').innerHTML = `<button class="btn good" id="bk">💾 Créer un snapshot de sécurité maintenant</button>`;
+  const bkBtn = $('#bk');
+  if (bkBtn) bkBtn.onclick = safe(async () => {
+    await api('/api/backup', 'POST');
+    toast('Point de restauration créé');
+    VIEWS.audit();
+  });
+
+  $('#view').innerHTML = `
+  <div class="card" style="margin-bottom:16px">
+    <h3>💾 Sauvegardes &amp; Points de restauration automatiques (${backups.length})</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:10px;line-height:1.6">
+      Protection anti-corruption : chaque fichier est écrit via un fichier temporaire sécurisé (<code>.tmp</code>).
+      Vous pouvez <b>télécharger</b> un fichier pour sauvegarde externe (clé USB), ou <b>restaurer</b> directement l'état de la base à un instant précis (une copie de précaution de l'état actuel est créée automatiquement).
+    </p>
+    <div class="scroll" style="max-height:220px;overflow:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Fichier</th>
+            <th>Type</th>
+            <th class="num">Taille</th>
+            <th>Horodatage</th>
+            <th class="num">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${backups.map(b => `
+            <tr>
+              <td><b>${esc(b.filename)}</b></td>
+              <td><span class="chip">${b.kind === 'database' ? '🗄️ Base SQLite' : '📊 Classeur Excel'}</span></td>
+              <td class="num muted">${esc(b.size_human)}</td>
+              <td class="muted">${esc(b.modified)}</td>
+              <td class="num">
+                <a class="btn ghost sm" href="/api/backups/${encodeURIComponent(b.filename)}/download" download="${esc(b.filename)}" title="Télécharger sur clé USB ou disque externe">⬇ Télécharger</a>
+                ${b.kind === 'database' ? `<button class="btn bad sm" data-restore="${esc(b.filename)}" title="Restaurer l'état de cette date">↺ Restaurer</button>` : ''}
+                <button class="btn ghost sm" data-del-bk="${esc(b.filename)}" style="color:var(--bad)" title="Supprimer ce fichier">🗑️</button>
+              </td>
+            </tr>
+          `).join('') || '<tr><td colspan=5 class="muted">Aucun fichier de sauvegarde pour l\'instant.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h3>🛡️ Journal d'audit atomique &amp; Réversibilité des actions</h3>
     <p class="muted" style="line-height:1.6;font-size:13px">
-      Toutes les opérations d'écriture sur la base de données (création, modification, archivage, vente, ajustement) sont enregistrées de façon horodatée et associées à l'utilisateur actif.
-      Vous pouvez <b>annuler</b> (Rollback / Undo) les opérations erronées d'un simple clic.
+      Toutes les opérations d'écriture sur la base de données sont horodatées et associées au profil actif.
+      Vous pouvez <b>annuler</b> (Rollback / Undo) les erreurs d'un simple clic.
     </p>
   </div>
   <div class="card" style="padding:0">
-    <div class="scroll" style="max-height:calc(100vh - 230px);overflow:auto">
+    <div class="scroll" style="max-height:calc(100vh - 460px);overflow:auto">
       <table>
         <thead>
           <tr>
@@ -481,6 +532,32 @@ VIEWS.audit = async () => {
   </div>`;
 
   $('#view').onclick = safe(async e => {
+    // Restauration d'un fichier de sauvegarde
+    const rst = e.target.closest('button[data-restore]');
+    if (rst) {
+      const fn = rst.dataset.restore;
+      if (confirm(`ATTENTION : Voulez-vous restaurer la base à partir de « ${fn} » ?\n(Une sauvegarde de l'état actuel sera automatiquement créée avant)`)) {
+        const res = await api(`/api/backups/${encodeURIComponent(fn)}/restore`, 'POST');
+        toast(`Base restaurée avec succès ! (Précaution : ${res.pre_backup})`);
+        await loadRef();
+        VIEWS.audit();
+      }
+      return;
+    }
+    
+    // Suppression d'un fichier de sauvegarde
+    const delBk = e.target.closest('button[data-del-bk]');
+    if (delBk) {
+      const fn = delBk.dataset.delBk;
+      if (confirm(`Supprimer définitivement le fichier « ${fn} » ?`)) {
+        await api(`/api/backups/${encodeURIComponent(fn)}`, 'DELETE');
+        toast('Fichier supprimé');
+        VIEWS.audit();
+      }
+      return;
+    }
+
+    // Annulation unitaire d'audit
     const btn = e.target.closest('button[data-undo]');
     if (btn) {
       if (confirm('Voulez-vous vraiment annuler cette action et restaurer l\'état précédent ?')) {
@@ -489,6 +566,7 @@ VIEWS.audit = async () => {
         await loadRef();
         VIEWS.audit();
       }
+      return;
     }
   });
 };

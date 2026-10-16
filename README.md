@@ -33,11 +33,15 @@ Dépôt GitHub : [https://github.com/urilou777/librairi-e](https://github.com/ur
 5. **Réservations / Commandes clients** :
    - Suivi des demandes spécifiques avec nom, téléphone et statut (En attente / Servie).
 
-6. **Infrastructure Excel & SQLite (Zero Cloud)** :
-   - **Base SQLite locale** (`data/librairie.db`), consultable à tout moment avec **LibreOffice Base** ou DB Browser for SQLite.
-   - **Fichier Excel miroir automatique** (`data/Bibliotheque_miroir.xlsx`) recalculé et mis à jour après chaque transaction.
-   - **Sauvegardes quotidiennes** horodatées (`data/sauvegardes/`) de la base et du classeur Excel.
-   - Import/Export complet compatible avec la structure du fichier Excel d'origine.
+6. **Résilience Maximale & Anti-Corruption (Zero Cloud, Anti-Crash)** :
+   - **Mode SQLite WAL (Write-Ahead Logging)** : protège la base contre les coupures brutales de courant, fermetures inopinées du logiciel ou accès simultanés.
+   - **Sauvegardes à chaud non bloquantes (`sqlite3.backup()`)** : snapshots complets et cohérents en mémoire sans verrouiller la base.
+   - **Écritures atomiques avec fichiers temporaires (`.tmp`) et permutation atomique (`os.replace`)** : aucun risque d'avoir un fichier tronqué ou corrompu sur disque en cas d'interruption.
+   - **Gestionnaire visuel de sauvegardes** (dans *Données & Excel*) :
+     - Liste de tous les snapshots de base (`.db`) et classeurs Excel (`.xlsx`).
+     - **Téléchargement** direct d'un clic pour archivage sur clé USB ou disque externe.
+     - **Restauration immédiate (`↺ Restaurer`)** d'un point antérieur (avec création automatique d'une copie de précaution avant restauration).
+     - **Journal d'Audit & Undo** : traçabilité de chaque action par utilisateur et retour arrière direct sur chaque opération unitaire.
 
 ---
 

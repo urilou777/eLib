@@ -88,9 +88,12 @@ CREATE INDEX IF NOT EXISTS ix_audit_timestamp ON audit_logs(timestamp);
 
 
 def connect():
-    c = sqlite3.connect(DB_PATH, check_same_thread=False)
+    c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys=ON")
+    c.execute("PRAGMA journal_mode=WAL")       # Journalisation write-ahead : résistant aux crashs & arrêts brutaux
+    c.execute("PRAGMA synchronous=NORMAL")      # Compromis standard industriel ultra-sûr en mode WAL
+    c.execute("PRAGMA busy_timeout=15000")      # Évite tout blocage en cas d'accès simultané
     return c
 
 
@@ -105,6 +108,27 @@ def tx():
         raise
     finally:
         c.close()
+
+
+def safe_backup_db(target_path):
+    """Effectue une sauvegarde à chaud 100% cohérente et atomique via l'API sqlite3.backup()."""
+    tmp_target = target_path + ".tmp"
+    src = connect()
+    try:
+        dst = sqlite3.connect(tmp_target)
+        try:
+            with dst:
+                src.backup(dst, pages=100)
+        finally:
+            dst.close()
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except OSError:
+                pass
+        os.replace(tmp_target, target_path)
+    finally:
+        src.close()
 
 
 def init():

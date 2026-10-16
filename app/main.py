@@ -24,23 +24,40 @@ _dirty = threading.Event()
 
 
 def _mirror_loop():
-    """Excel toujours à jour en arrière-plan (miroir) + archive quotidienne."""
+    """Excel toujours à jour en arrière-plan + snapshots SQLite et Excel ultra-sécurisés via .tmp et renommage atomique."""
     last_day = None
+    last_hourly_backup = 0
     while True:
-        time.sleep(5)
-        today = date.today().isoformat()
-        if _dirty.is_set() or last_day != today:
+        time.sleep(4)
+        now = datetime.now()
+        today = now.date().isoformat()
+        is_dirty = _dirty.is_set()
+        
+        if is_dirty or last_day != today:
             _dirty.clear()
             try:
+                # 1. Écriture atomique du miroir Excel
                 excel_io.export_workbook(MIRROR)
-                if last_day != today:
-                    shutil.copy(MIRROR, os.path.join(BACKUPS, f"Bibliotheque_{today}.xlsx"))
-                    shutil.copy(db.DB_PATH, os.path.join(BACKUPS, f"librairie_{today}.db"))
-                    last_day = today
-                else:
-                    shutil.copy(MIRROR, os.path.join(BACKUPS, f"Bibliotheque_{today}.xlsx"))
-            except Exception as e:  # ne jamais bloquer l'application
-                print("Miroir Excel:", e)
+                
+                # 2. Sauvegarde SQLite atomique à chaud (anti-corruption même si coupure de courant pendant l'écriture)
+                daily_db = os.path.join(BACKUPS, f"librairie_{today}.db")
+                db.safe_backup_db(daily_db)
+                
+                # 3. Snapshot miroir journalier
+                daily_xl = os.path.join(BACKUPS, f"Bibliotheque_{today}.xlsx")
+                tmp_xl = daily_xl + ".tmp"
+                shutil.copyfile(MIRROR, tmp_xl)
+                os.replace(tmp_xl, daily_xl)
+                
+                # 4. Snapshots glissants récents (toutes les heures en cas d'activité)
+                if time.time() - last_hourly_backup > 3600 or last_day != today:
+                    stamp = now.strftime("%Y%m%d_%H%M")
+                    db.safe_backup_db(os.path.join(BACKUPS, f"librairie_{stamp}.db"))
+                    last_hourly_backup = time.time()
+
+                last_day = today
+            except Exception as e:
+                print("Erreur boucle de sauvegarde résiliente:", e)
 
 
 @app.on_event("startup")
@@ -646,11 +663,92 @@ def export_xlsx():
 
 
 @app.post("/api/backup")
-def backup():
+def backup(request: Request):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    shutil.copy(db.DB_PATH, os.path.join(BACKUPS, f"librairie_{stamp}.db"))
-    excel_io.export_workbook(os.path.join(BACKUPS, f"Bibliotheque_{stamp}.xlsx"))
-    return {"folder": BACKUPS}
+    target_db = os.path.join(BACKUPS, f"librairie_{stamp}.db")
+    db.safe_backup_db(target_db)
+    
+    target_xl = os.path.join(BACKUPS, f"Bibliotheque_{stamp}.xlsx")
+    excel_io.export_workbook(target_xl)
+    
+@app.get("/api/backups")
+def list_backups():
+    """Liste tous les points de restauration existants avec métadonnées."""
+    items = []
+    if os.path.exists(BACKUPS):
+        for fname in os.listdir(BACKUPS):
+            if fname.endswith(".tmp"):
+                continue
+            fpath = os.path.join(BACKUPS, fname)
+            if os.path.isfile(fpath):
+                stat = os.stat(fpath)
+                kind = "database" if fname.endswith(".db") else ("excel" if fname.endswith(".xlsx") else "other")
+                items.append({
+                    "filename": fname,
+                    "kind": kind,
+                    "size_bytes": stat.st_size,
+                    "size_human": f"{stat.st_size / 1024:.1f} Ko" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.2f} Mo",
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(sep=" ", timespec="seconds")
+                })
+    items.sort(key=lambda x: x["modified"], reverse=True)
+    return items
+
+
+@app.get("/api/backups/{filename}/download")
+def download_backup(filename: str):
+    fpath = os.path.join(BACKUPS, filename)
+    if not os.path.exists(fpath) or not os.path.isfile(fpath) or filename.endswith(".tmp"):
+        raise HTTPException(404, "Fichier de sauvegarde introuvable")
+    return FileResponse(fpath, filename=filename)
+
+
+@app.delete("/api/backups/{filename}")
+def delete_backup_file(filename: str, request: Request):
+    fpath = os.path.join(BACKUPS, filename)
+    if not os.path.exists(fpath) or not os.path.isfile(fpath):
+        raise HTTPException(404, "Fichier introuvable")
+    os.remove(fpath)
+    with db.tx() as c:
+        db.log_audit(c, get_current_user(request), "DELETE", "backup", None, f"Suppression fichier de sauvegarde « {filename} »")
+    return {"ok": True}
+
+
+@app.post("/api/backups/{filename}/restore")
+def restore_backup(filename: str, request: Request):
+    """Restaure une base de données de sauvegarde existante avec copie de sécurité préalable."""
+    if not filename.endswith(".db"):
+        raise HTTPException(400, "Seules les sauvegardes de base de données (.db) peuvent être restaurées directement")
+    fpath = os.path.join(BACKUPS, filename)
+    if not os.path.exists(fpath):
+        raise HTTPException(404, "Fichier de sauvegarde introuvable")
+    
+    # 1. Préserver l'état actuel juste avant restauration
+    pre_stamp = datetime.now().strftime("%Y%m%d_%H%M%S_avant_restauration")
+    pre_path = os.path.join(BACKUPS, f"librairie_{pre_stamp}.db")
+    db.safe_backup_db(pre_path)
+    
+    # 2. Remplacer la base de données actuelle
+    # Pour SQLite en mode WAL, écriture dans un .tmp puis remplacement
+    tmp_restore = db.DB_PATH + ".tmp_restore"
+    shutil.copyfile(fpath, tmp_restore)
+    
+    # Supprimer les journaux WAL/SHM actuels s'ils existent
+    for extra in (db.DB_PATH + "-wal", db.DB_PATH + "-shm"):
+        if os.path.exists(extra):
+            try:
+                os.remove(extra)
+            except OSError:
+                pass
+                
+    os.replace(tmp_restore, db.DB_PATH)
+    
+    # Réinitialiser la connexion et tracer
+    with db.tx() as c:
+        db.log_audit(c, get_current_user(request), "RESTORE", "system", None,
+                     f"Restauration du point #{filename} (Sauvegarde de précaution créée: librairie_{pre_stamp}.db)")
+        
+    _dirty.set()  # Forcer la régénération du miroir Excel
+    return {"ok": True, "pre_backup": f"librairie_{pre_stamp}.db"}
 
 
 @app.get("/api/info")
