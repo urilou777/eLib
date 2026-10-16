@@ -56,15 +56,70 @@ async function loadRef() {
   [S.books, S.owners, S.options] = await Promise.all([api('/api/books'), api('/api/owners'), api('/api/options')]); 
 }
 
+/* ---------- Mode Focus (poste sécurisé non spécifique à une session) ---------- */
+function isFocusMode() {
+  return localStorage.getItem('librairie_focus_mode') === 'true';
+}
+
+function updateFocusUI() {
+  const active = isFocusMode();
+  document.body.classList.toggle('focus-mode-on', active);
+  const btn = $('#btnFocusMode');
+  const banner = $('#focusBanner');
+  const label = $('#focusBtnLabel');
+  if (btn) {
+    btn.classList.toggle('focus-active', active);
+    if (active) {
+      btn.title = "Mode Focus ACTIF. Cliquez pour déverrouiller et revenir au mode complet.";
+      if (label) label.textContent = "Quitter Focus";
+    } else {
+      btn.title = "Activer le Mode Focus (sécurise le poste, restreint aux opérations de vente/caisse)";
+      if (label) label.textContent = "Mode Focus";
+    }
+  }
+  if (banner) {
+    banner.style.display = active ? 'inline-flex' : 'none';
+  }
+}
+
+function toggleFocusMode() {
+  const current = isFocusMode();
+  if (current) {
+    if (confirm("Désactiver le Mode Focus et réactiver l'accès complet à tous les onglets d'administration ?")) {
+      localStorage.setItem('librairie_focus_mode', 'false');
+      updateFocusUI();
+      toast("Mode Focus désactivé : accès complet rétabli", "ok");
+    }
+  } else {
+    localStorage.setItem('librairie_focus_mode', 'true');
+    updateFocusUI();
+    toast("🎯 Mode Focus activé : poste restreint aux opérations de caisse", "ok");
+    if (S.view !== 'pos') {
+      go('pos');
+    }
+  }
+}
+
 /* ---------- navigation ---------- */
 const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', treasury: 'Trésorerie & Caisse', settle: 'Trésorerie & Caisse', orders: 'Réservations', audit: 'Historique & Sécurité des opérations', data: 'Données & Excel' };
 async function go(v) {
+  if (isFocusMode() && v !== 'pos') {
+    toast("⛔ Mode Focus actif : navigation verrouillée sur la Caisse uniquement.", "err");
+    return;
+  }
   S.view = v; $('#title').textContent = TITLES[v]; $('#topActions').innerHTML = ''; $('#view').onclick = null;
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
   $('#view').innerHTML = '<div class="empty">Chargement…</div>';
   try { await loadRef(); await VIEWS[v](); } catch (e) { toast(e.message, 'err'); }
 }
-$('#nav').addEventListener('click', e => { const a = e.target.closest('a'); if (a) go(a.dataset.v); });
+$('#nav').addEventListener('click', e => { 
+  if (isFocusMode()) {
+    toast("🔒 Mode Focus : seul l'écran de Caisse est disponible.", "warn");
+    return;
+  }
+  const a = e.target.closest('a'); 
+  if (a) go(a.dataset.v); 
+});
 
 /* ---------- graphiques SVG ---------- */
 function niceMax(v) { if (v <= 0) return 10; const p = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / p * 2) / 2 * p; }
@@ -1006,5 +1061,10 @@ if (ub) ub.onclick = userModal;
 const bsu = $('#btnSwitchUser');
 if (bsu) bsu.onclick = (e) => { e.stopPropagation(); userModal(); };
 
+// Bouton rouge persistant Mode Focus (accessible partout)
+const bFocus = $('#btnFocusMode');
+if (bFocus) bFocus.onclick = toggleFocusMode;
+
 updateUserDisplay();
-go('dashboard');
+updateFocusUI();
+go(isFocusMode() ? 'pos' : 'dashboard');

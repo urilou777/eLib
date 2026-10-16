@@ -117,3 +117,79 @@ tr.click{cursor:pointer;transition:.15s}tr.click:hover{background:var(--panel2)}
 .big{font-size:30px;font-weight:700}
 .tl{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
 .tag-x{cursor:pointer;color:var(--bad);margin-left:8px}
+
+/* ---------- Mode Focus (Bouton Rouge & Restrictions) ---------- */
+.btn-focus-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  background:linear-gradient(135deg, #d62828, #f03e3e);
+  color:#fff;
+  border:1px solid rgba(255, 107, 107, 0.4);
+  box-shadow:0 4px 14px rgba(220, 53, 69, 0.4);
+  font-weight:700;
+  letter-spacing:.3px;
+  padding:7px 14px;
+  border-radius:10px;
+  transition:all .2s ease;
+  user-select:none;
+}
+.btn-focus-toggle:hover{
+  background:linear-gradient(135deg, #e63946, #ff4d4d);
+  box-shadow:0 6px 20px rgba(230, 57, 70, 0.6);
+  transform:translateY(-1px);
+}
+.btn-focus-toggle.focus-active{
+  background:linear-gradient(135deg, #8b0000, #c92a2a);
+  border-color:#ff6b6b;
+  box-shadow:0 0 0 3px rgba(255, 107, 107, 0.35), 0 4px 18px rgba(200, 30, 30, 0.7);
+  animation:focusPulseBtn 2.2s infinite;
+}
+@keyframes focusPulseBtn{
+  0%, 100% { box-shadow:0 0 0 3px rgba(255, 107, 107, 0.35), 0 4px 18px rgba(200, 30, 30, 0.7); }
+  50% { box-shadow:0 0 0 5px rgba(255, 107, 107, 0.6), 0 6px 24px rgba(230, 40, 40, 0.9); }
+}
+.focus-banner{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  background:rgba(220, 53, 69, 0.15);
+  border:1px solid rgba(255, 107, 107, 0.5);
+  color:#ff8787;
+  padding:4px 10px;
+  border-radius:8px;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:1px;
+}
+.focus-pulse{
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#ff4d4d;
+  box-shadow:0 0 8px #ff4d4d;
+  animation:focusDot 1.4s infinite ease-in-out;
+}
+@keyframes focusDot{
+  0%, 100% { opacity:1; transform:scale(1); }
+  50% { opacity:.4; transform:scale(.75); }
+}
+
+/* Verrouillage strict en Mode Focus : SEULE LA CAISSE EST ACCESSIBLE */
+body.focus-mode-on nav a:not([data-v="pos"]){
+  opacity:0.25;
+  pointer-events:none;
+  filter:grayscale(0.9);
+  cursor:not-allowed;
+  position:relative;
+}
+body.focus-mode-on nav a:not([data-v="pos"])::after{
+  content:"🔒";
+  font-size:11px;
+  margin-left:auto;
+}
+body.focus-mode-on #userBadge {
+  opacity:0.6;
+}
+
+

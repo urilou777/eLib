@@ -33,7 +33,22 @@
     <div class="side-foot" id="sideFoot">● Base SQLite &amp; Audit actif<br>Excel miroir automatique</div>
   </aside>
   <main class="content">
-    <header class="topbar"><h1 id="title">Tableau de bord</h1><div id="topActions"></div></header>
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:14px">
+        <h1 id="title">Tableau de bord</h1>
+        <div id="focusBanner" class="focus-banner" style="display:none">
+          <span class="focus-pulse"></span>
+          <span>MODE FOCUS ACTIF</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div id="topActions"></div>
+        <button id="btnFocusMode" class="btn btn-focus-toggle" title="Basculer en Mode Focus (sécurise et restreint le poste aux opérations de vente)">
+          <span class="focus-icon">🎯</span>
+          <span id="focusBtnLabel">Mode Focus</span>
+        </button>
+      </div>
+    </header>
     <section id="view"></section>
   </main>
 </div>
