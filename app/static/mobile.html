@@ -101,11 +101,11 @@ button, select, input { font:inherit; color:inherit; }
 <body>
 
 <header class="m-head">
-  <div class="logo">📖 Librairie</div>
+  <div class="logo">Librairie</div>
   <div style="display:flex;align-items:center;gap:6px">
     <div class="mode-switch">
-      <button type="button" class="mode-btn on" id="btnModeSale">🛒 Vente</button>
-      <button type="button" class="mode-btn" id="btnModeRecv">📦 Réception</button>
+      <button type="button" class="mode-btn on" id="btnModeSale">Vente</button>
+      <button type="button" class="mode-btn" id="btnModeRecv">Réception</button>
     </div>
     <button class="user-chip" id="userBtn" type="button"><i></i><span id="userName">…</span> ▾</button>
   </div>
@@ -114,10 +114,12 @@ button, select, input { font:inherit; color:inherit; }
 <!-- Écran d'appairage : affiché tant que ce téléphone n'a pas scanné le QR code du poste de caisse -->
 <section class="overlay" id="pairScreen" hidden>
   <div class="sheet">
-    <div style="font-size:42px">🔐</div>
+    <div style="width:48px;height:48px;margin:0 auto 12px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center">
+      <svg class="ico" style="width:24px;height:24px" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    </div>
     <h2>Téléphone non appairé</h2>
     <p>Pour des raisons de sécurité, chaque téléphone doit être autorisé une fois par le poste de caisse.<br><br>
-       Sur l'ordinateur : <b>Caisse → « 📱 Scanner mobile »</b>, puis scannez le QR code avec l'appareil photo de ce téléphone.</p>
+       Sur l'ordinateur : <b>Caisse → « Scanner mobile »</b>, puis scannez le QR code avec l'appareil photo de ce téléphone.</p>
     <button class="btn primary" id="btnRetryPair" type="button">J'ai scanné, réessayer</button>
   </div>
 </section>
@@ -134,14 +136,16 @@ button, select, input { font:inherit; color:inherit; }
       <div class="target-hint">Alignez le code-barres</div>
     </div>
     <div class="cam-controls" id="camControls">
-      <button class="btn-ctrl" id="btnTorch" type="button" title="Éclairer" hidden>🔦</button>
+      <button class="btn-ctrl" id="btnTorch" type="button" title="Éclairer" hidden>Torche</button>
     </div>
     <div class="cam-status" id="camStatus">
-      <div style="font-size:34px">📷</div>
+      <div style="width:48px;height:48px;margin:0 auto 8px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center">
+        <svg class="ico" style="width:24px;height:24px" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </div>
       <b id="camTitle">Scanner un code-barres</b>
       <p id="camMsg">Appuyez pour activer l'appareil photo.</p>
       <button class="btn primary" id="btnCam" type="button">Activer la caméra</button>
-      <label class="btn" id="snapLabel">📸 Photographier un code-barres
+      <label class="btn" id="snapLabel">Photographier un code-barres
         <input type="file" id="fileSnap" accept="image/*" capture="environment" hidden>
       </label>
     </div>
@@ -157,7 +161,7 @@ button, select, input { font:inherit; color:inherit; }
 
     <div class="card" id="cartCard">
       <div class="cart-header">
-        <span>🛒 Panier (<span id="cartCount">0</span>)</span>
+        <span>Panier (<span id="cartCount">0</span>)</span>
         <button class="btn sm" id="clearCart" type="button">Vider</button>
       </div>
       <div class="cart-list" id="cartItems"></div>
@@ -166,7 +170,7 @@ button, select, input { font:inherit; color:inherit; }
     <!-- Section dédiée Réception de carton -->
     <div class="card" id="recvCard" hidden>
       <div class="cart-header">
-        <span>📦 Réception en cours (<span id="recvCount">0</span> ex.)</span>
+        <span>Réception en cours (<span id="recvCount">0</span> ex.)</span>
         <button class="btn sm" id="clearRecv" type="button">Réinitialiser</button>
       </div>
       <div style="margin-bottom:10px">
@@ -180,12 +184,12 @@ button, select, input { font:inherit; color:inherit; }
   <footer class="bottom-bar" id="saleBottom">
     <div class="total-row"><span class="muted">Total à encaisser</span><span class="val" id="totalVal">0,00 €</span></div>
     <select class="pay-select" id="payMethod" aria-label="Mode de paiement"></select>
-    <button class="btn good" id="btnValidate" type="button" disabled>✔ Encaisser la vente</button>
+    <button class="btn good" id="btnValidate" type="button" disabled>Valider la vente</button>
     <div class="hint" id="validHint" style="text-align:center"></div>
   </footer>
 
   <footer class="bottom-bar" id="recvBottom" hidden>
-    <button class="btn good" id="btnValidateRecv" type="button" disabled>✔ Valider l'entrée en stock</button>
+    <button class="btn good" id="btnValidateRecv" type="button" disabled>Valider l'entrée en stock</button>
     <div class="hint" id="recvHint" style="text-align:center"></div>
   </footer>
 </div>
@@ -193,7 +197,7 @@ button, select, input { font:inherit; color:inherit; }
 <!-- Modale Création Rapide de Livre (Livre inconnu lors d'un scan) -->
 <section class="overlay" id="newBookModal" hidden>
   <div class="sheet" style="max-width:380px;text-align:left">
-    <h2 style="margin-bottom:4px">✨ Nouveau livre détecté</h2>
+    <h2 style="margin-bottom:4px">Nouveau livre détecté</h2>
     <p style="margin-bottom:12px;font-size:12px">Ce code ISBN n'est pas encore au catalogue. Complétez la fiche en quelques secondes :</p>
     
     <form id="newBookForm" onsubmit="return false;" style="display:flex;flex-direction:column;gap:8px">

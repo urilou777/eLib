@@ -84,7 +84,7 @@ async function pairFromHash() {
   try {
     const r = await api('/api/mobile/pair', { method: 'POST', body: { code: m[1], name: deviceLabel() }, auth: false });
     localStorage.setItem(TOKEN_KEY, r.token);
-    toast('Téléphone appairé ✔');
+    toast('Téléphone appairé avec succès');
   } catch (e) { toast(e.message, 'err'); }
 }
 function showPairing() { $('#pairScreen').hidden = false; stopCamera(); }
@@ -97,7 +97,7 @@ function updateUser() { $('#userName').textContent = currentUser || 'Choisir…'
 function openUserModal() {
   const list = $('#userList');
   list.replaceChildren(...users.map(u => el('button', {
-    class: 'user-btn', type: 'button', text: '👤 ' + u.name,
+    class: 'user-btn', type: 'button', text: u.name,
     onclick: () => { currentUser = u.name; localStorage.setItem(USER_KEY, u.name); updateUser(); $('#userModal').hidden = true; toast('Connecté : ' + u.name); }
   })));
   $('#userModal').hidden = false;
@@ -186,7 +186,7 @@ $('#btnValidate').addEventListener('click', async () => {
         }))
       }
     });
-    toast('✔ Vente enregistrée : ' + eur(r.total));
+    toast('Vente enregistrée : ' + eur(r.total));
     if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     cart = []; $('#payMethod').value = '';
   } catch (e) { toast(e.message, 'err'); }
@@ -217,7 +217,7 @@ function setMobileMode(mode) {
   $('#recvCard').hidden = (mode !== 'recv');
   $('#recvBottom').hidden = (mode !== 'recv');
   if (mode === 'recv' && !ownersList.length) loadOwners();
-  toast(mode === 'sale' ? 'Mode Vente actif' : '📦 Mode Réception actif', 'ok');
+  toast(mode === 'sale' ? 'Mode Vente actif' : 'Mode Réception actif', 'ok');
 }
 
 $('#btnModeSale').addEventListener('click', () => setMobileMode('sale'));
@@ -280,7 +280,7 @@ $('#btnValidateRecv').addEventListener('click', async () => {
         }
       });
     }
-    toast(`✔ ${recvList.reduce((s, i) => s + i.qty, 0)} exemplaire(s) entrés en stock`, 'ok');
+    toast(`${recvList.reduce((s, i) => s + i.qty, 0)} exemplaire(s) entrés en stock`, 'ok');
     if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     recvList = [];
     renderRecv();
@@ -331,7 +331,7 @@ $('#btnSaveNewBook').addEventListener('click', async () => {
         is_pack: 0
       }
     });
-    toast('✔ Nouveau livre enregistré', 'ok');
+    toast('Nouveau livre enregistré', 'ok');
     closeNewBookModal();
     // Charger immédiatement le nouveau livre
     const book = await api('/api/books/scan/' + encodeURIComponent(code));
@@ -570,10 +570,10 @@ function pauseCamera(reason = 'manual') {
   stopCamera();
   if (reason === 'auto') {
     isAutoPaused = true;
-    camStatus(true, '🔋 Veille batterie', 'Caméra en veille pour économiser la batterie. Touchez l\'écran pour la réactiver instantanément.', '▶ Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
+    camStatus(true, 'Veille économie d\'énergie', 'Caméra en veille pour économiser la batterie. Touchez l\'écran pour la réactiver instantanément.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
   } else {
     isAutoPaused = false;
-    camStatus(true, '⏸ Caméra en pause', 'Caméra suspendue. Appuyez sur le bouton dès que vous souhaitez scanner.', '▶ Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
+    camStatus(true, 'Caméra en pause', 'Caméra suspendue. Appuyez sur le bouton dès que vous souhaitez scanner.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
   }
 }
 
