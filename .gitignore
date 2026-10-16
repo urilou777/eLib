@@ -1,0 +1,8 @@
+# Données personnelles de la librairie (base, Excel miroir, sauvegardes)
+data/
+
+# Build
+build/
+dist/
+__pycache__/
+*.pyc

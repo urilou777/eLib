@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Librairie – Gestion de stock, ventes et statistiques</title>
+<meta name="description" content="Application locale hors-ligne de gestion de stock, caisse, packs, reversements et statistiques pour librairie.">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="bg-orb o1"></div><div class="bg-orb o2"></div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">📚</div><div><b>Librairie</b><small>Gestion hors-ligne</small></div></div>
+    <nav id="nav">
+      <a data-v="dashboard" id="nav-dashboard"><i>📊</i>Tableau de bord</a>
+      <a data-v="pos" id="nav-pos"><i>🛒</i>Caisse</a>
+      <a data-v="stock" id="nav-stock"><i>📦</i>Stock</a>
+      <a data-v="catalog" id="nav-catalog"><i>🏷️</i>Catalogue &amp; packs</a>
+      <a data-v="sales" id="nav-sales"><i>🧾</i>Ventes</a>
+      <a data-v="settle" id="nav-settle"><i>🤝</i>Reversements</a>
+      <a data-v="orders" id="nav-orders"><i>📝</i>Réservations</a>
+      <a data-v="data" id="nav-data"><i>⚙️</i>Données &amp; Excel</a>
+    </nav>
+    <div class="side-foot" id="sideFoot">● Base locale SQLite<br>Excel miroir automatique</div>
+  </aside>
+  <main class="content">
+    <header class="topbar"><h1 id="title">Tableau de bord</h1><div id="topActions"></div></header>
+    <section id="view"></section>
+  </main>
+</div>
+<div id="modalRoot"></div><div id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
