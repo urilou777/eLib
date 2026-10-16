@@ -208,13 +208,16 @@ PUBLIC = [
     ("GET", re.compile(r"^/api/ca\.crt$")),
     ("POST", re.compile(r"^/api/mobile/pair$")),
 ]
-# Accessible depuis le réseau local AVEC jeton d'appareil valide (privilège minimal : scanner + vendre)
+# Accessible depuis le réseau local AVEC jeton d'appareil valide (privilège minimal : scanner, vendre, réceptionner)
 MOBILE = [
     ("GET", re.compile(r"^/api/mobile/me$")),
     ("GET", re.compile(r"^/api/users$")),
     ("GET", re.compile(r"^/api/options$")),
+    ("GET", re.compile(r"^/api/owners$")),
     ("GET", re.compile(r"^/api/books/scan/[^/]+$")),
     ("GET", re.compile(r"^/api/books/search$")),
+    ("POST", re.compile(r"^/api/books$")),
+    ("POST", re.compile(r"^/api/lots$")),
     ("POST", re.compile(r"^/api/sales$")),
 ]
 

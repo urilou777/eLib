@@ -193,21 +193,183 @@ $('#btnValidate').addEventListener('click', async () => {
   renderCart();
 });
 
+/* ---------- Mode de travail Mobile : Vente vs Réception ---------- */
+let currentMode = 'sale'; // 'sale' | 'recv'
+let recvList = [];        // [{ book, qty }]
+let ownersList = [];
+
+async function loadOwners() {
+  try {
+    ownersList = await api('/api/owners');
+    const sel = $('#recvOwner');
+    if (sel) {
+      sel.replaceChildren(...ownersList.map(o => el('option', { value: o.id, text: o.name + (o.kind ? ` (${o.kind})` : '') })));
+    }
+  } catch (e) { ownersList = []; }
+}
+
+function setMobileMode(mode) {
+  currentMode = mode;
+  $('#btnModeSale').classList.toggle('on', mode === 'sale');
+  $('#btnModeRecv').classList.toggle('on', mode === 'recv');
+  $('#cartCard').hidden = (mode !== 'sale');
+  $('#saleBottom').hidden = (mode !== 'sale');
+  $('#recvCard').hidden = (mode !== 'recv');
+  $('#recvBottom').hidden = (mode !== 'recv');
+  if (mode === 'recv' && !ownersList.length) loadOwners();
+  toast(mode === 'sale' ? 'Mode Vente actif' : '📦 Mode Réception actif', 'ok');
+}
+
+$('#btnModeSale').addEventListener('click', () => setMobileMode('sale'));
+$('#btnModeRecv').addEventListener('click', () => setMobileMode('recv'));
+
+/* ---------- Logique Réception de stock ---------- */
+function addToRecv(book) {
+  beep();
+  const ex = recvList.find(i => i.book.id === book.id);
+  if (ex) {
+    ex.qty++;
+  } else {
+    recvList.push({ book, qty: 1 });
+  }
+  toast(`+1 ${book.title}`, 'ok');
+  renderRecv();
+}
+
+function renderRecv() {
+  const count = recvList.reduce((s, i) => s + i.qty, 0);
+  $('#recvCount').textContent = count;
+  const list = $('#recvItems');
+  if (!recvList.length) {
+    list.replaceChildren(el('div', { class: 'muted', style: 'text-align:center;padding:18px', text: 'Scannez chaque livre du carton pour le comptabiliser.' }));
+    $('#btnValidateRecv').disabled = true;
+  } else {
+    $('#btnValidateRecv').disabled = false;
+    list.replaceChildren(...recvList.map((item, idx) => {
+      const b = item.book;
+      return el('div', { class: 'cart-item' },
+        el('div', { class: 'ci-top' },
+          el('div', {},
+            el('div', { class: 'ci-title', text: b.title + (b.volume ? ' · Vol. ' + b.volume : '') }),
+            el('div', { class: 'muted', text: `${b.code} · ${eur(b.price)}` })),
+          el('div', { class: 'qty' },
+            el('button', { type: 'button', text: '−', onclick: () => { item.qty--; if (item.qty <= 0) recvList.splice(idx, 1); renderRecv(); } }),
+            el('b', { text: item.qty }),
+            el('button', { type: 'button', text: '+', onclick: () => { item.qty++; renderRecv(); } }))));
+    }));
+  }
+}
+
+$('#clearRecv').addEventListener('click', () => { recvList = []; renderRecv(); });
+
+$('#btnValidateRecv').addEventListener('click', async () => {
+  if (!currentUser) return openUserModal();
+  const ownerId = parseInt($('#recvOwner').value);
+  if (!ownerId) return toast('Veuillez sélectionner un propriétaire', 'warn');
+  const btn = $('#btnValidateRecv');
+  btn.disabled = true;
+  try {
+    for (const item of recvList) {
+      await api('/api/lots', {
+        method: 'POST',
+        body: {
+          book_id: item.book.id,
+          owner_id: ownerId,
+          qty_in: item.qty,
+          note: `Réception mobile par ${currentUser}`
+        }
+      });
+    }
+    toast(`✔ ${recvList.reduce((s, i) => s + i.qty, 0)} exemplaire(s) entrés en stock`, 'ok');
+    if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+    recvList = [];
+    renderRecv();
+  } catch (e) {
+    toast(e.message, 'err');
+    btn.disabled = false;
+  }
+});
+
+/* ---------- Modale de Création Rapide de Livre Inconnu ---------- */
+let pendingNewCode = null;
+
+function openNewBookModal(code) {
+  pendingNewCode = code;
+  $('#nbCode').value = code;
+  $('#nbTitle').value = '';
+  $('#nbAuthor').value = '';
+  $('#nbPrice').value = '';
+  $('#newBookModal').hidden = false;
+  setTimeout(() => $('#nbTitle').focus(), 150);
+}
+
+function closeNewBookModal() {
+  $('#newBookModal').hidden = true;
+  pendingNewCode = null;
+}
+
+$('#btnCancelNewBook').addEventListener('click', closeNewBookModal);
+
+$('#btnSaveNewBook').addEventListener('click', async () => {
+  const code = $('#nbCode').value.trim();
+  const title = $('#nbTitle').value.trim();
+  const author = $('#nbAuthor').value.trim();
+  const price = parseFloat($('#nbPrice').value) || 0;
+  if (!title) return toast('Le titre est requis', 'warn');
+  if (price <= 0) return toast('Indiquez un prix valide', 'warn');
+
+  try {
+    const res = await api('/api/books', {
+      method: 'POST',
+      body: {
+        code,
+        title,
+        author: author || null,
+        price,
+        category: 'Standard',
+        min_stock: 2,
+        is_pack: 0
+      }
+    });
+    toast('✔ Nouveau livre enregistré', 'ok');
+    closeNewBookModal();
+    // Charger immédiatement le nouveau livre
+    const book = await api('/api/books/scan/' + encodeURIComponent(code));
+    if (currentMode === 'sale') {
+      addToCart(book);
+    } else {
+      addToRecv(book);
+    }
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+});
+
 /* ---------- recherche / saisie manuelle ---------- */
 let isLookingUp = false;
 
 async function lookupCode(code) {
-  if (isLookingUp) return; // Ignore tout nouveau scan si une requête est déjà en attente du serveur
+  if (isLookingUp) return; // Ignore tout nouveau scan si une requête est déjà en attente
   isLookingUp = true;
   try {
     const book = await api('/api/books/scan/' + encodeURIComponent(code), { timeoutMs: 3500 });
-    addToCart(book);
+    if (currentMode === 'sale') {
+      addToCart(book);
+    } else {
+      addToRecv(book);
+    }
   } catch (e) {
-    toast(e.message, 'warn');
+    if (e.message && e.message.includes('Aucun livre pour le code')) {
+      toast('Livre inconnu : ouverture de la fiche', 'warn');
+      openNewBookModal(code);
+    } else {
+      toast(e.message, 'warn');
+    }
   } finally {
     isLookingUp = false;
   }
 }
+
 async function manualSearch() {
   const q = $('#manualCode').value.trim();
   const box = $('#results'); box.replaceChildren();
@@ -218,7 +380,11 @@ async function manualSearch() {
     if (!found.length) return toast('Aucun résultat', 'warn');
     box.replaceChildren(...found.map(b => el('button', {
       class: 'result', type: 'button',
-      onclick: () => { addToCart(b); box.replaceChildren(); $('#manualCode').value = ''; }
+      onclick: () => { 
+        if (currentMode === 'sale') addToCart(b); else addToRecv(b);
+        box.replaceChildren(); 
+        $('#manualCode').value = ''; 
+      }
     }, el('div', { class: 'ci-title', text: b.title + (b.volume ? ' · Vol. ' + b.volume : '') }),
        el('div', { class: 'muted', text: `${b.code} · ${eur(b.price)} · stock ${b.stock}` }))));
   } catch (e) { toast(e.message, 'err'); }
@@ -362,10 +528,18 @@ function flashSuccess() {
 
 function onCode(code) {
   resetInactivity();
-  if (isLookingUp) return; // Si une requête réseau est déjà en vol, ne pas ré-émettre
+  if (isLookingUp || pendingNewCode) return; // En pause si recherche en cours ou modale de création ouverte
+  
   const now = Date.now();
-  if (!code || (code === lastCode && now - lastTime < 2200)) return;     // anti-rebond 2.2s
-  lastCode = code; lastTime = now;
+  // RÈGLE AMAZON / LOGISTIQUE PRO :
+  // 1. Si le livre est différent du précédent (ex: 100 livres différents dans un carton) : DÉBIT INSTANTANÉ (0 ms d'attente) !
+  // 2. Si c'est le même livre consécutif, on attend soit que le livre sorte du champ (code == null), soit un micro-délai de 650 ms
+  if (code === lastCode && (now - lastTime < 650)) {
+    return;
+  }
+  
+  lastCode = code;
+  lastTime = now;
   flashSuccess();
   lookupCode(code);
 }
@@ -656,7 +830,13 @@ async function startCamera(specificDeviceId = null) {
           code = await scanCrop(cx1, cy1, cw1, ch1);
         }
 
-        if (code) onCode(code);
+        if (code) {
+          onCode(code);
+        } else {
+          // Sortie de champ détectée (aucun code devant l'objectif) :
+          // Réinitialise immédiatement le verrou pour que le livre suivant (même s'il a le même code) soit pris instantanément
+          lastCode = '';
+        }
       } catch (err) {
         // Ignorer les erreurs d'une frame isolée
       } finally {
