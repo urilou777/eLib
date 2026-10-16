@@ -136,7 +136,10 @@ function trendChart(el, monthly, fc, ownerMonth) {
   const max = niceMax(Math.max(...totals, ...fc));
   const bw = (W - L - R) / all.length, X = i => L + i * bw, Y = v => T + (H - T - B) * (1 - v / max);
   let s = `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none">`;
-  for (let i = 0; i <= 4; i++) { const v = max * i / 4, y = Y(v); s += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,.07)"/><text x="${L - 8}" y="${y + 4}" text-anchor="end">${Math.round(v)}</text>`; }
+  for (let i = 0; i <= 4; i++) { 
+    const v = max * i / 4, y = Y(v); 
+    s += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" class="chart-grid-line"/><text x="${L - 8}" y="${y + 4}" text-anchor="end" class="chart-axis-text">${Math.round(v)}</text>`; 
+  }
   months.forEach((m, i) => {
     let acc = 0;
     names.forEach(n => {
@@ -144,13 +147,16 @@ function trendChart(el, monthly, fc, ownerMonth) {
       s += `<rect x="${X(i) + bw * .18}" y="${Y(acc)}" width="${bw * .64}" height="${h}" rx="3" fill="${owners[n].color}" opacity=".88"><title>${mlabel(m)} · ${n} : ${eur(v)}</title></rect>`;
     });
   });
-  fut.forEach((m, i) => { const idx = months.length + i; s += `<rect x="${X(idx) + bw * .18}" y="${Y(fc[i])}" width="${bw * .64}" height="${(H - T - B) * fc[i] / max}" rx="3" fill="none" stroke="#b9a8ff" stroke-dasharray="4 3"><title>Prévision ${mlabel(m)} : ${eur(fc[i])}</title></rect>`; });
+  fut.forEach((m, i) => { 
+    const idx = months.length + i; 
+    s += `<rect x="${X(idx) + bw * .18}" y="${Y(fc[i])}" width="${bw * .64}" height="${(H - T - B) * fc[i] / max}" rx="3" fill="none" class="chart-forecast-bar" stroke-dasharray="4 3"><title>Prévision ${mlabel(m)} : ${eur(fc[i])}</title></rect>`; 
+  });
   // moyenne mobile 3 mois
   const ma = totals.map((_, i) => { const sl = totals.slice(Math.max(0, i - 2), i + 1); return sl.reduce((a, b) => a + b, 0) / sl.length });
-  s += `<polyline fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" points="${ma.map((v, i) => `${X(i) + bw / 2},${Y(v)}`).join(' ')}"/>`;
-  ma.forEach((v, i) => s += `<circle cx="${X(i) + bw / 2}" cy="${Y(v)}" r="3.2" fill="#fff"/>`);
-  all.forEach((m, i) => { if (all.length < 14 || i % 2 === 0) s += `<text x="${X(i) + bw / 2}" y="${H - 8}" text-anchor="middle">${mlabel(m)}</text>`; });
-  el.innerHTML = s + '</svg>' + `<div class="legend">${names.map(n => `<span><i style="background:${owners[n].color}"></i>${esc(n)}</span>`).join('')}<span><i style="background:#fff"></i>Tendance (moy. mobile 3 m.)</span><span><i style="border:1.5px dashed #b9a8ff;background:none"></i>Prévision</span></div>`;
+  s += `<polyline fill="none" class="chart-trend-line" stroke-width="2.5" stroke-linecap="round" points="${ma.map((v, i) => `${X(i) + bw / 2},${Y(v)}`).join(' ')}"/>`;
+  ma.forEach((v, i) => s += `<circle cx="${X(i) + bw / 2}" cy="${Y(v)}" r="3.5" class="chart-trend-dot"/>`);
+  all.forEach((m, i) => { if (all.length < 14 || i % 2 === 0) s += `<text x="${X(i) + bw / 2}" y="${H - 8}" text-anchor="middle" class="chart-axis-text">${mlabel(m)}</text>`; });
+  el.innerHTML = s + '</svg>' + `<div class="legend">${names.map(n => `<span><i style="background:${owners[n].color}"></i>${esc(n)}</span>`).join('')}<span><i class="legend-trend-icon"></i>Tendance (moy. mobile 3 m.)</span><span><i class="legend-forecast-icon"></i>Prévision</span></div>`;
 }
 function donut(el, data, fmt = eur) {
   const tot = data.reduce((s, d) => s + d.value, 0); if (!tot) { el.innerHTML = '<div class="empty">—</div>'; return; }
@@ -161,7 +167,7 @@ function donut(el, data, fmt = eur) {
     if (d.value / tot > .999) s += `<circle r="${r}" fill="none" stroke="${d.color}" stroke-width="26"/>`;
     else s += `<path d="M${x1} ${y1} A${r} ${r} 0 ${big} 1 ${x2} ${y2}" fill="none" stroke="${d.color}" stroke-width="26"><title>${esc(d.label)} : ${fmt(d.value)}</title></path>`;
   });
-  s += `<text text-anchor="middle" y="-2" style="fill:#fff;font-size:20px;font-weight:700">${fmt(tot)}</text><text text-anchor="middle" y="16">total</text></svg>`;
+  s += `<text text-anchor="middle" y="-2" class="donut-total-val" style="font-size:22px;font-weight:800">${fmt(tot)}</text><text text-anchor="middle" y="16" class="donut-sub-text">total</text></svg>`;
   el.innerHTML = s + `<div class="legend" style="justify-content:center">${data.map(d => `<span><i style="background:${d.color}"></i>${esc(d.label)} · ${Math.round(d.value / tot * 100)}%</span>`).join('')}</div>`;
 }
 function hbars(el, rows, key = 'revenue', fmt = eur, sub) {

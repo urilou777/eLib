@@ -541,10 +541,34 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
 }
 .muted { color: var(--mut); }
 
-/* Graphiques */
+/* Graphiques & Visualisations */
 .chart { width: 100%; height: 280px; }
-.chart text { fill: var(--mut); font-size: 11px; font-family: var(--font-body); }
-.legend { display: flex; gap: 14px; font-size: 12px; color: var(--mut); flex-wrap: wrap; }
+.chart-grid-line { stroke: var(--line-strong); stroke-width: 1px; }
+.chart-axis-text { fill: var(--mut); font-size: 11px; font-family: var(--font-body); font-weight: 500; }
+.chart-forecast-bar { stroke: var(--icc-purple); stroke-width: 1.5px; opacity: 0.85; }
+
+/* Courbe de tendance adaptative : ultra contrastée en mode clair comme en mode sombre */
+.chart-trend-line { stroke: var(--text-title); stroke-width: 2.6px; }
+.chart-trend-dot { fill: var(--text-title); stroke: var(--bg); stroke-width: 1.5px; }
+
+[data-theme="light"] .chart-trend-line { stroke: #180521; stroke-width: 3px; }
+[data-theme="light"] .chart-trend-dot { fill: #180521; stroke: #ffffff; stroke-width: 1.5px; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .chart-trend-line { stroke: #180521; stroke-width: 3px; }
+  :root:not([data-theme="dark"]) .chart-trend-dot { fill: #180521; stroke: #ffffff; stroke-width: 1.5px; }
+}
+
+.donut-total-val { fill: var(--text-title); font-family: var(--font-heading); letter-spacing: 0.5px; }
+.donut-sub-text { fill: var(--mut); font-family: var(--font-display); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+
+.legend-trend-icon { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--text-title); margin-right: 5px; }
+[data-theme="light"] .legend-trend-icon { background: #180521; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .legend-trend-icon { background: #180521; }
+}
+.legend-forecast-icon { display: inline-block; width: 10px; height: 10px; border-radius: 3px; border: 1.5px dashed var(--icc-purple); background: none; margin-right: 5px; }
+
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--mut); flex-wrap: wrap; margin-top: 10px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
 .hbar { display: grid; grid-template-columns: minmax(120px, 1.4fr) 3fr auto; gap: 10px; align-items: center; margin: 9px 0; font-size: 13px; }
 .hbar .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
