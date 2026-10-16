@@ -147,6 +147,143 @@ class DropdownItemIn(BaseModel):
     label: str
 
 
+class UserIn(BaseModel):
+    name: str
+
+
+def get_current_user(request: Request) -> str:
+    """Récupère l'utilisateur transmis par le client dans l'en-tête X-User ou query, sinon 'Anonyme'."""
+    u = request.headers.get("X-User") or request.query_params.get("user")
+    return u.strip() if u and u.strip() else "Anonyme"
+
+
+# ---------- utilisateurs (profils simples) ----------
+@app.get("/api/users")
+def get_users():
+    with db.tx() as c:
+        return db.rows(c, "SELECT id, name, created_at FROM users ORDER BY name")
+
+
+@app.post("/api/users")
+def add_user(u: UserIn, request: Request):
+    name = u.name.strip()
+    if not name:
+        raise HTTPException(400, "Le prénom/nom ne peut pas être vide")
+    with db.tx() as c:
+        try:
+            cur = c.execute("INSERT INTO users(name) VALUES(?)", (name,))
+            uid = cur.lastrowid
+            db.log_audit(c, get_current_user(request), "INSERT", "user", uid, f"Création utilisateur « {name} »", snapshot_after={"id": uid, "name": name})
+            return {"id": uid, "name": name}
+        except Exception:
+            raise HTTPException(400, "Cet utilisateur existe déjà")
+
+
+@app.put("/api/users/{uid}")
+def upd_user(uid: int, u: UserIn, request: Request):
+    name = u.name.strip()
+    if not name:
+        raise HTTPException(400, "Le prénom/nom ne peut pas être vide")
+    with db.tx() as c:
+        old = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not old:
+            raise HTTPException(404, "Utilisateur introuvable")
+        c.execute("UPDATE users SET name=? WHERE id=?", (name, uid))
+        db.log_audit(c, get_current_user(request), "UPDATE", "user", uid, f"Renommage utilisateur « {old['name']} » -> « {name} »",
+                     snapshot_before=dict(old), snapshot_after={"id": uid, "name": name})
+    return {"ok": True}
+
+
+@app.delete("/api/users/{uid}")
+def del_user(uid: int, request: Request):
+    with db.tx() as c:
+        old = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not old:
+            raise HTTPException(404, "Utilisateur introuvable")
+        c.execute("DELETE FROM users WHERE id=?", (uid,))
+        db.log_audit(c, get_current_user(request), "DELETE", "user", uid, f"Suppression utilisateur « {old['name']} »", snapshot_before=dict(old))
+    return {"ok": True}
+
+
+# ---------- journal d'audit & annulation (undo) ----------
+@app.get("/api/audit")
+def get_audit(limit: int = 150):
+    with db.tx() as c:
+        return db.rows(c, "SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,))
+
+
+@app.post("/api/audit/{log_id}/undo")
+def undo_audit(log_id: int, request: Request):
+    """Annule atomiquement l'opération désignée par le log_id."""
+    import json
+    actor = get_current_user(request)
+    with db.tx() as c:
+        log = c.execute("SELECT * FROM audit_logs WHERE id=?", (log_id,)).fetchone()
+        if not log:
+            raise HTTPException(404, "Entrée de log introuvable")
+        if log["undone"]:
+            raise HTTPException(400, "Cette action a déjà été annulée")
+        
+        ttype = log["target_type"]
+        act = log["action"]
+        sb = json.loads(log["snapshot_before"]) if log["snapshot_before"] else None
+        sa = json.loads(log["snapshot_after"]) if log["snapshot_after"] else None
+        
+        # Logique d'inversion atomique
+        if ttype == "book":
+            if act == "INSERT" and sa:
+                c.execute("UPDATE books SET active=0 WHERE id=?", (sa.get("id"),))
+            elif act == "UPDATE" and sb:
+                c.execute("""UPDATE books SET code=?, title=?, series=?, volume=?, author=?, publisher=?,
+                             category=?, type=?, location=?, price=?, min_stock=?, active=? WHERE id=?""",
+                          (sb.get("code"), sb.get("title"), sb.get("series"), sb.get("volume"), sb.get("author"),
+                           sb.get("publisher"), sb.get("category"), sb.get("type"), sb.get("location"),
+                           sb.get("price", 0), sb.get("min_stock", 2), sb.get("active", 1), sb.get("id")))
+            elif act == "DELETE" and sb:
+                c.execute("UPDATE books SET active=1 WHERE id=?", (sb.get("id"),))
+                
+        elif ttype == "lot":
+            if act == "INSERT" and sa:
+                # Vérifier si déjà alloué
+                rem = c.execute(f"SELECT ({db.LOT_REMAINING}) r, qty_in FROM lots l WHERE l.id=?", (sa.get("id"),)).fetchone()
+                if rem and rem["r"] < rem["qty_in"]:
+                    raise HTTPException(400, "Impossible d'annuler cette réception : des exemplaires de ce lot ont déjà été vendus")
+                c.execute("DELETE FROM lots WHERE id=?", (sa.get("id"),))
+                
+        elif ttype == "adjustment":
+            if act == "INSERT" and sa:
+                c.execute("DELETE FROM adjustments WHERE id=?", (sa.get("id"),))
+                
+        elif ttype == "sale":
+            if act == "INSERT" and sa:
+                c.execute("DELETE FROM sales WHERE id=?", (sa.get("id"),))
+                
+        elif ttype == "reservation":
+            if act == "INSERT" and sa:
+                c.execute("DELETE FROM reservations WHERE id=?", (sa.get("id"),))
+            elif act == "UPDATE" and sb:
+                c.execute("UPDATE reservations SET name=?, phone=?, title=?, qty=?, status=?, note=? WHERE id=?",
+                          (sb.get("name"), sb.get("phone"), sb.get("title"), sb.get("qty", 1), sb.get("status"), sb.get("note"), sb.get("id")))
+            elif act == "DELETE" and sb:
+                c.execute("INSERT INTO reservations(id, name, phone, title, qty, date, status, note) VALUES(?,?,?,?,?,?,?,?)",
+                          (sb.get("id"), sb.get("name"), sb.get("phone"), sb.get("title"), sb.get("qty", 1), sb.get("date"), sb.get("status"), sb.get("note")))
+                          
+        elif ttype == "option":
+            if act == "INSERT" and sa:
+                c.execute("DELETE FROM dropdown_options WHERE id=?", (sa.get("id"),))
+            elif act == "DELETE" and sb:
+                c.execute("INSERT OR IGNORE INTO dropdown_options(id, group_key, label) VALUES(?,?,?)",
+                          (sb.get("id"), sb.get("group_key"), sb.get("label")))
+        else:
+            raise HTTPException(400, f"Annulation non supportée pour {ttype}:{act}")
+            
+        c.execute("UPDATE audit_logs SET undone=1, undone_at=?, undone_by=? WHERE id=?",
+                  (datetime.now().isoformat(timespec='seconds'), actor, log_id))
+        db.log_audit(c, actor, "UNDO", ttype, log["target_id"], f"Annulation de l'action #{log_id} ({log['summary']})")
+        
+    return {"ok": True}
+
+
 # ---------- options paramétrables (dropdowns) ----------
 @app.get("/api/options")
 def get_options():
@@ -160,22 +297,27 @@ def get_options():
 
 
 @app.post("/api/options")
-def add_option(opt: DropdownItemIn):
+def add_option(opt: DropdownItemIn, request: Request):
     lbl = opt.label.strip()
     if not lbl:
         raise HTTPException(400, "Le libellé ne peut pas être vide")
     with db.tx() as c:
         try:
             cur = c.execute("INSERT INTO dropdown_options(group_key, label) VALUES(?,?)", (opt.group_key, lbl))
-            return {"id": cur.lastrowid, "label": lbl, "group_key": opt.group_key}
+            oid = cur.lastrowid
+            db.log_audit(c, get_current_user(request), "INSERT", "option", oid, f"Ajout option {opt.group_key}: « {lbl} »", snapshot_after={"id": oid, "group_key": opt.group_key, "label": lbl})
+            return {"id": oid, "label": lbl, "group_key": opt.group_key}
         except Exception:
             raise HTTPException(400, "Cette option existe déjà")
 
 
 @app.delete("/api/options/{opt_id}")
-def delete_option(opt_id: int):
+def delete_option(opt_id: int, request: Request):
     with db.tx() as c:
-        c.execute("DELETE FROM dropdown_options WHERE id=?", (opt_id,))
+        old = c.execute("SELECT * FROM dropdown_options WHERE id=?", (opt_id,)).fetchone()
+        if old:
+            c.execute("DELETE FROM dropdown_options WHERE id=?", (opt_id,))
+            db.log_audit(c, get_current_user(request), "DELETE", "option", opt_id, f"Suppression option {old['group_key']}: « {old['label']} »", snapshot_before=dict(old))
     return {"ok": True}
 
 
@@ -234,40 +376,53 @@ def books():
 
 
 @app.post("/api/books")
-def book_add(b: BookIn):
+def book_add(b: BookIn, request: Request):
     with db.tx() as c:
         try:
             cur = c.execute("""INSERT INTO books(code,title,series,volume,author,publisher,category,type,location,price,min_stock,is_pack)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (b.code, b.title, b.series, b.volume, b.author, b.publisher,
                                                      b.category, b.type, b.location, b.price, b.min_stock, b.is_pack))
+            bid = cur.lastrowid
+            db.log_audit(c, get_current_user(request), "INSERT", "book", bid, f"Création livre « {b.title} » ({b.code})", snapshot_after=b.dict() | {"id": bid})
+            return {"id": bid}
         except Exception:
             raise HTTPException(400, "Ce code existe déjà")
-        return {"id": cur.lastrowid}
 
 
 @app.put("/api/books/{bid}")
-def book_upd(bid: int, b: BookIn):
+def book_upd(bid: int, b: BookIn, request: Request):
     with db.tx() as c:
+        old = c.execute("SELECT * FROM books WHERE id=?", (bid,)).fetchone()
+        if not old:
+            raise HTTPException(404, "Livre introuvable")
         c.execute("""UPDATE books SET code=?,title=?,series=?,volume=?,author=?,publisher=?,category=?,type=?,
             location=?,price=?,min_stock=? WHERE id=?""", (b.code, b.title, b.series, b.volume, b.author,
                                                            b.publisher, b.category, b.type, b.location, b.price, b.min_stock, bid))
+        db.log_audit(c, get_current_user(request), "UPDATE", "book", bid, f"Modification fiche « {b.title} »", snapshot_before=dict(old), snapshot_after=b.dict() | {"id": bid})
     return {"ok": True}
 
 
 @app.delete("/api/books/{bid}")
-def book_del(bid: int):
+def book_del(bid: int, request: Request):
     with db.tx() as c:
-        c.execute("UPDATE books SET active=0 WHERE id=?", (bid,))
+        old = c.execute("SELECT * FROM books WHERE id=?", (bid,)).fetchone()
+        if old:
+            c.execute("UPDATE books SET active=0 WHERE id=?", (bid,))
+            db.log_audit(c, get_current_user(request), "DELETE", "book", bid, f"Archivage livre « {old['title']} »", snapshot_before=dict(old))
     return {"ok": True}
 
 
 @app.put("/api/books/{bid}/pack")
-def pack_set(bid: int, items: List[PackItem]):
+def pack_set(bid: int, items: List[PackItem], request: Request):
     with db.tx() as c:
+        bk = c.execute("SELECT * FROM books WHERE id=?", (bid,)).fetchone()
+        old_items = db.rows(c, "SELECT book_id, qty FROM pack_items WHERE pack_id=?", (bid,))
         c.execute("DELETE FROM pack_items WHERE pack_id=?", (bid,))
         for i in items:
             c.execute("INSERT INTO pack_items(pack_id,book_id,qty) VALUES(?,?,?) ON CONFLICT(pack_id,book_id) DO UPDATE SET qty=qty+excluded.qty",
                       (bid, i.book_id, max(1, i.qty)))
+        db.log_audit(c, get_current_user(request), "UPDATE", "pack", bid, f"Modification composition pack « {bk['title'] if bk else bid} »",
+                     snapshot_before={"items": old_items}, snapshot_after={"items": [i.dict() for i in items]})
     return {"ok": True}
 
 
@@ -280,28 +435,43 @@ def lots(bid: int):
 
 
 @app.post("/api/lots")
-def lot_add(l: LotIn):
+def lot_add(l: LotIn, request: Request):
     with db.tx() as c:
-        c.execute("INSERT INTO lots(book_id,owner_id,date,qty_in,unit_cost,reverse_pct,note) VALUES(?,?,?,?,?,?,?)",
-                  (l.book_id, l.owner_id, l.date or date.today().isoformat(), l.qty_in, l.unit_cost, l.reverse_pct, l.note))
+        cur = c.execute("INSERT INTO lots(book_id,owner_id,date,qty_in,unit_cost,reverse_pct,note) VALUES(?,?,?,?,?,?,?)",
+                        (l.book_id, l.owner_id, l.date or date.today().isoformat(), l.qty_in, l.unit_cost, l.reverse_pct, l.note))
+        lid = cur.lastrowid
+        bk = c.execute("SELECT title FROM books WHERE id=?", (l.book_id,)).fetchone()
+        ow = c.execute("SELECT name FROM owners WHERE id=?", (l.owner_id,)).fetchone()
+        db.log_audit(c, get_current_user(request), "INSERT", "lot", lid,
+                     f"Entrée stock : {l.qty_in}× « {bk['title'] if bk else l.book_id} » ({ow['name'] if ow else l.owner_id})",
+                     snapshot_after=l.dict() | {"id": lid})
     return {"ok": True}
 
 
 @app.post("/api/lots/{lid}/adjust")
-def lot_adjust(lid: int, a: AdjIn):
+def lot_adjust(lid: int, a: AdjIn, request: Request):
     with db.tx() as c:
-        c.execute("INSERT INTO adjustments(lot_id,date,delta,reason) VALUES(?,?,?,?)",
-                  (lid, a.date or date.today().isoformat(), a.delta, a.reason))
+        lot = c.execute("SELECT * FROM lots WHERE id=?", (lid,)).fetchone()
+        bk = c.execute("SELECT title FROM books WHERE id=?", (lot['book_id'],)).fetchone() if lot else None
+        cur = c.execute("INSERT INTO adjustments(lot_id,date,delta,reason) VALUES(?,?,?,?)",
+                        (lid, a.date or date.today().isoformat(), a.delta, a.reason))
+        jid = cur.lastrowid
+        db.log_audit(c, get_current_user(request), "INSERT", "adjustment", jid,
+                     f"Ajustement stock ({'+' if a.delta > 0 else ''}{a.delta}) « {bk['title'] if bk else ''} » : {a.reason}",
+                     snapshot_after={"id": jid, "lot_id": lid, "delta": a.delta, "reason": a.reason})
     return {"ok": True}
 
 
 # ---------- ventes ----------
 @app.post("/api/sales")
-def sale_add(s: SaleIn):
+def sale_add(s: SaleIn, request: Request):
     with db.tx() as c:
         sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines], manual=True)
         total = sum((l.unit_price if l.unit_price is not None else
                      c.execute("SELECT price FROM books WHERE id=?", (l.book_id,)).fetchone()["price"]) * l.qty for l in s.lines)
+        db.log_audit(c, get_current_user(request), "INSERT", "sale", sid,
+                     f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {s.payment})",
+                     snapshot_after={"id": sid, "date": s.date, "total": total, "lines": [l.dict() for l in s.lines]})
     return {"id": sid, "total": total, "warnings": warns}
 
 
@@ -316,9 +486,12 @@ def sales(limit: int = 200):
 
 
 @app.delete("/api/sales/{sid}")
-def sale_del(sid: int):
+def sale_del(sid: int, request: Request):
     with db.tx() as c:
-        c.execute("DELETE FROM sales WHERE id=?", (sid,))
+        sale = c.execute("SELECT * FROM sales WHERE id=?", (sid,)).fetchone()
+        if sale:
+            c.execute("DELETE FROM sales WHERE id=?", (sid,))
+            db.log_audit(c, get_current_user(request), "DELETE", "sale", sid, f"Suppression/annulation vente #{sid}", snapshot_before=dict(sale))
     return {"ok": True}
 
 
@@ -337,10 +510,15 @@ def settlements():
 
 
 @app.post("/api/settlements")
-def settle(s: SettleIn):
+def settle(s: SettleIn, request: Request):
     with db.tx() as c:
-        c.execute("INSERT INTO settlements(owner_id,date,amount,note) VALUES(?,?,?,?)",
-                  (s.owner_id, s.date or date.today().isoformat(), s.amount, s.note))
+        cur = c.execute("INSERT INTO settlements(owner_id,date,amount,note) VALUES(?,?,?,?)",
+                        (s.owner_id, s.date or date.today().isoformat(), s.amount, s.note))
+        sid = cur.lastrowid
+        ow = c.execute("SELECT name FROM owners WHERE id=?", (s.owner_id,)).fetchone()
+        db.log_audit(c, get_current_user(request), "INSERT", "settlement", sid,
+                     f"Règlement {s.amount:.2f} € à « {ow['name'] if ow else s.owner_id} »",
+                     snapshot_after=s.dict() | {"id": sid})
     return {"ok": True}
 
 
@@ -352,25 +530,36 @@ def res_list():
 
 
 @app.post("/api/reservations")
-def res_add(r: ResIn):
+def res_add(r: ResIn, request: Request):
     with db.tx() as c:
-        c.execute("INSERT INTO reservations(name,phone,title,qty,date,status,note) VALUES(?,?,?,?,?,?,?)",
-                  (r.name, r.phone, r.title, r.qty, date.today().isoformat(), r.status, r.note))
+        cur = c.execute("INSERT INTO reservations(name,phone,title,qty,date,status,note) VALUES(?,?,?,?,?,?,?)",
+                        (r.name, r.phone, r.title, r.qty, date.today().isoformat(), r.status, r.note))
+        rid = cur.lastrowid
+        db.log_audit(c, get_current_user(request), "INSERT", "reservation", rid,
+                     f"Réservation pour « {r.name} » : {r.qty}× {r.title}", snapshot_after=r.dict() | {"id": rid})
     return {"ok": True}
 
 
 @app.put("/api/reservations/{rid}")
-def res_upd(rid: int, r: ResIn):
+def res_upd(rid: int, r: ResIn, request: Request):
     with db.tx() as c:
+        old = c.execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
         c.execute("UPDATE reservations SET name=?,phone=?,title=?,qty=?,status=?,note=? WHERE id=?",
                   (r.name, r.phone, r.title, r.qty, r.status, r.note, rid))
+        db.log_audit(c, get_current_user(request), "UPDATE", "reservation", rid,
+                     f"Mise à jour réservation #{rid} ({r.name}) -> statut: {r.status}",
+                     snapshot_before=dict(old) if old else None, snapshot_after=r.dict() | {"id": rid})
     return {"ok": True}
 
 
 @app.delete("/api/reservations/{rid}")
-def res_del(rid: int):
+def res_del(rid: int, request: Request):
     with db.tx() as c:
-        c.execute("DELETE FROM reservations WHERE id=?", (rid,))
+        old = c.execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
+        if old:
+            c.execute("DELETE FROM reservations WHERE id=?", (rid,))
+            db.log_audit(c, get_current_user(request), "DELETE", "reservation", rid,
+                         f"Suppression réservation #{rid} ({old['name']})", snapshot_before=dict(old))
     return {"ok": True}
 
 

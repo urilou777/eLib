@@ -63,9 +63,27 @@ CREATE TABLE IF NOT EXISTS dropdown_options(
   group_key TEXT NOT NULL, -- 'category' | 'type' | 'payment' | 'publisher'
   label TEXT NOT NULL,
   UNIQUE(group_key, label));
+CREATE TABLE IF NOT EXISTS users(
+  id INTEGER PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS audit_logs(
+  id INTEGER PRIMARY KEY,
+  timestamp TEXT NOT NULL,
+  user_name TEXT NOT NULL DEFAULT 'Anonyme',
+  action TEXT NOT NULL,         -- 'INSERT' | 'UPDATE' | 'DELETE' | 'SALE' | 'ADJUST' ...
+  target_type TEXT NOT NULL,    -- 'book' | 'lot' | 'sale' | 'reservation' | 'owner' | 'option' | 'adjustment' ...
+  target_id INTEGER,
+  summary TEXT NOT NULL,
+  snapshot_before TEXT,         -- JSON
+  snapshot_after TEXT,          -- JSON
+  undone INTEGER NOT NULL DEFAULT 0,
+  undone_at TEXT,
+  undone_by TEXT);
 CREATE INDEX IF NOT EXISTS ix_alloc_date ON allocations(date);
 CREATE INDEX IF NOT EXISTS ix_alloc_book ON allocations(book_id);
 CREATE INDEX IF NOT EXISTS ix_lots_book ON lots(book_id);
+CREATE INDEX IF NOT EXISTS ix_audit_timestamp ON audit_logs(timestamp);
 """
 
 
@@ -106,9 +124,25 @@ def init():
             ]
             c.executemany("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES(?,?)", default_opts)
 
+        # Initialisation d'un premier profil utilisateur si vide
+        if not c.execute("SELECT 1 FROM users").fetchone():
+            c.execute("INSERT OR IGNORE INTO users(name) VALUES('Responsable')")
+
 
 def rows(c, sql, args=()):
     return [dict(r) for r in c.execute(sql, args).fetchall()]
+
+
+def log_audit(c, user_name, action, target_type, target_id, summary, snapshot_before=None, snapshot_after=None):
+    """Enregistre une opération atomique avec instantané avant/après (JSON) pour traçabilité et annulation."""
+    import json
+    ts = datetime.now().isoformat(timespec='seconds')
+    sb = json.dumps(snapshot_before, ensure_ascii=False) if snapshot_before is not None else None
+    sa = json.dumps(snapshot_after, ensure_ascii=False) if snapshot_after is not None else None
+    cur = c.execute("""INSERT INTO audit_logs(timestamp, user_name, action, target_type, target_id, summary, snapshot_before, snapshot_after)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (ts, user_name or 'Anonyme', action, target_type, target_id, summary, sb, sa))
+    return cur.lastrowid
 
 
 LOT_REMAINING = """

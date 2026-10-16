@@ -11,7 +11,14 @@
 <div class="bg-orb o1"></div><div class="bg-orb o2"></div>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">📚</div><div><b>Librairie</b><small>Gestion hors-ligne</small></div></div>
+    <div class="user-badge" id="userBadge" title="Changer d'utilisateur">
+      <div class="avatar" id="userAvatar">👤</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;color:var(--mut)">Connecté en tant que</div>
+        <b id="userNameDisplay" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">...</b>
+      </div>
+      <button class="btn sm ghost" id="btnSwitchUser" style="padding:3px 7px;font-size:11px" title="Changer ou gérer les profils">⇄</button>
+    </div>
     <nav id="nav">
       <a data-v="dashboard" id="nav-dashboard"><i>📊</i>Tableau de bord</a>
       <a data-v="pos" id="nav-pos"><i>🛒</i>Caisse</a>
@@ -20,9 +27,10 @@
       <a data-v="sales" id="nav-sales"><i>🧾</i>Ventes</a>
       <a data-v="settle" id="nav-settle"><i>🤝</i>Reversements</a>
       <a data-v="orders" id="nav-orders"><i>📝</i>Réservations</a>
+      <a data-v="audit" id="nav-audit"><i>🛡️</i>Historique &amp; Audit</a>
       <a data-v="data" id="nav-data"><i>⚙️</i>Données &amp; Excel</a>
     </nav>
-    <div class="side-foot" id="sideFoot">● Base locale SQLite<br>Excel miroir automatique</div>
+    <div class="side-foot" id="sideFoot">● Base SQLite &amp; Audit actif<br>Excel miroir automatique</div>
   </aside>
   <main class="content">
     <header class="topbar"><h1 id="title">Tableau de bord</h1><div id="topActions"></div></header>

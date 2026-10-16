@@ -12,6 +12,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .app{position:relative;display:flex;height:100vh}
 .sidebar{width:240px;padding:20px 14px;display:flex;flex-direction:column;gap:18px;background:rgba(10,14,32,.65);backdrop-filter:blur(18px);border-right:1px solid var(--line)}
 .brand{display:flex;gap:12px;align-items:center;padding:6px 8px}
+.user-badge{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--line);cursor:pointer;transition:.2s}
+.user-badge:hover{background:rgba(255,255,255,.09);border-color:var(--a1)}
+.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--a1),var(--a2));font-size:16px}
 .logo{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:22px;background:linear-gradient(135deg,var(--a1),var(--a2));box-shadow:0 8px 24px rgba(124,92,255,.4)}
 .brand b{display:block;font-size:17px}.brand small{color:var(--mut)}
 nav{display:flex;flex-direction:column;gap:4px}

@@ -7,8 +7,22 @@ const today = () => new Date().toISOString().slice(0, 10);
 const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const mlabel = m => MONTHS[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
 
+/* ---------- gestion utilisateur actif ---------- */
+function getCurrentUser() {
+  return localStorage.getItem('librairie_user') || 'Responsable';
+}
+function setCurrentUser(name) {
+  localStorage.setItem('librairie_user', name);
+  updateUserDisplay();
+}
+function updateUserDisplay() {
+  const u = getCurrentUser();
+  const el = $('#userNameDisplay');
+  if (el) el.textContent = u;
+}
+
 async function api(url, method = 'GET', body) {
-  const o = { method, headers: {} };
+  const o = { method, headers: { 'X-User': encodeURIComponent(getCurrentUser()) } };
   if (body instanceof FormData) o.body = body;
   else if (body !== undefined) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); }
   const r = await fetch(url, o);
@@ -43,7 +57,7 @@ async function loadRef() {
 }
 
 /* ---------- navigation ---------- */
-const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', settle: 'Reversements', orders: 'Réservations', data: 'Données & Excel' };
+const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', settle: 'Reversements', orders: 'Réservations', audit: 'Historique & Sécurité des opérations', data: 'Données & Excel' };
 async function go(v) {
   S.view = v; $('#title').textContent = TITLES[v]; $('#topActions').innerHTML = ''; $('#view').onclick = null;
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
@@ -423,4 +437,139 @@ VIEWS.data = async () => {
   });
 };
 
+/* ---- Vue Audit & Historique d'actions ---- */
+VIEWS.audit = async () => {
+  const logs = await api('/api/audit?limit=200');
+  $('#view').innerHTML = `<div class="card" style="margin-bottom:16px">
+    <h3>🛡️ Journal d'audit atomique &amp; Réversibilité</h3>
+    <p class="muted" style="line-height:1.6;font-size:13px">
+      Toutes les opérations d'écriture sur la base de données (création, modification, archivage, vente, ajustement) sont enregistrées de façon horodatée et associées à l'utilisateur actif.
+      Vous pouvez <b>annuler</b> (Rollback / Undo) les opérations erronées d'un simple clic.
+    </p>
+  </div>
+  <div class="card" style="padding:0">
+    <div class="scroll" style="max-height:calc(100vh - 230px);overflow:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Date & Heure</th>
+            <th>Utilisateur</th>
+            <th>Opération</th>
+            <th>Type</th>
+            <th>Détail de l'opération</th>
+            <th>Statut</th>
+            <th class="num">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${logs.map(l => `
+            <tr style="${l.undone ? 'opacity:.55;text-decoration:line-through' : ''}">
+              <td class="muted" style="white-space:nowrap">${esc(l.timestamp)}</td>
+              <td><span class="chip"><i style="background:var(--a1)"></i>${esc(l.user_name)}</span></td>
+              <td><span class="badge ${l.action === 'INSERT' ? 'b-ok' : l.action === 'DELETE' ? 'b-out' : 'b-low'}">${esc(l.action)}</span></td>
+              <td><span class="muted">${esc(l.target_type)}</span></td>
+              <td style="max-width:420px">${esc(l.summary)}</td>
+              <td>${l.undone ? `<span class="badge b-out">Annulé le ${esc(l.undone_at || '')} par ${esc(l.undone_by || '')}</span>` : '<span class="badge b-ok">Actif</span>'}</td>
+              <td class="num">
+                ${!l.undone && l.action !== 'UNDO' ? `<button class="btn ghost sm" data-undo="${l.id}">⤺ Annuler</button>` : ''}
+              </td>
+            </tr>
+          `).join('') || '<tr><td colspan=7 class="muted">Aucune entrée d\'audit pour le moment.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+
+  $('#view').onclick = safe(async e => {
+    const btn = e.target.closest('button[data-undo]');
+    if (btn) {
+      if (confirm('Voulez-vous vraiment annuler cette action et restaurer l\'état précédent ?')) {
+        await api(`/api/audit/${btn.dataset.undo}/undo`, 'POST');
+        toast('Opération annulée avec succès (Rollback effectué)');
+        await loadRef();
+        VIEWS.audit();
+      }
+    }
+  });
+};
+
+/* ---------- modal de sélection / gestion des utilisateurs ---------- */
+async function userModal() {
+  const users = await api('/api/users');
+  const current = getCurrentUser();
+  modal(`<h2>👤 Profils Utilisateurs</h2>
+    <p class="muted" style="margin-bottom:14px">Choisissez votre prénom pour signer vos opérations en caisse et vos modifications :</p>
+    <div style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto;margin-bottom:16px">
+      ${users.map(u => `
+        <div class="row" style="justify-content:space-between;padding:10px 14px;border-radius:12px;background:var(--panel2);border:1px solid ${u.name === current ? 'var(--a1)' : 'var(--line)'}">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1">
+            <input type="radio" name="sel_u" value="${esc(u.name)}" ${u.name === current ? 'checked' : ''}>
+            <b style="font-size:15px">${esc(u.name)}</b>
+          </label>
+          <div class="row" style="gap:6px">
+            <button class="btn ghost sm" data-ren-u="${u.id}" data-name="${esc(u.name)}">✏️ Modifier</button>
+            <button class="btn bad sm" data-del-u="${u.id}" data-name="${esc(u.name)}">🗑️</button>
+          </div>
+        </div>
+      `).join('') || '<div class="muted">Aucun profil</div>'}
+    </div>
+    <div class="row" style="justify-content:space-between">
+      <button class="btn ghost" id="btnAddUser">＋ Nouveau profil</button>
+      <div class="actions" style="margin:0">
+        <button class="btn ghost" onclick="closeModal()">Fermer</button>
+        <button class="btn good" id="btnApplyUser">✔ Sélectionner</button>
+      </div>
+    </div>`, m => {
+      $('#btnApplyUser', m).onclick = () => {
+        const rad = $('input[name="sel_u"]:checked', m);
+        if (rad) {
+          setCurrentUser(rad.value);
+          toast(`Connecté en tant que ${rad.value}`);
+          closeModal();
+        }
+      };
+      $('#btnAddUser', m).onclick = safe(async () => {
+        const name = prompt('Prénom du nouvel utilisateur :');
+        if (name && name.trim()) {
+          await api('/api/users', 'POST', { name: name.trim() });
+          toast('Utilisateur créé');
+          closeModal();
+          userModal();
+        }
+      });
+      m.onclick = safe(async e => {
+        const ren = e.target.closest('button[data-ren-u]');
+        if (ren) {
+          const nv = prompt('Nouveau prénom :', ren.dataset.name);
+          if (nv && nv.trim() && nv.trim() !== ren.dataset.name) {
+            await api(`/api/users/${ren.dataset.renU}`, 'PUT', { name: nv.trim() });
+            if (getCurrentUser() === ren.dataset.name) setCurrentUser(nv.trim());
+            toast('Profil mis à jour');
+            closeModal();
+            userModal();
+          }
+          return;
+        }
+        const del = e.target.closest('button[data-del-u]');
+        if (del) {
+          if (confirm(`Supprimer le profil « ${del.dataset.name} » ?`)) {
+            await api(`/api/users/${del.dataset.delU}`, 'DELETE');
+            toast('Profil supprimé');
+            if (getCurrentUser() === del.dataset.name) setCurrentUser('Responsable');
+            closeModal();
+            userModal();
+          }
+          return;
+        }
+      });
+    });
+}
+
+// Clic sur le badge utilisateur en haut à gauche
+const ub = $('#userBadge');
+if (ub) ub.onclick = userModal;
+const bsu = $('#btnSwitchUser');
+if (bsu) bsu.onclick = (e) => { e.stopPropagation(); userModal(); };
+
+updateUserDisplay();
 go('dashboard');
