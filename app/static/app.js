@@ -169,7 +169,7 @@ function hbars(el, rows, key = 'revenue', fmt = eur, sub) {
   const max = Math.max(...rows.map(r => r[key])) || 1;
   el.innerHTML = rows.map(r => `<div class="hbar"><span class="t" title="${esc(r.label || r.title)}">${esc(r.label || r.title)}</span><div class="tr"><div class="fl" style="width:${r[key] / max * 100}%"></div></div><b>${fmt(r[key])}${sub ? ` <span class="muted" style="font-weight:400">${sub(r)}</span>` : ''}</b></div>`).join('');
 }
-const PALETTE = ['#7c5cff', '#27d3c3', '#ffb454', '#ff6b8b', '#5a9bff', '#4be0a0', '#c77dff'];
+const PALETTE = ['#8f16ad', '#b452d3', '#ca88e3', '#e2c0f2', '#e6a73c', '#38c172', '#e04565'];
 
 /* ================= VUES ================= */
 const VIEWS = {};

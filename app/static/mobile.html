@@ -9,22 +9,34 @@
 <meta name="description" content="Scanner de codes-barres et encaissement rapide pour les libraires de la librairie.">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/fonts.css">
 <style>
-:root { --bg:#090c19; --card:#12182d; --card2:#1b2342; --line:rgba(255,255,255,.08); --a1:#7c5cff; --a2:#27d3c3;
-  --good:#2ecc71; --warn:#f39c12; --bad:#e74c3c; --text:#f0f3fa; --mut:#8892b0; }
+:root { 
+  --bg:#12071a; 
+  --card:#1d0b28; 
+  --card2:#291039; 
+  --line:rgba(226,192,242,.15); 
+  --a1:#8f16ad; 
+  --a2:#ca88e3;
+  --good:#38c172; 
+  --warn:#e6a73c; 
+  --bad:#e04565; 
+  --text:#faf7f2; 
+  --mut:#b8a6c8; 
+}
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 [hidden] { display:none !important; }
-body { font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; background:var(--bg);
+body { font-family:'DM Sans',system-ui,-apple-system,sans-serif; background:var(--bg);
   color:var(--text); min-height:100vh; display:flex; flex-direction:column; }
 button, select, input { font:inherit; color:inherit; }
 
-.m-head { padding:10px 14px; background:rgba(18,24,45,.9); border-bottom:1px solid var(--line); display:flex;
-  justify-content:space-between; align-items:center; position:sticky; top:0; z-index:10; }
-.logo { font-weight:800; font-size:16px; }
+.m-head { padding:10px 14px; background:rgba(29,11,40,.92); border-bottom:1px solid var(--line); display:flex;
+  justify-content:space-between; align-items:center; position:sticky; top:0; z-index:10; backdrop-filter:blur(12px); }
+.logo { font-weight:800; font-size:16px; font-family:'Playfair Display',serif; color:#faf7f2; letter-spacing:.5px; }
 .mode-switch { display:inline-flex; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:18px; padding:2px; }
 .mode-btn { background:none; border:0; color:var(--mut); font-size:11.5px; font-weight:700; padding:5px 9px; border-radius:15px; cursor:pointer; transition:.2s; }
 .mode-btn.on { background:var(--a1); color:#fff; }
-.mode-btn#btnModeRecv.on { background:linear-gradient(135deg, #f59f00, #d9480f); color:#fff; }
+.mode-btn#btnModeRecv.on { background:linear-gradient(135deg, #b452d3, #8f16ad); color:#fff; }
 .user-chip { display:inline-flex; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--line);
   padding:6px 10px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; }
 .user-chip i { width:8px; height:8px; border-radius:50%; background:var(--good); }
