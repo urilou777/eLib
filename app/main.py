@@ -186,6 +186,11 @@ class DropdownItemIn(BaseModel):
     label: str = Field(min_length=1, max_length=80)
 
 
+class DropdownItemRenameIn(BaseModel):
+    new_label: str = Field(min_length=1, max_length=80)
+    cascade: bool = True  # Mettre à jour en cascade les livres et ventes existants
+
+
 class UserIn(BaseModel):
     name: str = Field(max_length=60)
 
@@ -377,6 +382,116 @@ def add_option(opt: DropdownItemIn, request: Request):
             raise HTTPException(400, "Cette option existe déjà")
 
 
+@app.get("/api/options/{opt_id}/impact")
+def get_option_impact(opt_id: int):
+    """Calcule le nombre d'éléments impactés par un renommage ou une fusion."""
+    with db.tx() as c:
+        opt = c.execute("SELECT * FROM dropdown_options WHERE id=?", (opt_id,)).fetchone()
+        if not opt:
+            raise HTTPException(404, "Option introuvable")
+        
+        gk = opt["group_key"]
+        lbl = opt["label"]
+        books_count = 0
+        sales_count = 0
+
+        if gk == "category":
+            books_count = c.execute("SELECT COUNT(*) FROM books WHERE category=?", (lbl,)).fetchone()[0]
+        elif gk == "type":
+            books_count = c.execute("SELECT COUNT(*) FROM books WHERE type=?", (lbl,)).fetchone()[0]
+        elif gk == "publisher":
+            books_count = c.execute("SELECT COUNT(*) FROM books WHERE publisher=?", (lbl,)).fetchone()[0]
+        elif gk == "payment":
+            sales_count = c.execute("SELECT COUNT(*) FROM sales WHERE payment=?", (lbl,)).fetchone()[0]
+
+        return {
+            "id": opt_id,
+            "group_key": gk,
+            "label": lbl,
+            "books_count": books_count,
+            "sales_count": sales_count,
+            "total_impact": books_count + sales_count
+        }
+
+
+@app.put("/api/options/{opt_id}")
+def rename_or_merge_option(opt_id: int, body: DropdownItemRenameIn, request: Request):
+    """Renomme ou fusionne une option avec mise à jour en cascade des livres/ventes et backup automatique."""
+    new_lbl = body.new_label.strip()
+    if not new_lbl:
+        raise HTTPException(400, "Le nouveau libellé ne peut pas être vide")
+
+    user = get_current_user(request)
+
+    # 1. Créer immédiatement un snapshot SQLite de sécurité automatique
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    auto_backup_path = os.path.join(BACKUPS, f"avant_renommage_option_{stamp}.db")
+    db.safe_backup_db(auto_backup_path)
+
+    with db.tx() as c:
+        old = c.execute("SELECT * FROM dropdown_options WHERE id=?", (opt_id,)).fetchone()
+        if not old:
+            raise HTTPException(404, "Option introuvable")
+
+        gk = old["group_key"]
+        old_lbl = old["label"]
+
+        if old_lbl == new_lbl:
+            return {"ok": True, "message": "Aucun changement nécessaire", "updated_books": 0, "updated_sales": 0}
+
+        # Vérifier si la nouvelle option existe déjà (cas d'une fusion)
+        target_opt = c.execute("SELECT id FROM dropdown_options WHERE group_key=? AND label=?", (gk, new_lbl)).fetchone()
+        is_merge = target_opt is not None
+
+        updated_books = 0
+        updated_sales = 0
+
+        # Mise à jour en cascade dans les tables métier
+        if body.cascade:
+            if gk == "category":
+                cur = c.execute("UPDATE books SET category=? WHERE category=?", (new_lbl, old_lbl))
+                updated_books = cur.rowcount
+            elif gk == "type":
+                cur = c.execute("UPDATE books SET type=? WHERE type=?", (new_lbl, old_lbl))
+                updated_books = cur.rowcount
+            elif gk == "publisher":
+                cur = c.execute("UPDATE books SET publisher=? WHERE publisher=?", (new_lbl, old_lbl))
+                updated_books = cur.rowcount
+            elif gk == "payment":
+                cur = c.execute("UPDATE sales SET payment=? WHERE payment=?", (new_lbl, old_lbl))
+                updated_sales = cur.rowcount
+
+        # Mise à jour de la table dropdown_options
+        if is_merge:
+            # Fusion : on supprime l'ancienne option puisque la nouvelle existe déjà
+            c.execute("DELETE FROM dropdown_options WHERE id=?", (opt_id,))
+            final_id = target_opt["id"]
+        else:
+            # Renommage simple
+            c.execute("UPDATE dropdown_options SET label=? WHERE id=?", (new_lbl, opt_id))
+            final_id = opt_id
+
+        # Audit
+        action_desc = f"Fusion de {gk} « {old_lbl} » vers « {new_lbl} »" if is_merge else f"Renommage de {gk} « {old_lbl} » en « {new_lbl} »"
+        details = f"{action_desc} ({updated_books} livres et {updated_sales} ventes mis à jour en cascade). Sauvegarde créée : {os.path.basename(auto_backup_path)}"
+        db.log_audit(c, user, "UPDATE", "option", final_id, details,
+                     snapshot_before={"id": opt_id, "group_key": gk, "label": old_lbl},
+                     snapshot_after={"id": final_id, "group_key": gk, "label": new_lbl, "merged": is_merge})
+
+    # Marquer dirty pour rafraîchir immédiatement le miroir Excel
+    _dirty.set()
+
+    return {
+        "ok": True,
+        "is_merge": is_merge,
+        "old_label": old_lbl,
+        "new_label": new_lbl,
+        "updated_books": updated_books,
+        "updated_sales": updated_sales,
+        "backup_created": os.path.basename(auto_backup_path)
+    }
+
+
 @app.delete("/api/options/{opt_id}")
 def delete_option(opt_id: int, request: Request):
     with db.tx() as c:
@@ -384,6 +499,7 @@ def delete_option(opt_id: int, request: Request):
         if old:
             c.execute("DELETE FROM dropdown_options WHERE id=?", (opt_id,))
             db.log_audit(c, get_current_user(request), "DELETE", "option", opt_id, f"Suppression option {old['group_key']}: « {old['label']} »", snapshot_before=dict(old))
+    _dirty.set()
     return {"ok": True}
 
 

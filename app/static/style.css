@@ -747,7 +747,24 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
 .owner-card { border-left: 4px solid var(--c); }
 .big { font-family: var(--font-heading); font-size: 32px; font-weight: 400; letter-spacing: .5px; }
 .tl { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
-.tag-x { cursor: pointer; color: var(--bad); margin-left: 8px; }
+.btn-chip-action {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--mut);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all .15s ease;
+}
+.btn-chip-action:hover {
+  color: var(--icc-purple);
+  background: rgba(143, 22, 173, 0.15);
+}
+.tag-x { cursor: pointer; color: var(--bad); margin-left: 2px; padding: 0 4px; border-radius: 4px; transition: .15s; }
+.tag-x:hover { background: rgba(224, 69, 101, 0.15); }
 
 /* Mode Focus */
 .btn-focus-toggle {

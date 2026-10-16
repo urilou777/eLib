@@ -792,7 +792,13 @@ VIEWS.data = async () => {
   ${S.owners.map(o => `<tr><td><span class="chip"><i style="background:${o.color}"></i>${esc(o.name)}</span></td><td>${o.kind === 'maison_mere' ? 'Maison mère (dépôt)' : 'Église locale (acquis)'}</td><td class="num">${o.reverse_pct} %</td><td class="num">${o.priority}</td><td class="num"><button class="btn ghost sm" data-o="${o.id}">Modifier</button></td></tr>`).join('')}</tbody></table>
   <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>% reversé</b> = part du prix de vente rendue à l'origine (100 = tout le prix revient à la maison mère ; 0 = stock acquis, marge entière gardée). Pour un lot acquis avec marge négociée, indiquez le <i>coût unitaire</i> à la réception du stock. <b>Ordre</b> : n'est utilisé que pour répartir les ventes de l'<i>import Excel historique</i>. En caisse, c'est toujours vous qui choisissez l'origine de chaque exemplaire.</p></div>
   
-  <div class="card" style="margin-top:16px"><h3>Listes &amp; Paramètres personnalisables (Catégories, Types, Paiements, Éditeurs)</h3>
+  <div class="card" style="margin-top:16px">
+    <h3>Listes &amp; Paramètres personnalisables (Catégories, Types, Paiements, Éditeurs)</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.6">
+      Vous pouvez <b>ajouter</b>, <b>renommer</b> ou <b>fusionner</b> des libellés.
+      En cas de renommage ou de fusion, la mise à jour s'applique <b>en cascade sur tous les livres et ventes existants</b>, ainsi que sur les futurs miroirs et exports Excel. 
+      Un <b>point de restauration automatique</b> est créé au préalable pour une sécurité absolue.
+    </p>
     <div class="grid g-eq" style="margin-top:12px">
       ${[
         ['category', 'Catégories de livres'],
@@ -806,7 +812,15 @@ VIEWS.data = async () => {
             <button class="btn sm" data-add-opt="${grp}">＋ Ajouter</button>
           </div>
           <div class="row" style="flex-wrap:wrap;gap:6px">
-            ${(S.options[grp] || []).map(opt => `<span class="chip" style="padding:4px 10px">${esc(opt.label)} <b class="tag-x" data-del-opt="${opt.id}">×</b></span>`).join('') || '<span class="muted" style="font-size:12px">Aucune option</span>'}
+            ${(S.options[grp] || []).map(opt => `
+              <span class="chip" style="padding:4px 8px 4px 10px;display:inline-flex;align-items:center;gap:6px">
+                <span>${esc(opt.label)}</span>
+                <button class="btn-chip-action" data-edit-opt="${opt.id}" data-grp="${grp}" data-lbl="${esc(opt.label)}" title="Renommer ou fusionner ce libellé">
+                  <svg class="ico sm" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <b class="tag-x" data-del-opt="${opt.id}" data-lbl="${esc(opt.label)}" title="Supprimer de la liste">×</b>
+              </span>
+            `).join('') || '<span class="muted" style="font-size:12px">Aucune option</span>'}
           </div>
         </div>
       `).join('')}
@@ -833,6 +847,59 @@ VIEWS.data = async () => {
     $('#ok', m).onclick = safe(async () => { const body = { name: $('#n', m).value, kind: $('#k', m).value, reverse_pct: +$('#r', m).value, priority: +$('#p', m).value, color: $('#c', m).value }; o.id ? await api(`/api/owners/${o.id}`, 'PUT', body) : await api('/api/owners', 'POST', body); closeModal(); go('data') });
   });
   $('#no').onclick = () => ownerForm(); 
+
+  // Modal interactif de renommage / fusion avec calcul d'impact
+  const renameOptionModal = async (optId, grpKey, currentLabel) => {
+    const impact = await api(`/api/options/${optId}/impact`);
+    const otherOptions = (S.options[grpKey] || []).filter(o => o.id !== +optId);
+
+    modal(`
+      <h2>Renommer ou Fusionner « ${esc(currentLabel)} »</h2>
+      <p class="muted" style="margin-bottom:14px;line-height:1.6">
+        ${impact.total_impact > 0 
+          ? `Cette option est actuellement utilisée sur <b>${impact.books_count} livre(s)</b> et <b>${impact.sales_count} vente(s)</b>.` 
+          : `Cette option n'est actuellement liée à aucun livre ou vente enregistrée.`}
+        <br>Un <b>point de restauration automatique</b> sera créé avant la modification.
+      </p>
+
+      <div class="form">
+        <label class="f full">Nouveau nom (ou choisissez un nom existant pour fusionner) :
+          <input id="renLabel" value="${esc(currentLabel)}" list="optSuggestions" autofocus>
+          <datalist id="optSuggestions">
+            ${otherOptions.map(o => `<option value="${esc(o.label)}">`).join('')}
+          </datalist>
+        </label>
+        
+        <label class="row full muted" style="margin-top:6px;cursor:pointer">
+          <input type="checkbox" id="chkCascade" checked>
+          <span>Appliquer la modification en cascade aux <b>${impact.total_impact} élément(s) existant(s)</b> et au miroir Excel</span>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button class="btn ghost" onclick="closeModal()">Annuler</button>
+        <button class="btn good" id="btnConfirmRen">Confirmer</button>
+      </div>
+    `, m => {
+      $('#btnConfirmRen', m).onclick = safe(async () => {
+        const val = $('#renLabel', m).value.trim();
+        const cascade = $('#chkCascade', m).checked;
+        if (!val) return toast('Le libellé ne peut pas être vide', 'warn');
+        if (val === currentLabel) return closeModal();
+
+        const res = await api(`/api/options/${optId}`, 'PUT', { new_label: val, cascade });
+        closeModal();
+        if (res.is_merge) {
+          toast(`Fusion réussie vers « ${val} » (${res.updated_books} livres et ${res.updated_sales} ventes mis à jour)`, 'ok');
+        } else {
+          toast(`Option renommée en « ${val} » (${res.updated_books} livres mis à jour)`, 'ok');
+        }
+        await loadRef();
+        VIEWS.data();
+      });
+    });
+  };
+
   $('#view').onclick = safe(async e => { 
     const b = e.target.closest('button[data-o]'); 
     if (b) return ownerForm(S.owners.find(x => x.id == b.dataset.o));
@@ -849,11 +916,17 @@ VIEWS.data = async () => {
       }
       return;
     }
+
+    const editBtn = e.target.closest('button[data-edit-opt]');
+    if (editBtn) {
+      return renameOptionModal(editBtn.dataset.editOpt, editBtn.dataset.grp, editBtn.dataset.lbl);
+    }
+
     const delBtn = e.target.closest('.tag-x[data-del-opt]');
     if (delBtn) {
-      if (confirm('Supprimer cette option de la liste ?')) {
+      if (confirm(`Supprimer l'option « ${delBtn.dataset.lbl || ''} » de la liste des choix ? (Les données existantes ne seront pas altérées)`)) {
         await api(`/api/options/${delBtn.dataset.delOpt}`, 'DELETE');
-        toast('Option supprimée');
+        toast('Option retirée de la liste');
         await loadRef();
         VIEWS.data();
       }
