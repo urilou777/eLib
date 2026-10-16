@@ -1066,6 +1066,74 @@ if (bsu) bsu.onclick = (e) => { e.stopPropagation(); userModal(); };
 const bFocus = $('#btnFocusMode');
 if (bFocus) bFocus.onclick = toggleFocusMode;
 
+/* ---------- Gestion dynamique du thème (Système / Clair / Sombre) ---------- */
+function getSystemTheme() {
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function getSavedThemePreference() {
+  return localStorage.getItem('librairie_theme_preference') || 'auto'; // 'auto' | 'light' | 'dark'
+}
+
+function applyTheme(pref) {
+  const effective = (pref === 'auto') ? getSystemTheme() : pref;
+  if (pref === 'auto') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', pref);
+  }
+
+  // Adapter le logo selon le thème effectif
+  const logoImg = $('.brand-logo-img');
+  if (logoImg) {
+    if (effective === 'light') {
+      logoImg.src = '/static/img/logo_icc_rennes_bar.png'; // Version noire sur fond clair
+    } else {
+      logoImg.src = '/static/img/logo_icc_rennes_bar_white.png'; // Version blanche sur fond sombre
+    }
+  }
+
+  // Mettre à jour l'intitulé et l'icône du bouton
+  const label = $('#themeLabel');
+  const btn = $('#btnThemeToggle');
+  if (label && btn) {
+    if (pref === 'auto') {
+      label.textContent = `Auto (${effective === 'light' ? 'Clair' : 'Sombre'})`;
+      btn.title = 'Thème : Aligné sur votre système d\'exploitation (Cliquez pour forcer Clair)';
+    } else if (pref === 'light') {
+      label.textContent = 'Clair';
+      btn.title = 'Thème : Clair fixé (Cliquez pour forcer Sombre)';
+    } else {
+      label.textContent = 'Sombre';
+      btn.title = 'Thème : Sombre fixé (Cliquez pour revenir au mode Auto)';
+    }
+  }
+}
+
+function cycleTheme() {
+  const current = getSavedThemePreference();
+  let next = 'auto';
+  if (current === 'auto') next = 'light';
+  else if (current === 'light') next = 'dark';
+  else next = 'auto';
+  
+  localStorage.setItem('librairie_theme_preference', next);
+  applyTheme(next);
+  toast(`Thème basculé : ${next === 'auto' ? 'Adaptatif Système' : next === 'light' ? 'Clair' : 'Sombre'}`, 'ok');
+}
+
+const btnTheme = $('#btnThemeToggle');
+if (btnTheme) btnTheme.onclick = cycleTheme;
+
+// Écouter les changements de thème du système en temps réel
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if (getSavedThemePreference() === 'auto') {
+    applyTheme('auto');
+  }
+});
+
+applyTheme(getSavedThemePreference());
 updateUserDisplay();
 updateFocusUI();
 go(isFocusMode() ? 'pos' : 'dashboard');
+
