@@ -152,6 +152,135 @@ VIEWS.dashboard = async () => {
 
 /* ---- Caisse ---- */
 VIEWS.pos = async () => {
+  const info = await api('/api/info');
+  $('#topActions').innerHTML = `
+    <button class="btn ghost" id="btnMobileQr" style="display:flex;align-items:center;gap:6px">
+      📱 Ouvrir Scanner Mobile
+    </button>
+  `;
+  const btnQr = $('#btnMobileQr');
+  if (btnQr) {
+    btnQr.onclick = async () => {
+      try {
+        const minfo = await api('/api/mobile/info');
+        if (!minfo.enabled) {
+          modal(`
+            <h2>📱 Scanner Mobile non activé</h2>
+            <p class="muted" style="margin-bottom:14px;font-size:13px;line-height:1.6">
+              Le service HTTPS mobile n'est pas encore démarré.<br>
+              Veuillez lancer <b>Installer_Mobile.bat</b> pour configurer le certificat et le pare-feu, puis redémarrer l'application.
+            </p>
+            <div class="actions">
+              <button class="btn ghost" onclick="closeModal()">Fermer</button>
+            </div>
+          `);
+          return;
+        }
+
+        const renderModalContent = (pairingUrl = null) => {
+          const devList = (minfo.devices || []).map(d => `
+            <div class="row" style="justify-content:space-between;padding:6px 10px;background:var(--panel2);border-radius:6px;margin-bottom:6px;font-size:12px">
+              <div>
+                <b>${esc(d.name || 'Téléphone')}</b> 
+                <span class="muted">(vu ${esc(d.last_seen ? d.last_seen.slice(0, 16) : d.created_at ? d.created_at.slice(0, 10) : 'jamais')})</span>
+              </div>
+              <button class="btn ghost sm" style="color:var(--bad)" onclick="revokeDevice('${esc(d.id)}')">Révoquer</button>
+            </div>
+          `).join('') || '<div class="muted" style="font-size:12px;font-style:italic">Aucun smartphone appairé pour le moment.</div>';
+
+          return `
+            <h2>📱 Connexion Scanner Mobile</h2>
+            <p class="muted" style="margin-bottom:12px;font-size:13px;line-height:1.5">
+              Scannez ce QR code avec l'appareil photo du smartphone du libraire.<br>
+              <b>Important :</b> Le téléphone et le PC doivent être sur le même Wi-Fi.
+            </p>
+
+            <div style="text-align:center;padding:12px;background:#fff;border-radius:12px;display:inline-block;margin:0 auto">
+              ${pairingUrl ? `
+                <img src="/api/qr?data=${encodeURIComponent(pairingUrl)}" alt="QR Code" style="display:block;width:200px;height:200px">
+              ` : `
+                <div style="width:200px;height:200px;display:flex;align-items:center;justify-content:center;color:#666">
+                  <button class="btn good sm" id="btnGenPair">Générer le QR Code (5 min)</button>
+                </div>
+              `}
+            </div>
+
+            ${pairingUrl ? `
+              <div style="margin-top:10px;text-align:center">
+                <button class="btn ghost sm" id="btnGenPair">🔄 Régénérer un nouveau QR Code</button>
+              </div>
+            ` : ''}
+
+            <details style="margin-top:16px;text-align:left;background:var(--panel2);padding:10px 14px;border-radius:8px;font-size:12px">
+              <summary style="cursor:pointer;font-weight:600">🔒 Certificat de sécurité (requis pour la caméra)</summary>
+              <p style="margin:8px 0;line-height:1.5">
+                Sur Android/iPhone, la caméra nécessite une connexion sécurisée. 
+                Si votre navigateur affiche une alerte de sécurité :
+              </p>
+              <ol style="margin-left:18px;line-height:1.5">
+                <li>Téléchargez et installez l'autorité racine : <a href="/api/ca.crt" download="Librairie-CA.crt" style="color:var(--a2);font-weight:bold">Télécharger Librairie-CA.crt</a></li>
+                <li>Ou cliquez simplement sur <i>"Paramètres avancés" &gt; "Continuer vers le site"</i> sur votre téléphone.</li>
+              </ol>
+              <div style="margin-top:6px;font-family:monospace;font-size:11px;color:var(--muted)">
+                Empreinte SHA-256 : ${esc(minfo.ca_fingerprint || 'Non disponible')}
+              </div>
+            </details>
+
+            <div style="margin-top:16px;text-align:left">
+              <h4 style="margin:0 0 8px 0;font-size:13px">Appareils autorisés</h4>
+              ${devList}
+            </div>
+
+            <div class="actions" style="margin-top:18px">
+              <button class="btn ghost" onclick="closeModal()">Fermer</button>
+            </div>
+          `;
+        };
+
+        window.revokeDevice = async (did) => {
+          if (!confirm("Révoquer cet appareil ? Le smartphone devra être ré-appairé.")) return;
+          try {
+            await api('/api/mobile/devices/' + did, 'DELETE');
+            closeModal();
+            btnQr.click();
+          } catch (e) {
+            toast(e.message, 'err');
+          }
+        };
+
+        const show = async (pairingUrl = null) => {
+          modal(renderModalContent(pairingUrl));
+          const btn = $('#btnGenPair');
+          if (btn) {
+            btn.onclick = async () => {
+              try {
+                btn.disabled = true;
+                btn.textContent = 'Génération...';
+                const res = await api('/api/mobile/pairing', 'POST');
+                show(res.url);
+              } catch (e) {
+                toast(e.message, 'err');
+                btn.disabled = false;
+                btn.textContent = 'Générer le QR Code (5 min)';
+              }
+            };
+          }
+        };
+
+        // Génération immédiate par défaut
+        try {
+          const res = await api('/api/mobile/pairing', 'POST');
+          show(res.url);
+        } catch (e) {
+          show(null);
+        }
+
+      } catch (err) {
+        modal(`<h2>Erreur</h2><p class="muted">${esc(err.message)}</p><div class="actions"><button class="btn ghost" onclick="closeModal()">Fermer</button></div>`);
+      }
+    };
+  }
+
   $('#view').innerHTML = `<div class="pos"><div class="pos-l"><div class="toolbar"><input class="search" id="q" placeholder="Rechercher un titre, ou scanner / saisir un code ISBN puis Entrée…" autofocus>
     <select id="fOwner"><option value="">Toutes origines</option>${S.owners.map(o => `<option>${esc(o.name)}</option>`).join('')}</select><label class="row muted"><input type="checkbox" id="inStock" checked> En stock</label></div>
     <div class="books" id="books"></div></div>

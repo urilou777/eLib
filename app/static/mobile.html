@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#090c19">
+<meta name="referrer" content="no-referrer">
+<title>Librairie – Scanner mobile</title>
+<meta name="description" content="Scanner de codes-barres et encaissement rapide pour les libraires de la librairie.">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<style>
+:root { --bg:#090c19; --card:#12182d; --card2:#1b2342; --line:rgba(255,255,255,.08); --a1:#7c5cff; --a2:#27d3c3;
+  --good:#2ecc71; --warn:#f39c12; --bad:#e74c3c; --text:#f0f3fa; --mut:#8892b0; }
+* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+[hidden] { display:none !important; }
+body { font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; background:var(--bg);
+  color:var(--text); min-height:100vh; display:flex; flex-direction:column; }
+button, select, input { font:inherit; color:inherit; }
+
+.m-head { padding:10px 14px; background:rgba(18,24,45,.9); border-bottom:1px solid var(--line); display:flex;
+  justify-content:space-between; align-items:center; position:sticky; top:0; z-index:10; }
+.logo { font-weight:800; font-size:16px; }
+.user-chip { display:inline-flex; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--line);
+  padding:6px 12px; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer; }
+.user-chip i { width:8px; height:8px; border-radius:50%; background:var(--good); }
+
+.cam-container { position:relative; width:100%; height:38vh; min-height:240px; background:#000; overflow:hidden; }
+#video { width:100%; height:100%; object-fit:cover; display:block; cursor:pointer; }
+.target-box { position:absolute; inset:14% 10%; border:2px solid rgba(255,255,255,.2); border-radius:14px;
+  box-shadow:0 0 0 1000px rgba(0,0,0,.45); pointer-events:none; transition:border-color .2s, box-shadow .2s; }
+.target-box.success { border-color:var(--good) !important; box-shadow:0 0 0 1000px rgba(0,0,0,.45), 0 0 25px var(--good) !important; }
+.target-corner { position:absolute; width:18px; height:18px; border-color:var(--a1); border-style:solid; border-width:0; }
+.target-corner.tl { top:-2px; left:-2px; border-top-width:3px; border-left-width:3px; border-top-left-radius:12px; }
+.target-corner.tr { top:-2px; right:-2px; border-top-width:3px; border-right-width:3px; border-top-right-radius:12px; }
+.target-corner.bl { bottom:-2px; left:-2px; border-bottom-width:3px; border-left-width:3px; border-bottom-left-radius:12px; }
+.target-corner.br { bottom:-2px; right:-2px; border-bottom-width:3px; border-right-width:3px; border-bottom-right-radius:12px; }
+.laser { position:absolute; left:4%; width:92%; height:2px; background:#ff3b30; box-shadow:0 0 8px #ff3b30;
+  animation:scan 1.6s infinite alternate ease-in-out; }
+.target-hint { position:absolute; bottom:8px; left:0; right:0; text-align:center; font-size:11px; font-weight:600; color:rgba(255,255,255,.8); text-shadow:0 1px 3px rgba(0,0,0,.8); pointer-events:none; }
+@keyframes scan { from { top:15%; opacity:.4; } to { top:85%; opacity:1; } }
+.cam-controls { position:absolute; top:10px; right:10px; display:flex; gap:6px; z-index:6; }
+.btn-ctrl { background:rgba(18,24,45,.75); border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:20px;
+  padding:5px 11px; font-size:12px; font-weight:700; cursor:pointer; backdrop-filter:blur(6px); display:inline-flex; align-items:center; }
+.btn-ctrl.on { background:var(--a1); border-color:var(--a1); }
+.cam-status { position:absolute; inset:0; background:rgba(9,12,25,.94); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; padding:16px; text-align:center; font-size:13px; gap:8px; z-index:5; }
+.cam-status p { color:var(--mut); font-size:12px; line-height:1.5; max-width:320px; }
+
+.btn { border:0; border-radius:12px; padding:11px 16px; font-weight:700; cursor:pointer; background:var(--card2);
+  border:1px solid var(--line); display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.btn.primary { background:linear-gradient(135deg,var(--a1),#5a7bff); border:0; }
+.btn.good { background:linear-gradient(135deg,var(--good),#27ae60); border:0; width:100%; padding:14px; font-size:16px; }
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn.sm { padding:5px 10px; font-size:12px; border-radius:10px; }
+
+.main-body { flex:1; padding:12px; display:flex; flex-direction:column; gap:10px; padding-bottom:6px; }
+.row { display:flex; gap:8px; }
+.field { flex:1; padding:11px 14px; background:var(--card); border:1px solid var(--line); border-radius:12px; font-size:14px; min-width:0; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:12px; }
+.results { display:flex; flex-direction:column; gap:6px; }
+.result { text-align:left; background:var(--card2); border:1px solid var(--line); border-radius:12px; padding:10px 12px; cursor:pointer; }
+.muted { color:var(--mut); font-size:12px; }
+
+.cart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:14px; font-weight:700; }
+.cart-list { display:flex; flex-direction:column; gap:8px; max-height:36vh; overflow-y:auto; }
+.cart-item { background:var(--card2); border-radius:12px; padding:10px 12px; border:1px solid var(--line); }
+.cart-item.todo { border-color:var(--warn); }
+.ci-top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.ci-title { font-size:13px; font-weight:700; line-height:1.3; }
+.qty { display:flex; align-items:center; gap:8px; flex:none; }
+.qty button { width:30px; height:30px; border-radius:9px; border:1px solid var(--line); background:var(--card); font-size:17px; cursor:pointer; }
+.lots { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.chip { border:1px solid var(--line); background:var(--card); border-radius:999px; padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+.chip i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.chip.on { background:var(--a1); border-color:var(--a1); }
+.hint { font-size:11px; color:var(--warn); margin-top:6px; }
+
+.bottom-bar { background:var(--card); border-top:1px solid var(--line); padding:10px 14px calc(10px + env(safe-area-inset-bottom)); position:sticky; bottom:0; z-index:10; }
+.total-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+.total-row .val { font-size:26px; font-weight:800; color:var(--good); }
+.pay-select { width:100%; padding:11px 12px; background:var(--card2); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; font-weight:600; }
+.pay-select option { background:#12182d; }
+
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.88); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100; }
+.sheet { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:22px; width:100%; max-width:360px; text-align:center; }
+.sheet h2 { font-size:18px; margin-bottom:6px; }
+.sheet p { color:var(--mut); font-size:13px; line-height:1.55; margin-bottom:12px; }
+.user-btn { width:100%; padding:14px; margin-top:8px; background:var(--card2); border:1px solid var(--line); border-radius:12px; font-size:16px; font-weight:600; text-align:left; cursor:pointer; }
+.user-btn:active { background:var(--a1); }
+
+#toasts { position:fixed; top:58px; left:12px; right:12px; display:flex; flex-direction:column; gap:8px; z-index:120; pointer-events:none; }
+.toast { padding:10px 14px; border-radius:10px; background:#1c2242; border:1px solid var(--line); font-size:13px; font-weight:600; box-shadow:0 8px 25px rgba(0,0,0,.6); }
+.toast.ok { border-color:var(--good); } .toast.warn { border-color:var(--warn); } .toast.err { border-color:var(--bad); }
+</style>
+</head>
+<body>
+
+<header class="m-head">
+  <div class="logo">📖 Librairie</div>
+  <button class="user-chip" id="userBtn" type="button"><i></i><span id="userName">…</span> ▾</button>
+</header>
+
+<!-- Écran d'appairage : affiché tant que ce téléphone n'a pas scanné le QR code du poste de caisse -->
+<section class="overlay" id="pairScreen" hidden>
+  <div class="sheet">
+    <div style="font-size:42px">🔐</div>
+    <h2>Téléphone non appairé</h2>
+    <p>Pour des raisons de sécurité, chaque téléphone doit être autorisé une fois par le poste de caisse.<br><br>
+       Sur l'ordinateur : <b>Caisse → « 📱 Scanner mobile »</b>, puis scannez le QR code avec l'appareil photo de ce téléphone.</p>
+    <button class="btn primary" id="btnRetryPair" type="button">J'ai scanné, réessayer</button>
+  </div>
+</section>
+
+<div id="app">
+  <div class="cam-container" id="camContainer">
+    <video id="video" playsinline autoplay muted></video>
+    <div class="target-box" id="targetBox">
+      <div class="target-corner tl"></div>
+      <div class="target-corner tr"></div>
+      <div class="target-corner bl"></div>
+      <div class="target-corner br"></div>
+      <div class="laser"></div>
+      <div class="target-hint">Alignez le code-barres</div>
+    </div>
+    <div class="cam-controls" id="camControls">
+      <button class="btn-ctrl" id="btnTorch" type="button" title="Éclairer" hidden>🔦</button>
+    </div>
+    <div class="cam-status" id="camStatus">
+      <div style="font-size:34px">📷</div>
+      <b id="camTitle">Scanner un code-barres</b>
+      <p id="camMsg">Appuyez pour activer l'appareil photo.</p>
+      <button class="btn primary" id="btnCam" type="button">Activer la caméra</button>
+      <label class="btn" id="snapLabel">📸 Photographier un code-barres
+        <input type="file" id="fileSnap" accept="image/*" capture="environment" hidden>
+      </label>
+    </div>
+  </div>
+
+  <main class="main-body">
+    <div class="row">
+      <input class="field" id="manualCode" type="search" enterkeyhint="search" autocomplete="off"
+             placeholder="Code ISBN ou titre (si illisible)…">
+      <button class="btn primary" id="btnSearch" type="button">Chercher</button>
+    </div>
+    <div class="results" id="results"></div>
+
+    <div class="card">
+      <div class="cart-header">
+        <span>🛒 Panier (<span id="cartCount">0</span>)</span>
+        <button class="btn sm" id="clearCart" type="button">Vider</button>
+      </div>
+      <div class="cart-list" id="cartItems"></div>
+    </div>
+  </main>
+
+  <footer class="bottom-bar">
+    <div class="total-row"><span class="muted">Total à encaisser</span><span class="val" id="totalVal">0,00 €</span></div>
+    <select class="pay-select" id="payMethod" aria-label="Mode de paiement"></select>
+    <button class="btn good" id="btnValidate" type="button" disabled>✔ Encaisser la vente</button>
+    <div class="hint" id="validHint" style="text-align:center"></div>
+  </footer>
+</div>
+
+<!-- Choix du libraire -->
+<section class="overlay" id="userModal" hidden>
+  <div class="sheet">
+    <h2>Qui tient la caisse ?</h2>
+    <p>Vos ventes et encaissements seront attribués à votre profil.</p>
+    <div id="userList"></div>
+  </div>
+</section>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script src="/static/vendor/zxing.min.js"></script>
+<script src="/static/mobile.js"></script>
+</body>
+</html>

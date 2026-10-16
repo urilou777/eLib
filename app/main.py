@@ -1,16 +1,22 @@
 """API FastAPI locale – Librairie."""
+import io
+import json
 import os
+import re
+import secrets
 import sys
 import threading
 import time
 import shutil
+import zipfile
 from datetime import date, datetime, timedelta
+from urllib.parse import unquote
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from typing import Optional, List
-from . import db, excel_io
+from pydantic import BaseModel, Field
+from typing import Optional, List, Literal
+from . import db, excel_io, security
 
 app = FastAPI(title="Librairie")
 db.init()
@@ -78,6 +84,10 @@ async def _ve(request, exc):
     return JSONResponse({"detail": str(exc)}, status_code=400)
 
 
+# Doit rester APRÈS les autres middlewares : le dernier enregistré est le plus externe (premier exécuté).
+app.middleware("http")(security.security_gate)
+
+
 # ---------- modèles ----------
 class OwnerIn(BaseModel):
     name: str
@@ -107,80 +117,99 @@ class PackItem(BaseModel):
     qty: int = 1
 
 
+DATE_PATTERN = r"^(\d{4}-\d{2}-\d{2})?$"   # vide accepté : le serveur retombe sur aujourd'hui
+
+
 class LotIn(BaseModel):
     book_id: int
     owner_id: int
-    qty_in: int
-    date: Optional[str] = None
-    unit_cost: Optional[float] = None
-    reverse_pct: Optional[float] = None
-    note: Optional[str] = None
+    qty_in: int = Field(ge=1, le=100000)
+    date: Optional[str] = Field(None, pattern=DATE_PATTERN)
+    unit_cost: Optional[float] = Field(None, ge=0, le=100000)
+    reverse_pct: Optional[float] = Field(None, ge=0, le=100)
+    note: Optional[str] = Field(None, max_length=300)
 
 
 class AdjIn(BaseModel):
-    delta: int
-    reason: Optional[str] = "Ajustement"
-    date: Optional[str] = None
+    delta: int = Field(ge=-100000, le=100000)
+    reason: Optional[str] = Field("Ajustement", max_length=300)
+    date: Optional[str] = Field(None, pattern=DATE_PATTERN)
 
 
 class AllocIn(BaseModel):
     book_id: Optional[int] = None   # composant (packs) ; vide = le livre de la ligne
     lot_id: Optional[int] = None    # None = vente hors stock (explicite)
-    qty: int
+    qty: int = Field(ge=1, le=1000)
 
 
 class LineIn(BaseModel):
     book_id: int
-    qty: int = 1
-    unit_price: Optional[float] = None
-    allocations: List[AllocIn] = []
+    qty: int = Field(1, ge=1, le=1000)
+    unit_price: Optional[float] = Field(None, ge=0, le=100000)
+    allocations: List[AllocIn] = Field(default_factory=list, max_length=50)
 
 
 class SaleIn(BaseModel):
-    date: Optional[str] = None
-    payment: Optional[str] = "Espèces"
-    note: Optional[str] = None
-    lines: List[LineIn]
+    date: Optional[str] = Field(None, pattern=DATE_PATTERN)
+    payment: Optional[str] = Field("Espèces", max_length=60)
+    note: Optional[str] = Field(None, max_length=300)
+    lines: List[LineIn] = Field(min_length=1, max_length=200)
 
 
 class CashMovementIn(BaseModel):
-    user_name: str
-    type: str                  # 'DEPOSIT' | 'WITHDRAWAL' | 'ADJUST'
-    channel: str               # 'ESPECES' | 'WERO' | 'PAYPAL'
-    amount: float
-    date: Optional[str] = None
-    note: Optional[str] = None
+    user_name: str = Field(max_length=60)
+    type: Literal["DEPOSIT", "WITHDRAWAL"]
+    channel: Literal["ESPECES", "WERO", "PAYPAL"]
+    amount: float = Field(gt=0, lt=100000)
+    date: Optional[str] = Field(None, pattern=DATE_PATTERN)
+    note: Optional[str] = Field(None, max_length=300)
 
 
 class SettleIn(BaseModel):
     owner_id: int
-    amount: float
-    date: Optional[str] = None
-    note: Optional[str] = None
+    amount: float = Field(gt=-1000000, lt=1000000)
+    date: Optional[str] = Field(None, pattern=DATE_PATTERN)
+    note: Optional[str] = Field(None, max_length=300)
 
 
 class ResIn(BaseModel):
-    name: Optional[str] = None
-    phone: Optional[str] = None
-    title: Optional[str] = None
-    qty: int = 1
-    status: str = "En attente"
-    note: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=120)
+    phone: Optional[str] = Field(None, max_length=40)
+    title: Optional[str] = Field(None, max_length=300)
+    qty: int = Field(1, ge=1, le=1000)
+    status: str = Field("En attente", max_length=40)
+    note: Optional[str] = Field(None, max_length=300)
 
 
 class DropdownItemIn(BaseModel):
-    group_key: str
-    label: str
+    group_key: Literal["category", "type", "payment", "publisher"]
+    label: str = Field(min_length=1, max_length=80)
 
 
 class UserIn(BaseModel):
-    name: str
+    name: str = Field(max_length=60)
+
+
+class PairIn(BaseModel):
+    code: str = Field(min_length=8, max_length=64)
+    name: Optional[str] = Field(None, max_length=60)
 
 
 def get_current_user(request: Request) -> str:
-    """Récupère l'utilisateur transmis par le client dans l'en-tête X-User ou query, sinon 'Anonyme'."""
-    u = request.headers.get("X-User") or request.query_params.get("user")
-    return u.strip() if u and u.strip() else "Anonyme"
+    """Utilisateur transmis par X-User (encodé en URL côté client) ; nettoyé, borné, sinon 'Anonyme'."""
+    raw = request.headers.get("X-User") or request.query_params.get("user") or ""
+    u = re.sub(r"[\x00-\x1f\x7f<>]", "", unquote(raw)).strip()[:60]
+    return u or "Anonyme"
+
+
+def require_known_user(request: Request) -> str:
+    """Pour un téléphone : l'identité déclarée doit correspondre à un profil existant."""
+    u = get_current_user(request)
+    if getattr(request.state, "role", "desk") == "mobile":
+        with db.tx() as c:
+            if not c.execute("SELECT 1 FROM users WHERE name=?", (u,)).fetchone():
+                raise HTTPException(400, "Profil libraire inconnu : choisissez votre prénom dans la liste")
+    return u
 
 
 # ---------- utilisateurs (profils simples) ----------
@@ -502,7 +531,7 @@ def lot_adjust(lid: int, a: AdjIn, request: Request):
 # ---------- ventes ----------
 @app.post("/api/sales")
 def sale_add(s: SaleIn, request: Request):
-    user = get_current_user(request)
+    user = require_known_user(request)
     with db.tx() as c:
         sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines], manual=True, user_name=user)
         total = sum((l.unit_price if l.unit_price is not None else
@@ -807,15 +836,36 @@ def stats(start: Optional[str] = None, end: Optional[str] = None):
 
 
 # ---------- Excel / sauvegardes ----------
+MAX_IMPORT_BYTES = 25 * 1024 * 1024
+MAX_UNZIPPED_BYTES = 200 * 1024 * 1024
+
+
 @app.post("/api/import")
-async def import_xlsx(file: UploadFile = File(...), replace: bool = True):
-    tmp = os.path.join(db.DATA_DIR, "_import.xlsx")
+async def import_xlsx(request: Request, file: UploadFile = File(...), replace: bool = True):
+    data = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(data) > MAX_IMPORT_BYTES:
+        raise HTTPException(413, "Fichier trop volumineux (25 Mo maximum)")
+    if not data.startswith(b"PK\x03\x04"):
+        raise HTTPException(400, "Ce fichier n'est pas un classeur .xlsx valide")
+    try:   # protection contre les « zip bombs » avant de confier le fichier à openpyxl
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            infos = z.infolist()
+            if len(infos) > 2000 or sum(i.file_size for i in infos) > MAX_UNZIPPED_BYTES:
+                raise HTTPException(400, "Classeur rejeté : contenu décompressé anormalement volumineux")
+            if "[Content_Types].xml" not in z.namelist():
+                raise HTTPException(400, "Ce fichier n'est pas un classeur .xlsx valide")
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "Fichier .xlsx corrompu")
+    tmp = os.path.join(db.DATA_DIR, f"_import_{secrets.token_hex(6)}.xlsx")   # nom imprévisible : pas de collision
     with open(tmp, "wb") as f:
-        f.write(await file.read())
+        f.write(data)
     try:
         rep = excel_io.import_workbook(tmp, replace)
     finally:
         os.remove(tmp)
+    with db.tx() as c:
+        db.log_audit(c, get_current_user(request), "IMPORT", "system", None,
+                     f"Import Excel « {os.path.basename(file.filename or 'classeur')[:80]} » (remplacement : {'oui' if replace else 'non'})")
     return rep
 
 
@@ -827,27 +877,47 @@ def export_xlsx():
                         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+BACKUP_NAME = re.compile(r"^[A-Za-z0-9_\-]{1,120}\.(db|xlsx)$")
+
+
+def backup_path(filename: str) -> str:
+    """Chemin sûr d'un fichier de sauvegarde : nom strict + confinement dans le dossier des sauvegardes.
+    Bloque la traversée de répertoires (« ..\\ », « ../ », chemins absolus, ADS Windows, etc.)."""
+    if not BACKUP_NAME.fullmatch(filename or ""):
+        raise HTTPException(400, "Nom de fichier de sauvegarde invalide")
+    root = os.path.realpath(BACKUPS)
+    path = os.path.realpath(os.path.join(root, filename))
+    if os.path.commonpath([root, path]) != root or os.path.dirname(path) != root:
+        raise HTTPException(400, "Nom de fichier de sauvegarde invalide")
+    return path
+
+
 @app.post("/api/backup")
 def backup(request: Request):
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     target_db = os.path.join(BACKUPS, f"librairie_{stamp}.db")
     db.safe_backup_db(target_db)
-    
+
     target_xl = os.path.join(BACKUPS, f"Bibliotheque_{stamp}.xlsx")
     excel_io.export_workbook(target_xl)
-    
+    with db.tx() as c:
+        db.log_audit(c, get_current_user(request), "BACKUP", "system", None,
+                     f"Snapshot manuel créé (librairie_{stamp}.db)")
+    return {"ok": True, "filename": f"librairie_{stamp}.db"}
+
+
 @app.get("/api/backups")
 def list_backups():
     """Liste tous les points de restauration existants avec métadonnées."""
     items = []
     if os.path.exists(BACKUPS):
         for fname in os.listdir(BACKUPS):
-            if fname.endswith(".tmp"):
+            if not BACKUP_NAME.fullmatch(fname):
                 continue
             fpath = os.path.join(BACKUPS, fname)
             if os.path.isfile(fpath):
                 stat = os.stat(fpath)
-                kind = "database" if fname.endswith(".db") else ("excel" if fname.endswith(".xlsx") else "other")
+                kind = "database" if fname.endswith(".db") else "excel"
                 items.append({
                     "filename": fname,
                     "kind": kind,
@@ -861,16 +931,16 @@ def list_backups():
 
 @app.get("/api/backups/{filename}/download")
 def download_backup(filename: str):
-    fpath = os.path.join(BACKUPS, filename)
-    if not os.path.exists(fpath) or not os.path.isfile(fpath) or filename.endswith(".tmp"):
+    fpath = backup_path(filename)
+    if not os.path.isfile(fpath):
         raise HTTPException(404, "Fichier de sauvegarde introuvable")
     return FileResponse(fpath, filename=filename)
 
 
 @app.delete("/api/backups/{filename}")
 def delete_backup_file(filename: str, request: Request):
-    fpath = os.path.join(BACKUPS, filename)
-    if not os.path.exists(fpath) or not os.path.isfile(fpath):
+    fpath = backup_path(filename)
+    if not os.path.isfile(fpath):
         raise HTTPException(404, "Fichier introuvable")
     os.remove(fpath)
     with db.tx() as c:
@@ -883,42 +953,171 @@ def restore_backup(filename: str, request: Request):
     """Restaure une base de données de sauvegarde existante avec copie de sécurité préalable."""
     if not filename.endswith(".db"):
         raise HTTPException(400, "Seules les sauvegardes de base de données (.db) peuvent être restaurées directement")
-    fpath = os.path.join(BACKUPS, filename)
-    if not os.path.exists(fpath):
+    fpath = backup_path(filename)
+    if not os.path.isfile(fpath):
         raise HTTPException(404, "Fichier de sauvegarde introuvable")
-    
+
+    # 0. Vérifier l'intégrité de la sauvegarde AVANT de toucher à la base courante
+    tmp_restore = db.DB_PATH + ".tmp_restore"
+    shutil.copyfile(fpath, tmp_restore)
+    try:
+        import sqlite3
+        chk = sqlite3.connect(tmp_restore)
+        try:
+            ok = chk.execute("PRAGMA quick_check").fetchone()[0] == "ok" and \
+                chk.execute("SELECT 1 FROM sqlite_master WHERE name='books'").fetchone() is not None
+        finally:
+            chk.close()
+    except Exception:
+        ok = False
+    if not ok:
+        os.remove(tmp_restore)
+        raise HTTPException(400, "Sauvegarde corrompue ou invalide : la base actuelle n'a pas été modifiée")
+
     # 1. Préserver l'état actuel juste avant restauration
     pre_stamp = datetime.now().strftime("%Y%m%d_%H%M%S_avant_restauration")
     pre_path = os.path.join(BACKUPS, f"librairie_{pre_stamp}.db")
     db.safe_backup_db(pre_path)
-    
-    # 2. Remplacer la base de données actuelle
-    # Pour SQLite en mode WAL, écriture dans un .tmp puis remplacement
-    tmp_restore = db.DB_PATH + ".tmp_restore"
-    shutil.copyfile(fpath, tmp_restore)
-    
-    # Supprimer les journaux WAL/SHM actuels s'ils existent
+
+    # 2. Remplacer la base de données actuelle (SQLite en mode WAL : remplacement atomique du fichier)
     for extra in (db.DB_PATH + "-wal", db.DB_PATH + "-shm"):
         if os.path.exists(extra):
             try:
                 os.remove(extra)
             except OSError:
                 pass
-                
+
     os.replace(tmp_restore, db.DB_PATH)
-    
-    # Réinitialiser la connexion et tracer
+
     with db.tx() as c:
         db.log_audit(c, get_current_user(request), "RESTORE", "system", None,
                      f"Restauration du point #{filename} (Sauvegarde de précaution créée: librairie_{pre_stamp}.db)")
-        
+
     _dirty.set()  # Forcer la régénération du miroir Excel
     return {"ok": True, "pre_backup": f"librairie_{pre_stamp}.db"}
 
 
 @app.get("/api/info")
 def info():
+    """Chemins locaux : réservé au poste de caisse (non listé dans la politique d'accès des téléphones)."""
     return {"data_dir": db.DATA_DIR, "mirror": MIRROR, "backups": BACKUPS}
+
+
+# ---------- scanner mobile : appairage, recherche, QR local ----------
+try:
+    from . import certs
+except ImportError:      # bibliothèque `cryptography` absente : le poste fonctionne, sans mobile
+    certs = None
+
+
+def _mobile_base():
+    port, ips = security.state["https_port"], security.local_ips()
+    return f"https://{ips[0]}:{port}" if (port and ips and certs) else None
+
+
+@app.get("/api/mobile/info")
+def mobile_info():
+    base = _mobile_base()
+    return {"enabled": bool(base), "base_url": base, "ips": security.local_ips(),
+            "ca_fingerprint": certs.ca_fingerprint() if base else None,
+            "devices": security.list_devices()}
+
+
+@app.post("/api/mobile/pairing")
+def mobile_pairing():
+    base = _mobile_base()
+    if not base:
+        raise HTTPException(503, "Le mode mobile (HTTPS) n'est pas actif sur ce poste. Lancez Installer_Mobile.bat.")
+    code = security.new_pairing_code()
+    # Le code est dans le FRAGMENT (#) : il n'est jamais envoyé au serveur ni consigné dans les journaux/Referer
+    return {"url": f"{base}/mobile#pair={code}", "expires_in": security.PAIRING_TTL}
+
+
+@app.post("/api/mobile/pair")
+def mobile_pair(body: PairIn, request: Request):
+    ip = request.client.host if request.client else "?"
+    token = security.redeem_pairing(body.code, body.name, ip)
+    if not token:
+        raise HTTPException(401, "Code d'appairage invalide ou expiré : affichez un nouveau QR code sur le poste")
+    with db.tx() as c:
+        db.log_audit(c, "Système", "INSERT", "device", None, f"Téléphone appairé « {(body.name or 'Téléphone')[:60]} » ({ip})")
+    return {"token": token}
+
+
+@app.get("/api/mobile/me")
+def mobile_me(request: Request):
+    return {"device": request.state.device["name"]}
+
+
+@app.delete("/api/mobile/devices/{did}")
+def mobile_revoke(did: int, request: Request):
+    security.revoke_device(did)
+    with db.tx() as c:
+        db.log_audit(c, get_current_user(request), "DELETE", "device", did, f"Appairage téléphone #{did} révoqué")
+    return {"ok": True}
+
+
+@app.get("/api/ca.crt")
+def download_ca():
+    """Certificat PUBLIC de la CA locale (jamais de clé privée) à installer sur les téléphones."""
+    if not certs:
+        raise HTTPException(503, "HTTPS local non disponible")
+    return Response(certs.ca_pem(), media_type="application/x-x509-ca-cert",
+                    headers={"Content-Disposition": 'attachment; filename="Librairie-CA.crt"'})
+
+
+@app.get("/api/qr")
+def qr_svg(data: str):
+    """QR code généré localement : l'URL d'appairage ne quitte jamais le poste (aucun service tiers)."""
+    if not data.startswith("https://") or len(data) > 300:
+        raise HTTPException(400, "Donnée invalide")
+    import segno
+    buf = io.BytesIO()
+    segno.make(data, error="m").save(buf, kind="svg", scale=8, border=2, dark="#000000", light="#ffffff")
+    return Response(buf.getvalue(), media_type="image/svg+xml")
+
+
+def _mobile_book(c, b):
+    lots = db.rows(c, f"""
+        SELECT l.id, l.date, o.name owner, o.color, ({db.LOT_REMAINING}) remaining
+        FROM lots l JOIN owners o ON o.id=l.owner_id
+        WHERE l.book_id=? AND ({db.LOT_REMAINING}) > 0
+        ORDER BY o.priority, l.date, l.id""", (b["id"],))
+    return {"id": b["id"], "code": b["code"], "title": b["title"], "volume": b["volume"], "price": b["price"],
+            "is_pack": b["is_pack"], "lots": lots, "stock": sum(l["remaining"] for l in lots)}
+
+
+@app.get("/api/books/scan/{code}")
+def scan_book(code: str):
+    """Recherche EXACTE par code-barres (ISBN/EAN). Jamais de recherche approximative : un scan ne doit
+    pas pouvoir ajouter un mauvais livre au panier."""
+    clean = code.strip()[:40]
+    plain = clean.replace("-", "").replace(" ", "")
+    with db.tx() as c:
+        book = c.execute("""SELECT * FROM books WHERE active=1 AND
+            (code = ? OR REPLACE(REPLACE(code,'-',''),' ','') = ?) LIMIT 1""", (clean, plain)).fetchone()
+        if not book:
+            raise HTTPException(404, f"Aucun livre pour le code « {clean} »")
+        return _mobile_book(c, book)
+
+
+@app.get("/api/books/search")
+def search_books(q: str):
+    """Recherche textuelle (saisie manuelle quand le code-barres est illisible) : 8 résultats maximum."""
+    q = q.strip()[:60]
+    if len(q) < 2:
+        return []
+    like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    with db.tx() as c:
+        rows = c.execute("""SELECT * FROM books WHERE active=1 AND
+            (title LIKE ? ESCAPE '\\' OR code LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\' OR series LIKE ? ESCAPE '\\')
+            ORDER BY title LIMIT 8""", (like, like, like, like)).fetchall()
+        return [_mobile_book(c, r) for r in rows]
+
+
+@app.get("/mobile")
+def mobile_view():
+    return FileResponse(os.path.join(STATIC, "mobile.html"))
 
 
 @app.get("/")

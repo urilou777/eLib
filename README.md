@@ -43,6 +43,12 @@ Dépôt GitHub : [https://github.com/urilou777/librairi-e](https://github.com/ur
      - **Restauration immédiate (`↺ Restaurer`)** d'un point antérieur (avec création automatique d'une copie de précaution avant restauration).
      - **Journal d'Audit & Undo** : traçabilité de chaque action par utilisateur et retour arrière direct sur chaque opération unitaire.
 
+6. **Scanner Mobile pour Libraires (Multi-encaissement autonome sur smartphone)** :
+   - Chaque libraire peut utiliser l'appareil photo de son smartphone comme douchette code-barres et encaisser en direct.
+   - **Architecture TLS Locale & Privée (100% hors-ligne)** : Autorité racine locale dédiée (CA EC P-256) avec génération automatique de certificats serveurs pour les adresses IP du réseau local.
+   - **Sécurité et Permissions Android/iOS** : Conforme aux exigences strictes des contextes sécurisés HTTPS (`getUserMedia`), headers de sécurité stricts (CSP, Permissions-Policy restreignant la caméra à l'origine locale), et appairage cryptographique par token unique (zéro mot de passe à taper).
+   - **Isolation réseau & Pare-feu** : L'accès LAN est strictement cloisonné aux opérations de caisse mobile autorisées. Les opérations sensibles (restaurations de base, gestion des sauvegardes, imports/exports) restent rigoureusement confinées au poste central (`127.0.0.1`).
+
 ---
 
 ## 🛠️ Installation & Démarrage
@@ -53,6 +59,13 @@ Double-cliquez simplement sur :
 Lancer_Librairie.bat
 ```
 L'application démarre le serveur local et s'ouvre dans une fenêtre dédiée (ou votre navigateur à l'adresse `http://127.0.0.1:8765`).
+
+### Configuration du Scanner Mobile (Une seule fois)
+Pour activer les téléphones en Wi-Fi local :
+1. Lancez **`Installer_Mobile.bat`** (clic droit > *Exécuter en tant qu'administrateur*). Ce script :
+   - Détecte l'IP locale du PC et génère les certificats TLS requis.
+   - Configure automatiquement la règle de pare-feu Windows pour le port HTTPS (8766), restreinte au profil privé et au sous-réseau local.
+2. Démarrez l'application, ouvrez l'onglet **Caisse**, puis cliquez sur **📱 Ouvrir Scanner Mobile** pour afficher le QR code d'appairage.
 
 ### Option 2 : Exécutable autonome Windows (.exe)
 Un exécutable portable autonome est disponible dans le dossier `dist/` :
@@ -71,10 +84,14 @@ python run.py
 ## 📁 Structure du projet
 
 - `app/` :
-  - `db.py` : Schéma SQLite, gestion atomique des lots, packs et transactions.
+  - `db.py` : Schéma SQLite, gestion atomique des lots, packs, trésorerie et transactions.
+  - `certs.py` : PKI locale automatisée (CA racine, certificats serveurs dynamiques).
+  - `security.py` : Middleware de contrôle d'accès réseau, anti-spoofing Host, rate-limiting et gestion des tokens smartphones.
   - `excel_io.py` : Moteur d'importation et d'exportation Excel.
-  - `main.py` : API locale FastAPI, boucle d'archivage miroir en arrière-plan.
-  - `static/` : Interface web moderne (HTML5, Vanilla CSS avec design sombre & glassmorphism, Vanilla JS).
-- `run.py` : Point d'entrée avec serveur local et encapsulation fenêtre native.
+  - `main.py` : API FastAPI locale et sécurisée, boucle d'archivage miroir en arrière-plan.
+  - `static/` : Interface web moderne desktop et mobile (HTML5, Vanilla CSS, Vanilla JS, librairie ZXing embarquée hors-ligne).
+- `setup_mobile.py` & `Installer_Mobile.bat` : Outil de configuration automatique des certificats et du pare-feu.
+- `run.py` : Point d'entrée avec double liaison réseau (HTTP 127.0.0.1 + HTTPS LAN sécurisé).
 - `Lancer_Librairie.bat` : Lanceur double-clic pour Windows.
-- `requirements.txt` : Dépendances Python (FastAPI, Uvicorn, openpyxl, pywebview, PyInstaller).
+- `requirements.txt` : Dépendances Python.
+

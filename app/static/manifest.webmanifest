@@ -1,0 +1,11 @@
+{
+  "name": "Librairie – Scanner",
+  "short_name": "Librairie",
+  "start_url": "/mobile",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090c19",
+  "theme_color": "#090c19",
+  "icons": [{ "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -1,8 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_submodules
 
-hiddenimports = ['webview']
+hiddenimports = ['webview', 'cryptography', 'segno']
 hiddenimports += collect_submodules('uvicorn')
+hiddenimports += collect_submodules('cryptography')
+
 
 
 a = Analysis(

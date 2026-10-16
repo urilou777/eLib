@@ -4,3 +4,5 @@ python-multipart
 openpyxl
 pywebview
 pyinstaller
+cryptography
+segno
