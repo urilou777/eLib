@@ -474,14 +474,7 @@ VIEWS.pos = async () => {
     <div class="books" id="books"></div></div>
     <div class="card cart" id="cart"><h3>Panier <button class="btn ghost sm" id="clear">Vider</button></h3><div class="cart-items" id="items"></div>
     <div class="total"><span>Total</span><b id="tot">0 €</b></div>
-    <div class="row" style="margin-bottom:8px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
-    
-    <div class="row" style="justify-content:space-between;align-items:center;padding:6px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;font-size:12px">
-      <span class="muted">Temps de vente :</span>
-      <button type="button" class="btn ghost sm" id="btnChangeActiveMoment" style="padding:2px 8px;font-size:11px;font-weight:700" title="Cliquer pour changer le culte ou activer le Mode Focus">
-        <span id="posActiveMomentTxt">${esc(getActiveMoment())}</span> ▾
-      </button>
-    </div>
+    <div class="row" style="margin-bottom:8px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option><option>CB</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
 
     <div class="card" style="padding:10px;margin-bottom:10px;background:var(--panel2);border:1px solid var(--line)">
       <div class="row" style="justify-content:space-between;margin-bottom:6px">
@@ -512,15 +505,6 @@ VIEWS.pos = async () => {
   let curAge = '';
   let curStar = 0;
 
-  const btnChangeMoment = $('#btnChangeActiveMoment');
-  if (btnChangeMoment) {
-    btnChangeMoment.onclick = () => {
-      openMomentSelectorModal((m) => {
-        const txt = $('#posActiveMomentTxt');
-        if (txt) txt.textContent = m;
-      });
-    };
-  }
   const btnStar = $('#btnStar');
   if (btnStar) {
     btnStar.onclick = () => {
@@ -609,30 +593,8 @@ VIEWS.pos = async () => {
     const paySel = $('#pay');
     if (!paySel) return;
     const curVal = paySel.value;
-    const usedOwners = new Set();
-    for (const l of S.cart) {
-      const b = S.books.find(x => x.id === l.id);
-      const allLots = b.is_pack ? (b.items || []).flatMap(i => i.lots) : (b.lots || []);
-      for (const [k, q] of Object.entries(l.alloc)) {
-        if (q > 0) {
-          const [, lid] = k.split('|');
-          const lot = allLots.find(x => x.id === +lid);
-          if (lot && lot.owner) usedOwners.add(lot.owner.trim().toLowerCase());
-        }
-      }
-    }
-    const hasNonCR = Array.from(usedOwners).some(o => o !== 'cité royale');
     const allPayOpts = S.options.payment || [];
-    const availableOpts = allPayOpts.filter(p => {
-      const isPaypal = p.label.toLowerCase().includes('paypal');
-      if (isPaypal && hasNonCR) return false;
-      return true;
-    });
-
-    paySel.innerHTML = availableOpts.map(p => `<option value="${esc(p.label)}" ${p.label === curVal ? 'selected' : ''}>${esc(p.label)}</option>`).join('') || '<option value="Espèces">Espèces</option>';
-    if (curVal.toLowerCase().includes('paypal') && hasNonCR) {
-      paySel.value = availableOpts[0] ? availableOpts[0].label : 'Espèces';
-    }
+    paySel.innerHTML = allPayOpts.map(p => `<option value="${esc(p.label)}" ${p.label === curVal ? 'selected' : ''}>${esc(p.label)}</option>`).join('') || '<option value="Espèces">Espèces</option><option value="CB">CB</option>';
   };
 
   const cart = () => {
@@ -670,29 +632,13 @@ VIEWS.pos = async () => {
     const bad = S.cart.find(l => !complete(l));
     if (bad) return toast('Indiquez l\'origine de chaque exemplaire avant de valider (cadres orange).', 'warn');
     const payVal = $('#pay').value;
-    const isPaypal = payVal.toLowerCase().includes('paypal');
-    if (isPaypal) {
-      for (const l of S.cart) {
-        const b = S.books.find(x => x.id === l.id);
-        const allLots = b.is_pack ? (b.items || []).flatMap(i => i.lots) : (b.lots || []);
-        for (const [k, q] of Object.entries(l.alloc)) {
-          if (q > 0) {
-            const [, lid] = k.split('|');
-            const lot = allLots.find(x => x.id === +lid);
-            if (lot && lot.owner.trim().toLowerCase() !== 'cité royale') {
-              return toast(`Le paiement PayPal POS est exclusivement réservé aux livres de Cité Royale. « ${lot.owner} » détecté.`, 'err');
-            }
-          }
-        }
-      }
-    }
     const r = await api('/api/sales', 'POST', {
       date: $('#sdate').value,
       payment: payVal,
       customer_gender: curGender || null,
       customer_age_group: curAge || null,
       is_star: curStar ? 1 : 0,
-      service_moment: curMoment || null,
+      service_moment: getActiveMoment() || null,
       lines: S.cart.map(l => ({
         book_id: l.id, qty: l.qty, unit_price: l.price,
         allocations: Object.entries(l.alloc).filter(([, q]) => q > 0).map(([k, q]) => { const [bid, lid] = k.split('|'); return { book_id: +bid, lot_id: lid === 'none' ? null : +lid, qty: q } })

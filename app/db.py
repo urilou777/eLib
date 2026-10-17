@@ -164,14 +164,16 @@ def init():
             default_opts = [
                 ('category', 'Standard'), ('category', 'Bible'), ('category', 'Pack'), ('category', 'Enfant'), ('category', 'Vie chrétienne'),
                 ('type', 'Souple'), ('type', 'Rigide'), ('type', 'Poche'), ('type', 'Broché'),
-                ('payment', 'Espèces'), ('payment', 'PayPal POS (CB)'), ('payment', 'Wero'), ('payment', 'Don / Offert'),
+                ('payment', 'Espèces'), ('payment', 'CB'), ('payment', 'Wero'), ('payment', 'Don / Offert'),
                 ('service_moment', '1er Culte (Principal)'), ('service_moment', '2e Culte (Jeunes EJP)'), ('service_moment', 'Occasion spéciale'), ('service_moment', 'En semaine / Autre'),
                 ('publisher', 'Metanoia & Vie'), ('publisher', 'Société Biblique de Genève'), ('publisher', 'Excelsis'), ('publisher', 'RADD')
             ]
             c.executemany("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES(?,?)", default_opts)
         else:
-            # S'assurer que PayPal POS (CB) et Wero sont proposés dans les options de paiement
-            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'PayPal POS (CB)')")
+            # Fusion de PayPal POS (CB) vers CB et maintien des options de base
+            c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'CB')")
+            c.execute("DELETE FROM dropdown_options WHERE group_key='payment' AND (label='PayPal POS (CB)' OR label LIKE '%PayPal%')")
+            c.execute("UPDATE sales SET payment='CB' WHERE payment='PayPal POS (CB)' OR payment LIKE '%PayPal%'")
             c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'Wero')")
             # S'assurer des options de cultes par défaut
             for sm in ['1er Culte (Principal)', '2e Culte (Jeunes EJP)', 'Occasion spéciale', 'En semaine / Autre']:

@@ -678,19 +678,8 @@ def lot_adjust(lid: int, a: AdjIn, request: Request):
 @app.post("/api/sales")
 def sale_add(s: SaleIn, request: Request):
     user = require_known_user(request)
-    is_paypal = "paypal" in (s.payment or "").lower()
     
     with db.tx() as c:
-        # Restriction PayPal POS : réservé exclusivement aux articles appartenant à Cité Royale
-        if is_paypal:
-            for l in s.lines:
-                allocs = l.allocations or []
-                for a in allocs:
-                    if a.lot_id is not None:
-                        ow = c.execute("SELECT o.name FROM lots l JOIN owners o ON o.id=l.owner_id WHERE l.id=?", (a.lot_id,)).fetchone()
-                        if ow and ow["name"].strip().lower() != "cité royale":
-                            raise HTTPException(400, f"Le paiement PayPal POS est exclusivement réservé aux ouvrages de « Cité Royale ». L'article sélectionné provient de « {ow['name']} ».")
-
         sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines],
                                     manual=True, user_name=user,
                                     customer_gender=s.customer_gender,
@@ -768,23 +757,24 @@ def treasury_summary():
         cash_in_drawer = sales_cash + deposits_cash - withdrawals_cash
 
         # Total Cité Royale payé directement sur PayPal POS
+        # Total Cité Royale payé directement sur CB / PayPal POS
         cr_paypal_total = c.execute("""
             SELECT COALESCE(SUM(a.revenue), 0) s
             FROM sales s
             JOIN sale_lines l ON l.sale_id = s.id
             JOIN allocations a ON a.line_id = l.id
             JOIN owners o ON o.id = a.owner_id
-            WHERE s.payment LIKE '%PayPal%' AND LOWER(TRIM(o.name)) = 'cité royale'
+            WHERE (s.payment = 'CB' OR s.payment LIKE '%CB%' OR s.payment LIKE '%PayPal%') AND LOWER(TRIM(o.name)) = 'cité royale'
         """).fetchone()["s"]
 
-        # Total Cité Royale encaissé hors PayPal (que les libraires doivent passer sur PayPal POS)
+        # Total Cité Royale encaissé hors CB (que les libraires doivent passer sur CB / PayPal POS)
         cr_non_paypal_total = c.execute("""
             SELECT COALESCE(SUM(a.revenue), 0) s
             FROM sales s
             JOIN sale_lines l ON l.sale_id = s.id
             JOIN allocations a ON a.line_id = l.id
             JOIN owners o ON o.id = a.owner_id
-            WHERE s.payment NOT LIKE '%PayPal%' AND LOWER(TRIM(o.name)) = 'cité royale'
+            WHERE (s.payment != 'CB' AND s.payment NOT LIKE '%CB%' AND s.payment NOT LIKE '%PayPal%') AND LOWER(TRIM(o.name)) = 'cité royale'
         """).fetchone()["s"]
         
         # 4. Solde & Dettes par utilisateur / libraire
@@ -794,15 +784,15 @@ def treasury_summary():
         
         user_balances = []
         for uname in all_user_names:
-            # Ventes totales encaissées par ce libraire pour Cité Royale hors PayPal POS
-            # (Le libraire doit payer lui-même ce montant sur la borne PayPal POS pour régulariser Cité Royale)
+            # Ventes totales encaissées par ce libraire pour Cité Royale hors CB / PayPal POS
+            # (Le libraire doit payer lui-même ce montant sur la borne CB / PayPal POS pour régulariser Cité Royale)
             cr_due_to_paypal = c.execute("""
                 SELECT COALESCE(SUM(a.revenue), 0) s
                 FROM sales s
                 JOIN sale_lines l ON l.sale_id = s.id
                 JOIN allocations a ON a.line_id = l.id
                 JOIN owners o ON o.id = a.owner_id
-                WHERE s.user_name = ? AND s.payment NOT LIKE '%PayPal%' AND LOWER(TRIM(o.name)) = 'cité royale'
+                WHERE s.user_name = ? AND (s.payment != 'CB' AND s.payment NOT LIKE '%CB%' AND s.payment NOT LIKE '%PayPal%') AND LOWER(TRIM(o.name)) = 'cité royale'
             """, (uname,)).fetchone()["s"]
 
             # Ventes ICC Rennes encaissées sur compte personnel (Wero / virement perso)
@@ -830,11 +820,11 @@ def treasury_summary():
                 WHERE s.user_name = ? AND s.payment LIKE '%Espèce%'
             """, (uname,)).fetchone()["s"]
             
-            # Ventes payées directement via PayPal POS
+            # Ventes payées directement via CB / PayPal POS
             paypal_sales = c.execute("""
                 SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
                 FROM sales s JOIN sale_lines l ON l.sale_id = s.id
-                WHERE s.user_name = ? AND s.payment LIKE '%PayPal%'
+                WHERE s.user_name = ? AND (s.payment = 'CB' OR s.payment LIKE '%CB%' OR s.payment LIKE '%PayPal%')
             """, (uname,)).fetchone()["s"]
             
             # Montant déjà déposé dans la caisse physique par ce libraire

@@ -57,11 +57,42 @@ button, select, input { font:inherit; color:inherit; }
 .cam-container { 
   position: relative; 
   width: 100%; 
-  height: clamp(180px, 30vh, 260px); 
+  height: clamp(160px, 26vh, 230px); 
   background: #000; 
   overflow: hidden; 
   flex-shrink: 0;
   touch-action: pan-x pinch-zoom;
+  transition: height .25s ease;
+}
+.cam-container.minimized {
+  height: 40px !important;
+  cursor: pointer;
+}
+.cam-container.minimized #video,
+.cam-container.minimized .target-box,
+.cam-container.minimized .laser,
+.cam-container.minimized .target-hint,
+.cam-container.minimized .cam-status,
+.cam-container.minimized .cam-controls {
+  display: none !important;
+}
+.cam-minibar {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: var(--card2);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--a2);
+  cursor: pointer;
+  z-index: 8;
+  border-bottom: 1px solid var(--line);
+}
+.cam-container.minimized .cam-minibar {
+  display: flex !important;
 }
 #video { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; }
 .target-box { position: absolute; inset: 12% 8%; border: 2px solid rgba(255,255,255,.2); border-radius: 14px;
@@ -173,6 +204,10 @@ button, select, input { font:inherit; color:inherit; }
 
 <div id="app">
   <div class="cam-container" id="camContainer">
+    <div class="cam-minibar" id="camMinibar" title="Agrandir le scanner caméra">
+      <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span>Scanner caméra réduit · Toucher pour agrandir</span>
+    </div>
     <video id="video" playsinline autoplay muted></video>
     <div class="target-box" id="targetBox">
       <div class="target-corner tl"></div>
@@ -183,6 +218,7 @@ button, select, input { font:inherit; color:inherit; }
       <div class="target-hint">Alignez le code-barres</div>
     </div>
     <div class="cam-controls" id="camControls">
+      <button class="btn-ctrl" id="btnToggleCamSize" type="button" title="Réduire la caméra pour voir tout le panier">▲ Masquer caméra</button>
       <button class="btn-ctrl" id="btnTorch" type="button" title="Éclairer" hidden>Torche</button>
     </div>
     <div class="cam-status" id="camStatus">
@@ -208,7 +244,10 @@ button, select, input { font:inherit; color:inherit; }
 
     <div class="card" id="cartCard">
       <div class="cart-header">
-        <span>Panier (<span id="cartCount">0</span>)</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span>Panier (<b id="cartCount" style="color:var(--good)">0</b>)</span>
+          <button class="chip" id="btnViewFullCart" type="button" style="padding:2px 8px;font-size:11px" title="Agrandir la zone du panier">Plein écran</button>
+        </div>
         <button class="btn sm" id="clearCart" type="button">Vider</button>
       </div>
       <div class="cart-list" id="cartItems"></div>
@@ -229,41 +268,50 @@ button, select, input { font:inherit; color:inherit; }
   </main>
 
   <footer class="bottom-bar" id="saleBottom">
-    <div class="total-row"><span class="muted">Total à encaisser</span><span class="val" id="totalVal">0,00 €</span></div>
-    <div class="pay-chips-title" style="font-size:10.5px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Mode de paiement</div>
-    <div class="pay-chips" id="payChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
-    <input type="hidden" id="payMethod" value="">
-    
-    <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px">
+    <!-- Ligne 1 : Total et modes de paiement sur la même ligne ultra-compacte -->
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <div>
+        <div style="font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</div>
+        <div class="val" id="totalVal" style="font-size:22px;font-weight:800;color:var(--good);line-height:1.1">0,00 €</div>
+      </div>
+      <div class="pay-chips" id="payChips" style="display:flex;gap:5px;flex-wrap:nowrap"></div>
+      <input type="hidden" id="payMethod" value="">
+    </div>
+
+    <!-- Ligne 2 : Bouton Profil client dépliable & Bouton Valider la vente -->
+    <div style="display:flex;gap:8px;align-items:center">
+      <button type="button" class="chip" id="btnToggleProfile" style="padding:8px 10px;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
+        <span>Profil</span><span id="mProfileSummary" style="color:var(--a2);font-weight:700"></span><span id="mProfileChevron">▾</span>
+      </button>
+      <button class="btn good" id="btnValidate" type="button" disabled style="flex:1;padding:11px 14px;font-size:15px;margin-top:0">Valider</button>
+    </div>
+    <div class="hint" id="validHint" style="text-align:center;margin-top:4px"></div>
+
+    <!-- Volet dépliable Profil acheteur -->
+    <div id="mProfileDrawer" hidden style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-top:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-size:10.5px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Temps & Profil</span>
+        <span style="font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Profil client (statistique)</span>
         <button type="button" class="chip" id="mBtnStar" style="padding:3px 8px;font-size:11px">⭐ STAR</button>
       </div>
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-        <button type="button" class="chip" id="mBtnMoment" style="font-size:11px;font-weight:700;background:rgba(255,255,255,0.06)">
-          <span id="mMomentLabel">1er Culte</span> ▾
-        </button>
         <div style="display:flex;gap:4px" id="mDemoGender">
-          <button type="button" class="chip" data-g="Femme" title="Femme" style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px">
+          <button type="button" class="chip" data-g="Femme" title="Femme" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px">
             <svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
             <span>Femme</span>
           </button>
-          <button type="button" class="chip" data-g="Homme" title="Homme" style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px">
+          <button type="button" class="chip" data-g="Homme" title="Homme" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px">
             <svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
             <span>Homme</span>
           </button>
         </div>
-      </div>
-      <div style="display:flex;gap:4px;overflow-x:auto;padding-bottom:2px" id="mDemoAge">
-        <button type="button" class="chip" data-a="Enfant / Ado">&lt;18</button>
-        <button type="button" class="chip" data-a="Jeune adulte">18-29</button>
-        <button type="button" class="chip" data-a="Adulte">30-59</button>
-        <button type="button" class="chip" data-a="Senior">60+</button>
+        <div style="display:flex;gap:4px;overflow-x:auto;flex:1" id="mDemoAge">
+          <button type="button" class="chip" data-a="Enfant / Ado">&lt;18</button>
+          <button type="button" class="chip" data-a="Jeune adulte">18-29</button>
+          <button type="button" class="chip" data-a="Adulte">30-59</button>
+          <button type="button" class="chip" data-a="Senior">60+</button>
+        </div>
       </div>
     </div>
-
-    <button class="btn good" id="btnValidate" type="button" disabled>Valider la vente</button>
-    <div class="hint" id="validHint" style="text-align:center"></div>
   </footer>
 
   <footer class="bottom-bar" id="recvBottom" hidden>
