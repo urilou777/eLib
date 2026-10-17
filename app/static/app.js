@@ -459,6 +459,18 @@ VIEWS.dashboard = async () => {
       ${kp.map((x, i) => `<div class="card kpi" style="--c:${x[3]};animation-delay:${i * 60}ms"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}
     </div>
 
+    <!-- Section Évolution & Origines de Stock (placée en haut comme avant) -->
+    <div class="grid g2" style="margin-bottom:18px">
+      <div class="card card-fill">
+        <h3>Évolution mensuelle du CA par origine · tendance & prévision</h3>
+        <div id="cTrend"></div>
+      </div>
+      <div class="card card-fill">
+        <h3>Répartition par origine du stock</h3>
+        <div id="cOwner"></div>
+      </div>
+    </div>
+
     <!-- Section Cultes & Rushes Dominicaux -->
     <div class="card" style="margin-bottom:18px">
       <div class="row" style="justify-content:space-between;margin-bottom:12px;align-items:center">
@@ -596,18 +608,6 @@ VIEWS.dashboard = async () => {
       <div class="card">
         <h3>Fréquentation par jour de la semaine (Dimanche en 1er)</h3>
         <div id="cWd" style="margin-top:12px"></div>
-      </div>
-    </div>
-
-    <!-- Section Évolution & Origines de Stock -->
-    <div class="grid g2" style="margin-bottom:18px">
-      <div class="card card-fill">
-        <h3>Évolution mensuelle du CA par origine · tendance & prévision</h3>
-        <div id="cTrend"></div>
-      </div>
-      <div class="card card-fill">
-        <h3>Répartition par origine du stock</h3>
-        <div id="cOwner"></div>
       </div>
     </div>
 

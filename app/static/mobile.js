@@ -238,24 +238,33 @@ if (btnToggleProf && mProfDrawer) {
   });
 }
 
-/* ---------- Contrôle de la taille de la Caméra (Plein écran Panier) ---------- */
+/* ---------- Contrôle de la taille de la Caméra (Plein écran Panier) & Veille ---------- */
 const camCont = $('#camContainer');
 const btnToggleCamSize = $('#btnToggleCamSize');
 const camMinibar = $('#camMinibar');
+const btnPauseCam = $('#btnPauseCam');
+
 function toggleCamMinimize(forceMin) {
   if (!camCont) return;
   const isMin = forceMin !== undefined ? forceMin : !camCont.classList.contains('minimized');
   camCont.classList.toggle('minimized', isMin);
   if (btnToggleCamSize) {
-    btnToggleCamSize.textContent = isMin ? '▼ Scanner' : '▲ Masquer caméra';
+    btnToggleCamSize.textContent = isMin ? '▼ Scanner' : '▲ Masquer';
   }
   const fullCartBtn = $('#btnViewFullCart');
   if (fullCartBtn) {
     fullCartBtn.textContent = isMin ? '📷 Scanner' : 'Plein écran';
   }
+  if (isMin) {
+    pauseCamera('minimized');
+  } else {
+    isAutoPaused = false;
+    startCamera();
+  }
 }
 if (btnToggleCamSize) btnToggleCamSize.addEventListener('click', () => toggleCamMinimize());
 if (camMinibar) camMinibar.addEventListener('click', () => toggleCamMinimize(false));
+if (btnPauseCam) btnPauseCam.addEventListener('click', () => pauseCamera('manual'));
 const btnViewFullCart = $('#btnViewFullCart');
 if (btnViewFullCart) {
   btnViewFullCart.addEventListener('click', () => {
@@ -711,7 +720,23 @@ let currentCamIndex = 0;
 
 let inactivityTimer = null;
 let isAutoPaused = false;
-const INACTIVITY_MS = 90 * 1000; // 90 secondes sans scan ni interaction
+const INACTIVITY_MS = 15 * 1000; // 15 secondes sans scan (mode ultra-agressif anti-chauffe / économie batterie)
+
+const BURST_INTERVAL_MS = 110; // 9 FPS pendant le rush (0ms de latence)
+const ECO_INTERVAL_MS = 330;   // 3 FPS en repos / attente (-66% CPU/GPU)
+const BURST_DURATION_MS = 5000; // Maintien du mode rapide pendant 5 secondes après le dernier scan
+let lastScanSuccessTime = 0;
+let isBurstMode = false;
+let torchTimer = null;
+
+function updateEcoBadge(burst) {
+  const badge = $('#camEcoBadge');
+  if (badge) {
+    badge.textContent = burst ? 'RAPIDE' : 'ÉCO';
+    badge.classList.toggle('burst', burst);
+    badge.title = burst ? 'Mode Rush : 9 FPS haute cadence' : 'Mode Éco : 3 FPS économie d\'énergie';
+  }
+}
 
 function resetInactivity() {
   clearTimeout(inactivityTimer);
@@ -732,10 +757,12 @@ function pauseCamera(reason = 'manual') {
   stopCamera();
   if (reason === 'auto') {
     isAutoPaused = true;
-    camStatus(true, 'Veille économie d\'énergie', 'Caméra en veille pour économiser la batterie. Touchez l\'écran pour la réactiver instantanément.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
+    camStatus(true, 'Veille économie d\'énergie', 'Caméra en veille pour préserver la batterie (15s). Touchez l\'écran pour réactiver instantanément.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
+  } else if (reason === 'minimized') {
+    isAutoPaused = true;
   } else {
-    isAutoPaused = false;
-    camStatus(true, 'Caméra en pause', 'Caméra suspendue. Appuyez sur le bouton dès que vous souhaitez scanner.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
+    isAutoPaused = true;
+    camStatus(true, 'Caméra en veille', 'Caméra suspendue pour préserver la batterie. Touchez l\'écran pour réactiver instantanément.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
   }
 }
 
@@ -745,8 +772,9 @@ function pauseCamera(reason = 'manual') {
 });
 
 function stopCamera() {
-  clearInterval(scanTimer); scanTimer = null;
+  clearTimeout(scanTimer); scanTimer = null;
   clearTimeout(inactivityTimer); inactivityTimer = null;
+  clearTimeout(torchTimer); torchTimer = null;
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   videoTrack = null;
   const video = $('#video');
@@ -754,7 +782,13 @@ function stopCamera() {
     video.style.opacity = '0';
     video.srcObject = null;
   }
-  $('#btnTorch').hidden = true;
+  const btnTorch = $('#btnTorch');
+  if (btnTorch) {
+    btnTorch.hidden = true;
+    btnTorch.classList.remove('on');
+  }
+  torchActive = false;
+  updateEcoBadge(false);
 }
 
 function camStatus(show, title, msg, btnText = null, onBtn = null) {
@@ -940,15 +974,28 @@ async function startCamera(specificDeviceId = null) {
         btnTorch.classList.remove('on');
         btnTorch.onclick = async () => {
           try {
+            clearTimeout(torchTimer);
             torchActive = !torchActive;
             await videoTrack.applyConstraints({ advanced: [{ torch: torchActive }] });
             btnTorch.classList.toggle('on', torchActive);
+            if (torchActive) {
+              // Extinction automatique de la torche après 15 secondes pour éviter la surchauffe LED
+              torchTimer = setTimeout(async () => {
+                if (torchActive && videoTrack) {
+                  try {
+                    torchActive = false;
+                    await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+                    btnTorch.classList.remove('on');
+                  } catch (e) { }
+                }
+              }, 15000);
+            }
           } catch (e) { }
         };
       }
     }
 
-    // Démarrer la surveillance d'inactivité (veille auto après 90s)
+    // Démarrer la surveillance d'inactivité (veille auto après 15s)
     resetInactivity();
 
     // Tap sur l'écran pour recentrer la mise au point
@@ -962,82 +1009,104 @@ async function startCamera(specificDeviceId = null) {
       }
     };
 
-    // Boucle de numérisation universelle à résolution native (1:1 sans perte de netteté)
-    scanTimer = setInterval(async () => {
-      if (isScanning || video.readyState < 2) return;
-      isScanning = true;
-      try {
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-        if (!vw || !vh) return;
-
-        // 1. Cadrage Principal (72% de largeur - idéal pour codes de taille moyenne/grande et distance normale)
-        const cw1 = Math.round(vw * 0.72);
-        const ch1 = Math.round(vh * 0.48);
-        const cx1 = Math.round((vw - cw1) / 2);
-        const cy1 = Math.round((vh - ch1) / 2);
-
-        // 2. Cadrage Macro Haute Densité (38% de largeur au centre - zoom optique logiciel 2x pour petits codes-barres de poche)
-        const cw2 = Math.round(vw * 0.38);
-        const ch2 = Math.round(vh * 0.28);
-        const cx2 = Math.round((vw - cw2) / 2);
-        const cy2 = Math.round((vh - ch2) / 2);
-
-        let code = null;
-
-        // Fonction d'analyse d'une région donnée
-        const scanCrop = async (cx, cy, cw, ch) => {
-          if (canvasRoi.width !== cw || canvasRoi.height !== ch) {
-            canvasRoi.width = cw; canvasRoi.height = ch;
-            canvasFilter.width = cw; canvasFilter.height = ch;
-          }
-          ctxRoi.drawImage(video, cx, cy, cw, ch, 0, 0, cw, ch);
-
-          // Test rapide avec BarcodeDetector natif
-          if (nativeDetector) {
-            try {
-              const results = await nativeDetector.detect(canvasRoi);
-              for (const r of results) {
-                if (isValidBarcode(r.rawValue)) return r.rawValue;
-              }
-            } catch (e) { }
-          }
-
-          // Test avec ZXing TRY_HARDER
-          const rawImg = ctxRoi.getImageData(0, 0, cw, ch);
-          let found = decodeZxingBuffer(rawImg.data, cw, ch);
-          if (found) return found;
-
-          // Test avec filtres adaptatifs (netteté 1D + Bradley-Roth)
-          const { sharpened, binarized } = processDegradedFilters(rawImg.data, cw, ch);
-          found = decodeZxingBuffer(sharpened, cw, ch);
-          if (found) return found;
-          found = decodeZxingBuffer(binarized, cw, ch);
-          return found;
-        };
-
-        // ÉCHELLES MULTIPLES (PYRAMIDE D'ÉCHELLES) :
-        // Échelle A : Découpe Macro centrale (zoom 2x virtuel) -> lit les petits codes-barres sans avoir à coller le téléphone !
-        code = await scanCrop(cx2, cy2, cw2, ch2);
-
-        // Échelle B : Cadrage large standard -> lit les codes normaux et grands
-        if (!code) {
-          code = await scanCrop(cx1, cy1, cw1, ch1);
-        }
-
-        if (code) {
-          onCode(code);
-        } else {
-          // Sortie de champ détectée (aucun code devant l'objectif) :
-          // Réinitialise immédiatement le verrou pour que le livre suivant (même s'il a le même code) soit pris instantanément
-          lastCode = '';
-        }
-      } catch (err) {
-        // Ignorer les erreurs d'une frame isolée
-      } finally {
-        isScanning = false;
+    // Ordonnanceur adaptatif dynamique (Mode Burst 110ms / Mode Éco 330ms basse conso)
+    const scanTick = async () => {
+      if (!stream) return;
+      const now = Date.now();
+      const burst = (now - lastScanSuccessTime < BURST_DURATION_MS);
+      if (burst !== isBurstMode) {
+        isBurstMode = burst;
+        updateEcoBadge(burst);
       }
-    }, 110);
+
+      if (!isScanning && video.readyState >= 2) {
+        isScanning = true;
+        try {
+          const vw = video.videoWidth;
+          const vh = video.videoHeight;
+          if (vw && vh) {
+            // 1. Cadrage Principal (72% de largeur - idéal pour codes de taille moyenne/grande et distance normale)
+            const cw1 = Math.round(vw * 0.72);
+            const ch1 = Math.round(vh * 0.48);
+            const cx1 = Math.round((vw - cw1) / 2);
+            const cy1 = Math.round((vh - ch1) / 2);
+
+            // 2. Cadrage Macro Haute Densité (38% de largeur au centre - zoom optique logiciel 2x pour petits codes-barres de poche)
+            const cw2 = Math.round(vw * 0.38);
+            const ch2 = Math.round(vh * 0.28);
+            const cx2 = Math.round((vw - cw2) / 2);
+            const cy2 = Math.round((vh - ch2) / 2);
+
+            let code = null;
+
+            // Fonction d'analyse d'une région donnée
+            const scanCrop = async (cx, cy, cw, ch, allowHeavyFilters) => {
+              if (canvasRoi.width !== cw || canvasRoi.height !== ch) {
+                canvasRoi.width = cw; canvasRoi.height = ch;
+                canvasFilter.width = cw; canvasFilter.height = ch;
+              }
+              ctxRoi.drawImage(video, cx, cy, cw, ch, 0, 0, cw, ch);
+
+              // 1. Test ultra-rapide avec BarcodeDetector natif matériel (C++ GPU)
+              if (nativeDetector) {
+                try {
+                  const results = await nativeDetector.detect(canvasRoi);
+                  for (const r of results) {
+                    if (isValidBarcode(r.rawValue)) return r.rawValue;
+                  }
+                } catch (e) { }
+              }
+
+              // 2. Test avec ZXing TRY_HARDER
+              const rawImg = ctxRoi.getImageData(0, 0, cw, ch);
+              let found = decodeZxingBuffer(rawImg.data, cw, ch);
+              if (found) return found;
+
+              // 3. Filtres adaptatifs lourds CPU (netteté 1D + Bradley-Roth) réservés au mode Burst/actif
+              if (allowHeavyFilters) {
+                const { sharpened, binarized } = processDegradedFilters(rawImg.data, cw, ch);
+                found = decodeZxingBuffer(sharpened, cw, ch);
+                if (found) return found;
+                found = decodeZxingBuffer(binarized, cw, ch);
+                return found;
+              }
+              return null;
+            };
+
+            // ÉCHELLES MULTIPLES (PYRAMIDE D'ÉCHELLES) :
+            // Échelle A : Découpe Macro centrale (zoom 2x virtuel) -> lit les petits codes-barres sans avoir à coller le téléphone !
+            code = await scanCrop(cx2, cy2, cw2, ch2, burst);
+
+            // Échelle B : Cadrage large standard -> lit les codes normaux et grands
+            if (!code) {
+              code = await scanCrop(cx1, cy1, cw1, ch1, burst);
+            }
+
+            if (code) {
+              lastScanSuccessTime = Date.now();
+              if (!isBurstMode) {
+                isBurstMode = true;
+                updateEcoBadge(true);
+              }
+              onCode(code);
+            } else {
+              // Sortie de champ détectée (aucun code devant l'objectif) :
+              // Réinitialise immédiatement le verrou pour que le livre suivant (même s'il a le même code) soit pris instantanément
+              lastCode = '';
+            }
+          }
+        } catch (err) {
+          // Ignorer les erreurs d'une frame isolée
+        } finally {
+          isScanning = false;
+        }
+      }
+
+      const nextDelay = isBurstMode ? BURST_INTERVAL_MS : ECO_INTERVAL_MS;
+      scanTimer = setTimeout(scanTick, nextDelay);
+    };
+
+    scanTick();
 
   } catch (e) {
     console.error('Camera startup error:', e);
