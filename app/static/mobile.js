@@ -175,6 +175,22 @@ function startNetworkMonitor() {
   }
 }
 
+function saveActiveCart() {
+  if (cart && cart.length > 0) {
+    const data = {
+      cart,
+      originPayments,
+      gender: mGender,
+      age: mAge,
+      star: mStar,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('librairie_mobile_active_cart', JSON.stringify(data));
+  } else {
+    localStorage.removeItem('librairie_mobile_active_cart');
+  }
+}
+
 function restoreActiveCart() {
   const raw = localStorage.getItem('librairie_mobile_active_cart');
   if (!raw) return;
@@ -186,7 +202,20 @@ function restoreActiveCart() {
       mGender = data.gender || '';
       mAge = data.age || '';
       mStar = data.star || 0;
-      renderCart();
+      const sBtn = $('#mBtnStar'); if (sBtn) sBtn.classList.toggle('on', !!mStar);
+      const gEl = $('#mDemoGender');
+      if (gEl) {
+        gEl.classList.toggle('is-couple', mGender === 'Couple');
+        gEl.querySelector('button[data-g="Femme"]')?.classList.toggle('on', mGender === 'Femme' || mGender === 'Couple');
+        gEl.querySelector('button[data-g="Homme"]')?.classList.toggle('on', mGender === 'Homme' || mGender === 'Couple');
+        const cb = $('#mCoupleBadge');
+        if (cb) cb.style.display = mGender === 'Couple' ? 'block' : 'none';
+      }
+      const aEl = $('#mDemoAge');
+      if (aEl) {
+        aEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.a === mAge));
+      }
+      if (mGender || mAge || mStar) collapseMobileProfile();
     }
   } catch (e) {
     localStorage.removeItem('librairie_mobile_active_cart');
@@ -712,8 +741,27 @@ function renderCart() {
   const missingPay = origins.some(g => !originPayments[g.owner] || (!originPayments[g.owner].method && !originPayments[g.owner].parts));
   $('#btnValidate').disabled = !cart.length || missingLot || missingPay;
   $('#validHint').textContent = !cart.length ? '' : missingLot ? 'Choisissez l\'origine de chaque livre' : missingPay ? 'Choisissez le mode de paiement' : '';
+  saveActiveCart();
 }
-$('#clearCart').addEventListener('click', () => { cart = []; originPayments = {}; hidePackUpsell(); renderCart(); });
+$('#clearCart').addEventListener('click', () => {
+  cart = [];
+  originPayments = {};
+  hidePackUpsell();
+  mGender = ''; mAge = ''; mStar = 0;
+  const sBtn = $('#mBtnStar'); if (sBtn) sBtn.classList.remove('on');
+  const gEl = $('#mDemoGender');
+  if (gEl) {
+    gEl.classList.remove('is-couple');
+    gEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    const cb = $('#mCoupleBadge'); if (cb) cb.style.display = 'none';
+  }
+  const aEl = $('#mDemoAge');
+  if (aEl) aEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+  if (mDemoTimer) { clearTimeout(mDemoTimer); mDemoTimer = null; }
+  expandMobileProfile();
+  localStorage.removeItem('librairie_mobile_active_cart');
+  renderCart();
+});
 
 function updateMobileStandbyUI() {
   const raw = localStorage.getItem('librairie_mobile_standby_cart');
@@ -756,6 +804,7 @@ if (mBtnStandby) {
       timestamp: Date.now()
     };
     localStorage.setItem('librairie_mobile_standby_cart', JSON.stringify(standbyData));
+    localStorage.removeItem('librairie_mobile_active_cart');
 
     cart = [];
     originPayments = {};
@@ -914,6 +963,7 @@ function expandMobileProfile() {
 
 function scheduleMobileProfileCollapse() {
   if (mDemoTimer) { clearTimeout(mDemoTimer); mDemoTimer = null; }
+  saveActiveCart();
   if (!mGender && !mAge && !mStar) {
     expandMobileProfile();
     return;
@@ -1276,6 +1326,7 @@ $('#btnValidate').addEventListener('click', async () => {
     originPayments = {};
     hidePackUpsell();
     mGender = ''; mAge = ''; mStar = 0;
+    localStorage.removeItem('librairie_mobile_active_cart');
     if (mStarBtn) mStarBtn.classList.remove('on');
     if (mGenEl) {
       mGenEl.classList.remove('is-couple');
@@ -1297,6 +1348,28 @@ let currentMode = 'sale'; // 'sale' | 'recv'
 let recvList = [];        // [{ book, qty }]
 let ownersList = [];
 
+function saveRecvList() {
+  if (recvList && recvList.length > 0) {
+    localStorage.setItem('librairie_mobile_recv_list', JSON.stringify(recvList));
+  } else {
+    localStorage.removeItem('librairie_mobile_recv_list');
+  }
+}
+
+function restoreRecvList() {
+  const raw = localStorage.getItem('librairie_mobile_recv_list');
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    if (Array.isArray(data) && data.length > 0) {
+      recvList = data;
+      renderRecv();
+    }
+  } catch (e) {
+    localStorage.removeItem('librairie_mobile_recv_list');
+  }
+}
+
 async function loadOwners() {
   try {
     ownersList = await api('/api/owners');
@@ -1307,8 +1380,12 @@ async function loadOwners() {
   } catch (e) { ownersList = []; }
 }
 
-function setMobileMode(mode) {
+function setMobileMode(mode, updateHash = true, showToast = false) {
+  if (mode !== 'sale' && mode !== 'recv') mode = 'sale';
   currentMode = mode;
+  if (updateHash && location.hash !== '#' + mode) {
+    location.hash = '#' + mode;
+  }
   $('#btnModeSale').classList.toggle('on', mode === 'sale');
   $('#btnModeRecv').classList.toggle('on', mode === 'recv');
   $('#cartCard').hidden = (mode !== 'sale');
@@ -1316,11 +1393,18 @@ function setMobileMode(mode) {
   $('#recvCard').hidden = (mode !== 'recv');
   $('#recvBottom').hidden = (mode !== 'recv');
   if (mode === 'recv' && !ownersList.length) loadOwners();
-  toast(mode === 'sale' ? 'Mode Vente actif' : 'Mode Réception actif', 'ok');
+  if (showToast) toast(mode === 'sale' ? 'Mode Vente actif' : 'Mode Réception actif', 'ok');
 }
 
-$('#btnModeSale').addEventListener('click', () => setMobileMode('sale'));
-$('#btnModeRecv').addEventListener('click', () => setMobileMode('recv'));
+window.addEventListener('hashchange', () => {
+  const h = location.hash.replace(/^#/, '');
+  if ((h === 'sale' || h === 'recv') && h !== currentMode) {
+    setMobileMode(h, false, false);
+  }
+});
+
+$('#btnModeSale').addEventListener('click', () => setMobileMode('sale', true, true));
+$('#btnModeRecv').addEventListener('click', () => setMobileMode('recv', true, true));
 
 /* ---------- Logique Réception de stock ---------- */
 function addToRecv(book) {
@@ -1357,9 +1441,14 @@ function renderRecv() {
             el('button', { type: 'button', text: '+', onclick: () => { item.qty++; renderRecv(); } }))));
     }));
   }
+  saveRecvList();
 }
 
-$('#clearRecv').addEventListener('click', () => { recvList = []; renderRecv(); });
+$('#clearRecv').addEventListener('click', () => {
+  recvList = [];
+  localStorage.removeItem('librairie_mobile_recv_list');
+  renderRecv();
+});
 
 $('#btnValidateRecv').addEventListener('click', async () => {
   if (!currentUser) return openUserModal();
@@ -1382,6 +1471,7 @@ $('#btnValidateRecv').addEventListener('click', async () => {
     toast(`${recvList.reduce((s, i) => s + i.qty, 0)} exemplaire(s) entrés en stock`, 'ok');
     if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     recvList = [];
+    localStorage.removeItem('librairie_mobile_recv_list');
     renderRecv();
   } catch (e) {
     toast(e.message, 'err');
@@ -2181,7 +2271,10 @@ updateFullscreenUI();
 (async function init() {
   startNetworkMonitor();
   restoreActiveCart();
+  restoreRecvList();
   await pairFromHash();
+  const initHash = location.hash.replace(/^#/, '');
+  setMobileMode(initHash === 'recv' ? 'recv' : 'sale', true, false);
   if (!localStorage.getItem(TOKEN_KEY)) { renderCart(); return showPairing(); }
   try {
     users = await api('/api/users');

@@ -368,17 +368,32 @@ function toggleFocusMode() {
 
 /* ---------- navigation ---------- */
 const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', treasury: 'Trésorerie & Caisse', settle: 'Trésorerie & Caisse', orders: 'Réservations', audit: 'Historique & Sécurité des opérations', data: 'Données & Excel' };
-async function go(v) {
+async function go(v, updateHash = true) {
   if (isFocusMode() && v !== 'pos') {
     toast("Accès bloqué : navigation verrouillée sur la Caisse uniquement.", "err");
     return;
   }
-  S.view = v; $('#title').textContent = TITLES[v]; $('#topActions').innerHTML = ''; $('#view').onclick = null;
+  if (!VIEWS[v]) v = 'dashboard';
+  S.view = v;
+  if (updateHash && location.hash !== '#' + v) {
+    location.hash = '#' + v;
+  }
+  $('#title').textContent = TITLES[v] || 'Librairi-E';
+  $('#topActions').innerHTML = '';
+  $('#view').onclick = null;
   const extra = $('#topTitleExtra'); if (extra) extra.innerHTML = '';
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
   $('#view').innerHTML = '<div class="empty">Chargement…</div>';
   try { await loadRef(); await VIEWS[v](); } catch (e) { toast(e.message, 'err'); }
 }
+
+window.addEventListener('hashchange', () => {
+  const h = location.hash.replace(/^#/, '');
+  if (h && VIEWS[h] && h !== S.view) {
+    go(h, false);
+  }
+});
+
 $('#nav').addEventListener('click', e => { 
   if (isFocusMode()) {
     toast("Mode Focus actif : seul l'écran de Caisse est accessible.", "warn");
@@ -1936,6 +1951,7 @@ VIEWS.pos = async () => {
 
   const scheduleProfileCollapse = () => {
     if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    if (typeof saveDeskActiveCart === 'function') saveDeskActiveCart();
     if (!curGender && !curAge && !curStar) {
       expandProfile();
       return;
@@ -2160,6 +2176,55 @@ VIEWS.pos = async () => {
     $('#tot').textContent = eur(S.cart.reduce((s, l) => s + l.qty * l.price, 0));
     updatePayDropdown();
     updateStandbyUI();
+    saveDeskActiveCart();
+  };
+
+  const saveDeskActiveCart = () => {
+    if (S.cart && S.cart.length > 0) {
+      const data = {
+        cart: S.cart,
+        gender: curGender,
+        age: curAge,
+        star: curStar,
+        pay: $('#pay')?.value || '',
+        sdate: $('#sdate')?.value || ''
+      };
+      localStorage.setItem('librairie_desk_active_cart', JSON.stringify(data));
+    } else {
+      localStorage.removeItem('librairie_desk_active_cart');
+    }
+  };
+
+  const restoreDeskActiveCart = () => {
+    const raw = localStorage.getItem('librairie_desk_active_cart');
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      if (data && data.cart && data.cart.length > 0 && (!S.cart || S.cart.length === 0)) {
+        S.cart = data.cart;
+        curGender = data.gender || '';
+        curAge = data.age || '';
+        curStar = data.star || 0;
+        if (data.pay && $('#pay')) $('#pay').value = data.pay;
+        if (data.sdate && $('#sdate')) $('#sdate').value = data.sdate;
+
+        if (btnStar) {
+          btnStar.classList.toggle('on', !!curStar);
+          btnStar.style.background = curStar ? '#e6a73c' : '';
+          btnStar.style.borderColor = curStar ? '#e6a73c' : '';
+          btnStar.style.color = curStar ? '#000' : '';
+        }
+        $('#demoGender button[data-g="Femme"]')?.classList.toggle('on', curGender === 'Femme' || curGender === 'Couple');
+        $('#demoGender button[data-g="Homme"]')?.classList.toggle('on', curGender === 'Homme' || curGender === 'Couple');
+        const cBadge = $('#demoGenderCoupleBadge');
+        if (cBadge) cBadge.style.display = curGender === 'Couple' ? 'inline-block' : 'none';
+        $('#demoGender')?.classList.toggle('is-couple', curGender === 'Couple');
+        $('#demoAge button')?.forEach(b => b.classList.toggle('on', b.dataset.a === curAge));
+        if (curGender || curAge || curStar) collapseProfile();
+      }
+    } catch (e) {
+      localStorage.removeItem('librairie_desk_active_cart');
+    }
   };
 
   const updateStandbyUI = () => {
@@ -2202,6 +2267,7 @@ VIEWS.pos = async () => {
         timestamp: Date.now()
       };
       localStorage.setItem('librairie_standby_cart', JSON.stringify(standbyData));
+      localStorage.removeItem('librairie_desk_active_cart');
 
       S.cart = [];
       curGender = '';
@@ -2299,7 +2365,25 @@ VIEWS.pos = async () => {
     else if (t.dataset.a != null) { const mx = t.dataset.max ? +t.dataset.max : Infinity; S.cart[+t.dataset.a].alloc[t.dataset.k] = Math.max(0, Math.min(mx, parseInt(t.value) || 0)); cart() }
   };
 
-  $('#clear').onclick = () => { S.cart = []; hideDeskPackUpsell(); cart() };
+  $('#clear').onclick = () => {
+    S.cart = [];
+    curGender = ''; curAge = ''; curStar = 0;
+    if (btnStar) {
+      btnStar.classList.remove('on');
+      btnStar.style.background = '';
+      btnStar.style.borderColor = '';
+      btnStar.style.color = '';
+    }
+    $('#demoGender button')?.forEach(b => b.classList.remove('on'));
+    $('#demoAge button')?.forEach(b => b.classList.remove('on'));
+    const cBadge = $('#demoGenderCoupleBadge');
+    if (cBadge) cBadge.style.display = 'none';
+    $('#demoGender')?.classList.remove('is-couple');
+    expandProfile();
+    hideDeskPackUpsell();
+    localStorage.removeItem('librairie_desk_active_cart');
+    cart();
+  };
   $('#valid').onclick = safe(async () => {
     if (!S.cart.length) return toast('Panier vide', 'warn');
     const bad = S.cart.find(l => !complete(l));
@@ -2318,6 +2402,7 @@ VIEWS.pos = async () => {
       }))
     });
     toast(`Vente enregistrée : ${eur(r.total)}`);
+    localStorage.removeItem('librairie_desk_active_cart');
     S.cart = []; curGender = ''; curAge = ''; curStar = 0; hideDeskPackUpsell();
     if (btnStar) {
       btnStar.classList.remove('on');
@@ -2334,6 +2419,7 @@ VIEWS.pos = async () => {
     expandProfile();
     await loadRef(); draw(); cart();
   });
+  restoreDeskActiveCart();
   draw(); cart();
 };
 
@@ -3229,6 +3315,8 @@ document.addEventListener('keydown', e => {
 applyTheme(getSavedThemePreference());
 updateUserDisplay();
 updateFocusUI();
-go(isFocusMode() ? 'pos' : 'dashboard');
+const initialHash = location.hash.replace(/^#/, '');
+const startView = isFocusMode() ? 'pos' : (VIEWS[initialHash] ? initialHash : 'dashboard');
+go(startView, true);
 
 
