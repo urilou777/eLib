@@ -4,11 +4,18 @@ const $ = s => document.querySelector(s);
 const eur = n => (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 const TOKEN_KEY = 'librairie_device_token', USER_KEY = 'librairie_user';
 
+const SVG_TAGS = new Set(['svg', 'path', 'line', 'circle', 'polyline', 'polygon', 'rect', 'g']);
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
 /* Construction DOM sûre : le texte passe toujours par textContent / createTextNode */
 function el(tag, props = {}, ...kids) {
-  const e = document.createElement(tag);
+  const isSvg = SVG_TAGS.has(tag);
+  const e = isSvg ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
-    if (k === 'class') e.className = v;
+    if (k === 'class') {
+      if (isSvg) e.setAttribute('class', v);
+      else e.className = v;
+    }
     else if (k === 'text') e.textContent = v;
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
     else if (k === 'style') e.style.cssText = v;
@@ -16,6 +23,22 @@ function el(tag, props = {}, ...kids) {
   }
   kids.flat().forEach(c => { if (c != null) e.append(c.nodeType ? c : document.createTextNode(String(c))); });
   return e;
+}
+
+function createStatsIcon() {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('style', 'width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;color:#d8b4fe;display:inline-block;vertical-align:middle;flex-shrink:0');
+  
+  const l1 = document.createElementNS(SVG_NS, 'line');
+  l1.setAttribute('x1', '18'); l1.setAttribute('y1', '20'); l1.setAttribute('x2', '18'); l1.setAttribute('y2', '10');
+  const l2 = document.createElementNS(SVG_NS, 'line');
+  l2.setAttribute('x1', '12'); l2.setAttribute('y1', '20'); l2.setAttribute('x2', '12'); l2.setAttribute('y2', '4');
+  const l3 = document.createElementNS(SVG_NS, 'line');
+  l3.setAttribute('x1', '6'); l3.setAttribute('y1', '20'); l3.setAttribute('x2', '6'); l3.setAttribute('y2', '14');
+  
+  svg.append(l1, l2, l3);
+  return svg;
 }
 
 function toast(msg, kind = 'ok') {
@@ -492,10 +515,7 @@ function renderCart() {
               title: 'Statistiques du pack',
               onclick: (e) => { e.stopPropagation(); openMobileBookStats(b.id); }
             },
-              el('svg', { style: 'width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;color:#c084fc', viewBox: '0 0 24 24' },
-                el('line', { x1: '18', y1: '20', x2: '18', y2: '10' }),
-                el('line', { x1: '12', y1: '20', x2: '12', y2: '4' }),
-                el('line', { x1: '6', y1: '20', x2: '6', y2: '14' })),
+              createStatsIcon(),
               el('span', { text: 'Stats' })
             )
           )
@@ -516,10 +536,7 @@ function renderCart() {
         title: 'Statistiques & tendances de vente',
         onclick: (e) => { e.stopPropagation(); openMobileBookStats(b.id); }
       },
-        el('svg', { style: 'width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;color:#c084fc', viewBox: '0 0 24 24' },
-          el('line', { x1: '18', y1: '20', x2: '18', y2: '10' }),
-          el('line', { x1: '12', y1: '20', x2: '12', y2: '4' }),
-          el('line', { x1: '6', y1: '20', x2: '6', y2: '14' })),
+        createStatsIcon(),
         el('span', { text: 'Stats' })
       ));
       return el('div', { class: 'cart-item' + (item.lot === undefined ? ' todo' : '') },
@@ -1631,7 +1648,7 @@ let currentCamIndex = 0;
 
 let inactivityTimer = null;
 let isAutoPaused = false;
-const INACTIVITY_MS = 15 * 1000; // 15 secondes sans scan (mode ultra-agressif anti-chauffe / économie batterie)
+const INACTIVITY_MS = 10 * 1000; // 10 secondes sans scan (mise en veille automatique anti-chauffe / économie batterie)
 
 const BURST_INTERVAL_MS = 110; // 9 FPS pendant le rush (0ms de latence)
 const ECO_INTERVAL_MS = 330;   // 3 FPS en repos / attente (-66% CPU/GPU)

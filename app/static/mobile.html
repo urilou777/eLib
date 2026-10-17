@@ -416,10 +416,19 @@ button, select, input { font:inherit; color:inherit; }
   font-weight: 700 !important;
   display: inline-flex !important;
   align-items: center !important;
-  gap: 3px !important;
+  gap: 4px !important;
   border-radius: 999px !important;
   cursor: pointer !important;
   white-space: nowrap !important;
+  line-height: 1 !important;
+}
+.btn-m-stats svg {
+  width: 12px !important;
+  height: 12px !important;
+  stroke: #d8b4fe !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
 }
 .btn-m-stats:active {
   background: var(--a1) !important;
@@ -915,7 +924,7 @@ button, select, input { font:inherit; color:inherit; }
 <div id="toasts" aria-live="polite"></div>
 
 <script src="/static/vendor/zxing.min.js"></script>
-<script src="/static/mobile.js?v=20261017d"></script>
+<script src="/static/mobile.js?v=20261017e"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
