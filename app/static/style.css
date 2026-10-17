@@ -644,7 +644,7 @@ html {
 }
 .card-fill {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: clamp(320px, 45vh, 650px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -824,7 +824,7 @@ label.f { display: flex; flex-direction: column; gap: 5px; font-size: 12px; colo
 /* Tables & Conteneurs fluides auto-remplissant et réactifs */
 .table-wrap {
   flex: 1 1 auto;
-  min-height: 120px;
+  min-height: 200px;
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;

@@ -3020,7 +3020,7 @@ VIEWS.audit = async () => {
       Protection anti-corruption : chaque fichier est écrit via un fichier temporaire sécurisé (<code>.tmp</code>).
       Vous pouvez <b>télécharger</b> un fichier pour sauvegarde externe (clé USB), ou <b>restaurer</b> directement l'état de la base à un instant précis (une copie de précaution de l'état actuel est créée automatiquement).
     </p>
-    <div class="table-wrap" style="max-height:clamp(280px, 45vh, 520px)">
+    <div class="table-wrap" style="max-height:clamp(180px, 28vh, 320px);margin-top:6px">
       <table>
         <thead>
           <tr>
@@ -3051,15 +3051,15 @@ VIEWS.audit = async () => {
 
   </div>
 
-  <div class="card" style="margin-bottom:16px">
-    <h3>Journal d'audit atomique &amp; Réversibilité des actions</h3>
-    <p class="muted" style="line-height:1.6;font-size:13px">
-      Toutes les opérations d'écriture sur la base de données sont horodatées et associées au profil actif.
-      Vous pouvez <b>annuler</b> (Rollback / Undo) les erreurs d'un simple clic.
-    </p>
-  </div>
-  <div class="card card-fill" style="padding:0">
-    <div class="table-wrap">
+  <div class="card" style="display:flex;flex-direction:column;min-height:clamp(360px, 48vh, 680px);padding:clamp(14px, 1.5vw, 22px)">
+    <div style="margin-bottom:12px">
+      <h3 style="margin-bottom:6px">Journal d'audit atomique &amp; Réversibilité des actions <span class="badge b-ok" style="font-size:11px;font-weight:600">${logs.length} opération${logs.length > 1 ? 's' : ''}</span></h3>
+      <p class="muted" style="line-height:1.6;font-size:13px;margin:0">
+        Toutes les opérations d'écriture sur la base de données sont horodatées et associées au profil actif.
+        Vous pouvez <b>annuler</b> (Rollback / Undo) les erreurs d'un simple clic.
+      </p>
+    </div>
+    <div class="table-wrap" style="flex:1 1 auto;min-height:280px;border-top:1px solid var(--line);margin:0 -clamp(14px, 1.5vw, 22px);padding:0">
       <table>
         <thead>
           <tr>
@@ -3085,7 +3085,7 @@ VIEWS.audit = async () => {
                 ${!l.undone && l.action !== 'UNDO' ? `<button class="btn ghost sm" data-undo="${l.id}">⤺ Annuler</button>` : ''}
               </td>
             </tr>
-          `).join('') || '<tr><td colspan=7 class="muted">Aucune entrée d\'audit pour le moment.</td></tr>'}
+          `).join('') || '<tr><td colspan=7 class="muted" style="text-align:center;padding:24px">Aucune entrée d\'audit pour le moment.</td></tr>'}
         </tbody>
       </table>
     </div>
