@@ -62,17 +62,55 @@
           <span id="themeLabel">Thème</span>
           <span class="kbd-hint">F10</span>
         </button>
-        <button id="btnFocusMode" class="btn btn-focus-toggle" title="Basculer en Mode Focus (sécurise et restreint le poste aux opérations de vente) [F11]">
-          <svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-          <span id="focusBtnLabel">Mode Focus</span>
+        <button id="btnFocusMode" class="btn btn-focus-toggle" title="Activer la Régie Live &amp; Caisse (sécurise le poste sur la caisse, active les moniteurs CCTV et la surveillance des paniers mobiles) [F11]">
+          <span class="cctv-dot-pulse"></span>
+          <span id="focusBtnLabel">🔴 Régie Live &amp; Caisse</span>
           <span class="kbd-hint">F11</span>
         </button>
       </div>
     </header>
 
+    <div id="cctvDrawer" class="cctv-drawer" style="display:none">
+      <div class="cctv-drawer-header">
+        <div class="cctv-live-tag">
+          <span class="cctv-rec-glow"></span>
+          <b>RÉGIE CCTV · EN DIRECT</b>
+          <span class="cctv-active-tag" id="cctvActiveSummary">0 terminal mobile</span>
+        </div>
+        <div class="cctv-drawer-stats">
+          <div class="cctv-stat"><span class="lbl">Ventes du jour :</span> <b id="cctvStatCount">0</b></div>
+          <div class="cctv-stat"><span class="lbl">Total Caisse :</span> <b id="cctvStatTotal">0,00 €</b></div>
+        </div>
+        <div class="cctv-drawer-actions">
+          <button class="btn ghost sm" id="btnCctvMute" title="Activer / Couper les sons de vente">🔔 Son : Actif</button>
+          <button class="btn ghost sm" id="btnCloseCctv">✕ Réduire</button>
+        </div>
+      </div>
+
+      <div class="cctv-drawer-content">
+        <div class="cctv-channels-box">
+          <div class="cctv-channels-title">Postes Mobiles &amp; Paniers en cours de scan</div>
+          <div class="cctv-tiles-grid" id="cctvTilesGrid">
+            <div class="cctv-tile empty">
+              <span class="cctv-radar"></span>
+              <span>En attente de détection mobile…<br><small style="color:var(--muted)">Scannez depuis un smartphone pour voir son panier s'empiler ici en direct</small></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cctv-feed-box">
+          <div class="cctv-feed-title">Téléscripteur d'Activité en direct</div>
+          <div class="cctv-feed-list" id="cctvFeedList">
+            <div class="cctv-feed-row empty">En attente d'événements… Bips caméra et ventes apparaîtront ici.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <section id="view"></section>
   </main>
 </div>
+<div class="live-sale-alert-container" id="liveAlertContainer"></div>
 <div id="modalRoot"></div><div id="toasts"></div>
 <script src="/static/app.js?v=20261017c"></script>
 </body>

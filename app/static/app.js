@@ -323,19 +323,27 @@ function updateFocusUI() {
   const btn = $('#btnFocusMode');
   const banner = $('#focusBanner');
   const label = $('#focusBtnLabel');
+  const drawer = $('#cctvDrawer');
+
+  const countActiveBaskets = (liveBaskets || []).filter(b => b.qty > 0).length;
+
   if (btn) {
     btn.classList.toggle('focus-active', active);
     if (active) {
-      btn.title = `Mode Focus ACTIF (${moment}). Cliquez pour déverrouiller ou changer de culte.`;
-      if (label) label.textContent = "Quitter Focus";
+      btn.title = `Régie Live & Caisse ACTIVE (${moment}). Cliquez pour quitter ou déverrouiller. [F11]`;
+      if (label) label.textContent = "Quitter Régie";
     } else {
-      btn.title = "Activer le Mode Focus (sécurise le poste pour le rush du culte)";
-      if (label) label.textContent = "Mode Focus";
+      btn.title = "Activer la Régie Live & Caisse (sécurise le poste sur la caisse, active les moniteurs CCTV et la surveillance des paniers mobiles) [F11]";
+      if (label) label.textContent = "🔴 Régie Live & Caisse";
     }
   }
   if (banner) {
     banner.style.display = active ? 'inline-flex' : 'none';
-    banner.innerHTML = `<span class="focus-pulse"></span><span>MODE FOCUS · <b style="cursor:pointer;text-decoration:underline" id="bannerMomentTxt">${esc(moment)}</b></span>`;
+    banner.innerHTML = `
+      <span class="cctv-rec-glow"></span>
+      <span>🔴 EN DIRECT · <b style="cursor:pointer;text-decoration:underline" id="bannerMomentTxt">${esc(moment)}</b></span>
+      <span class="cctv-active-tag" id="cctvTopBadge" style="margin-left:6px">${countActiveBaskets} mobile${countActiveBaskets > 1 ? 's' : ''}</span>
+    `;
     banner.onclick = (e) => {
       e.stopPropagation();
       openMomentSelectorModal(() => {
@@ -343,22 +351,30 @@ function updateFocusUI() {
       });
     };
   }
+
+  if (drawer) {
+    drawer.style.display = active ? 'block' : 'none';
+    if (active) {
+      renderCctvTiles();
+      renderLiveFeed();
+      updateCctvDailyStats();
+    }
+  }
 }
 
 function toggleFocusMode() {
   const current = isFocusMode();
   if (current) {
-    if (confirm("Désactiver le Mode Focus et réactiver l'accès complet à tous les onglets d'administration ?")) {
+    if (confirm("Quitter la Régie Live et réactiver l'accès complet à tous les onglets d'administration ?")) {
       localStorage.setItem('librairie_focus_mode', 'false');
       updateFocusUI();
-      toast("Mode Focus désactivé : accès complet rétabli", "ok");
+      toast("Régie Live désactivée : accès complet rétabli", "ok");
     }
   } else {
-    // Lors de l'activation du Mode Focus, on configure le culte si souhaité
     openMomentSelectorModal((chosenMoment) => {
       localStorage.setItem('librairie_focus_mode', 'true');
       updateFocusUI();
-      toast(`Mode Focus activé pour : ${chosenMoment}`, "ok");
+      toast(`Régie Live & Caisse activée pour : ${chosenMoment}`, "ok");
       if (S.view !== 'pos') {
         go('pos');
       }
@@ -3312,9 +3328,324 @@ document.addEventListener('keydown', e => {
   }
 });
 
+/* ============================================================
+   RÉGIE CCTV & STREAMING EN DIRECT (POSTES MOBILES & ALERTES)
+   ============================================================ */
+
+let liveEventSource = null;
+let liveBaskets = [];
+let liveFeedLogs = [];
+
+function playLiveSaleChime() {
+  if (localStorage.getItem('librairie_cctv_mute') === 'true') return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    
+    // Note 1: Sol5 (784Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now); // D5
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
+    gain1.gain.setValueAtTime(0.15, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.35);
+
+    // Note 2: Ré6 (1174Hz)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(1174.66, now + 0.08); // D6
+    gain2.gain.setValueAtTime(0.12, now + 0.08);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.08);
+    osc2.stop(now + 0.45);
+  } catch (e) {}
+}
+
+function showLiveSaleAlert(sale) {
+  const container = $('#liveAlertContainer');
+  if (!container) return;
+
+  const alert = document.createElement('div');
+  alert.className = 'live-sale-alert';
+  alert.innerHTML = `
+    <div class="lsa-sparkle">🎉</div>
+    <div class="lsa-content">
+      <div class="lsa-title">VENTE EN DIRECT VALIDÉE</div>
+      <div class="lsa-body"><b>${esc(sale.user_name || 'Libraire')}</b> a encaissé <b>${eur(sale.total)}</b> (${sale.qty} ex.) · <span style="color:#fbd38d">${esc(sale.payment || 'Paiement')}</span></div>
+      ${sale.summary ? `<div class="lsa-summary">${esc(sale.summary)}</div>` : ''}
+    </div>
+    <div class="lsa-badge">${esc(sale.service_moment || 'Culte')}</div>
+  `;
+
+  alert.onclick = () => {
+    alert.style.opacity = '0';
+    alert.style.transform = 'translateX(100px)';
+    setTimeout(() => alert.remove(), 300);
+  };
+
+  container.prepend(alert);
+  setTimeout(() => {
+    if (alert.parentElement) {
+      alert.style.opacity = '0';
+      alert.style.transform = 'translateX(100px)';
+      setTimeout(() => alert.remove(), 350);
+    }
+  }, 6500);
+}
+
+function addLiveFeedRow(kind, data) {
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+  
+  let icon = '📱';
+  let text = '';
+  let isSale = false;
+
+  if (kind === 'sale') {
+    icon = '💰';
+    isSale = true;
+    text = `<b>${esc(data.user_name || 'Libraire')}</b> a encaissé <b>${eur(data.total)}</b> (${data.qty} ex. · ${esc(data.payment || '')})`;
+  } else if (kind === 'basket_scan') {
+    icon = '🔍';
+    text = `<b>${esc(data.user_name || 'Poste')}</b> : panier à <b>${eur(data.total)}</b> (${data.qty} ex.)`;
+  } else if (kind === 'basket_clear') {
+    icon = '⚪';
+    text = `<b>${esc(data.user_name || 'Poste')}</b> a libéré son panier`;
+  }
+
+  liveFeedLogs.unshift({ timeStr, icon, text, isSale });
+  if (liveFeedLogs.length > 25) liveFeedLogs.pop();
+  renderLiveFeed();
+}
+
+function renderLiveFeed() {
+  const list = $('#cctvFeedList');
+  if (!list) return;
+
+  if (!liveFeedLogs.length) {
+    list.innerHTML = `<div class="cctv-feed-row empty">En attente d'événements… Bips caméra et ventes apparaîtront ici.</div>`;
+    return;
+  }
+
+  list.innerHTML = liveFeedLogs.map(item => `
+    <div class="cctv-feed-row ${item.isSale ? 'sale' : ''}">
+      <span class="cctv-feed-time">${item.timeStr}</span>
+      <span class="cctv-feed-icon">${item.icon}</span>
+      <span class="cctv-feed-text">${item.text}</span>
+    </div>
+  `).join('');
+}
+
+function renderCctvTiles() {
+  const grid = $('#cctvTilesGrid');
+  const badgeCount = $('#cctvCountBadge');
+  const summary = $('#cctvActiveSummary');
+  if (!grid) return;
+
+  const activeBaskets = liveBaskets.filter(b => b.qty > 0 || (b.items && b.items.length > 0));
+
+  if (badgeCount) badgeCount.textContent = activeBaskets.length;
+  if (summary) summary.textContent = `${activeBaskets.length} poste${activeBaskets.length > 1 ? 's' : ''} mobile${activeBaskets.length > 1 ? 's' : ''} actif${activeBaskets.length > 1 ? 's' : ''}`;
+
+  if (!activeBaskets.length) {
+    grid.innerHTML = `
+      <div class="cctv-tile empty">
+        <span class="cctv-radar"></span>
+        <span>En attente de détection mobile…<br><small style="color:var(--mut)">Scannez depuis un smartphone pour voir son panier s'empiler ici en direct</small></span>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = activeBaskets.map((b, idx) => {
+    const itemsHtml = (b.items || []).map(i => `
+      <div class="tile-item-row">
+        <span class="tile-item-title">${esc(i.title)}</span>
+        <span style="font-weight:700">×${i.qty}</span>
+      </div>
+    `).join('');
+
+    const demogParts = [];
+    if (b.gender) demogParts.push(b.gender === 'Couple' ? 'Couple 💜' : b.gender);
+    if (b.age) demogParts.push(b.age);
+    if (b.star) demogParts.push('⭐ STAR');
+
+    return `
+      <div class="cctv-tile scanning">
+        <div class="tile-head">
+          <div class="tile-cam-id">
+            <span class="tile-rec-dot"></span>
+            <b>CAM-0${idx + 1} · ${esc(b.user_name || b.device_name || 'Mobile')}</b>
+          </div>
+          <span class="tile-badge scanning">🟢 EN SCAN</span>
+        </div>
+        <div class="tile-metrics">
+          <span class="tile-total">${eur(b.total || 0)}</span>
+          <span class="tile-qty">${b.qty || 0} livre${(b.qty || 0) > 1 ? 's' : ''} en cours</span>
+        </div>
+        <div class="tile-items-preview">
+          ${itemsHtml || '<span style="color:var(--mut);font-style:italic">Panier vide</span>'}
+        </div>
+        <div class="tile-footer">
+          <span>${demogParts.length ? demogParts.join(' · ') : 'Client en cours…'}</span>
+          <span style="font-size:10px;color:var(--mut)">${esc(b.moment || '')}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function updateCctvDailyStats() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const sales = await api('/api/sales?limit=500');
+    const todaySales = sales.filter(s => s.date === today);
+    const count = todaySales.length;
+    const total = todaySales.reduce((sum, s) => sum + (s.total || 0), 0);
+
+    const elCount = $('#cctvStatCount');
+    const elTotal = $('#cctvStatTotal');
+    if (elCount) elCount.textContent = count;
+    if (elTotal) elTotal.textContent = eur(total);
+  } catch (e) {}
+}
+
+let isRefreshingView = false;
+async function refreshCurrentViewLive() {
+  if (isRefreshingView) return;
+  isRefreshingView = true;
+  try {
+    updateCctvDailyStats();
+    if (S.view === 'dashboard') {
+      await loadRef();
+      await VIEWS.dashboard();
+    } else if (S.view === 'sales') {
+      await loadRef();
+      await VIEWS.sales();
+    } else if (S.view === 'treasury') {
+      await VIEWS.treasury();
+    } else if (S.view === 'stock') {
+      await loadRef();
+      await VIEWS.stock();
+    }
+  } catch (e) {
+  } finally {
+    isRefreshingView = false;
+  }
+}
+
+function handleLiveMessage(msg) {
+  if (!msg) return;
+  const { type, data } = msg;
+
+  if (type === 'init') {
+    liveBaskets = data.baskets || [];
+    renderCctvTiles();
+    updateCctvDailyStats();
+  } else if (type === 'baskets_updated') {
+    liveBaskets = data.baskets || [];
+    renderCctvTiles();
+    const active = liveBaskets.filter(b => b.qty > 0);
+    if (active.length > 0) {
+      const top = active[0];
+      addLiveFeedRow('basket_scan', top);
+    }
+  } else if (type === 'sale_registered') {
+    playLiveSaleChime();
+    showLiveSaleAlert(data);
+    addLiveFeedRow('sale', data);
+    refreshCurrentViewLive();
+  } else if (type === 'metrics_invalidated') {
+    refreshCurrentViewLive();
+  }
+}
+
+function initLiveStream() {
+  if (liveEventSource) {
+    try { liveEventSource.close(); } catch (e) {}
+  }
+
+  const btn = $('#btnCctvToggle');
+  const setConnected = (connected) => {
+    if (btn) {
+      btn.style.opacity = connected ? '1' : '0.6';
+      const label = $('#cctvBtnLabel');
+      const count = liveBaskets.filter(b => b.qty > 0).length;
+      if (label) {
+        label.innerHTML = connected 
+          ? `🔴 LIVE (<span id="cctvCountBadge">${count}</span>)` 
+          : `⚪ Reconnexion…`;
+      }
+    }
+  };
+
+  try {
+    liveEventSource = new EventSource('/api/live/stream');
+
+    liveEventSource.onopen = () => {
+      setConnected(true);
+    };
+
+    liveEventSource.onerror = () => {
+      setConnected(false);
+    };
+
+    liveEventSource.onmessage = (e) => {
+      if (!e.data) return;
+      try {
+        const msg = JSON.parse(e.data);
+        handleLiveMessage(msg);
+      } catch (err) {
+        console.warn("Erreur parsing live SSE:", err);
+      }
+    };
+  } catch (err) {
+    console.warn("EventSource non supporté:", err);
+  }
+}
+
+function setupCctvUI() {
+  const drawer = $('#cctvDrawer');
+  const btnClose = $('#btnCloseCctv');
+  const btnMute = $('#btnCctvMute');
+
+  const updateMuteBtn = () => {
+    const isMuted = localStorage.getItem('librairie_cctv_mute') === 'true';
+    if (btnMute) {
+      btnMute.textContent = isMuted ? '🔕 Son : Muet' : '🔔 Son : Actif';
+      btnMute.style.color = isMuted ? 'var(--mut)' : '#e6a73c';
+    }
+  };
+
+  if (btnClose && drawer) {
+    btnClose.onclick = () => {
+      drawer.style.display = 'none';
+    };
+  }
+
+  if (btnMute) {
+    btnMute.onclick = () => {
+      const isMuted = localStorage.getItem('librairie_cctv_mute') === 'true';
+      localStorage.setItem('librairie_cctv_mute', isMuted ? 'false' : 'true');
+      updateMuteBtn();
+    };
+    updateMuteBtn();
+  }
+}
+
 applyTheme(getSavedThemePreference());
 updateUserDisplay();
 updateFocusUI();
+setupCctvUI();
+initLiveStream();
 const initialHash = location.hash.replace(/^#/, '');
 const startView = isFocusMode() ? 'pos' : (VIEWS[initialHash] ? initialHash : 'dashboard');
 go(startView, true);

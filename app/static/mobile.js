@@ -175,6 +175,46 @@ function startNetworkMonitor() {
   }
 }
 
+let liveCartSyncTimer = null;
+function syncLiveCart() {
+  if (liveCartSyncTimer) clearTimeout(liveCartSyncTimer);
+  liveCartSyncTimer = setTimeout(async () => {
+    try {
+      if (cart && cart.length > 0) {
+        const total = cart.reduce((s, i) => s + i.qty * (i.book ? i.book.price : 0), 0);
+        const count = cart.reduce((s, i) => s + i.qty, 0);
+        const items = cart.map(i => ({
+          title: (i.book ? i.book.title : 'Livre') + (i.book && i.book.volume ? ' · Vol. ' + i.book.volume : ''),
+          qty: i.qty,
+          price: i.book ? i.book.price : 0
+        }));
+        await api('/api/mobile/active-cart', {
+          method: 'POST',
+          body: {
+            user_name: currentUser || 'Libraire Mobile',
+            total,
+            qty: count,
+            items,
+            moment: mMoment || getAutoMobileMoment(),
+            gender: mGender || null,
+            age: mAge || null,
+            star: mStar ? 1 : 0
+          }
+        });
+      } else {
+        await api('/api/mobile/active-cart', { method: 'DELETE' });
+      }
+    } catch (e) {
+      // Ignorer silencieusement si déconnecté
+    }
+  }, 200);
+}
+
+function clearLiveCartSync() {
+  if (liveCartSyncTimer) { clearTimeout(liveCartSyncTimer); liveCartSyncTimer = null; }
+  api('/api/mobile/active-cart', { method: 'DELETE' }).catch(() => {});
+}
+
 function saveActiveCart() {
   if (cart && cart.length > 0) {
     const data = {
@@ -186,8 +226,10 @@ function saveActiveCart() {
       timestamp: Date.now()
     };
     localStorage.setItem('librairie_mobile_active_cart', JSON.stringify(data));
+    syncLiveCart();
   } else {
     localStorage.removeItem('librairie_mobile_active_cart');
+    clearLiveCartSync();
   }
 }
 
