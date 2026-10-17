@@ -1144,6 +1144,327 @@ def stats(start: Optional[str] = None, end: Optional[str] = None, moment: Option
                 "payments": pay, "weekday": wd, "by_gender": by_gender, "by_age": by_age, "by_star": by_star, "by_moment": by_moment, "low_stock": low[:30]}
 
 
+# ---------- Studio d'Analyses Croisées & Métriques Personnalisables ----------
+MATRIX_DIMENSIONS = {
+    "moment": {
+        "label": "Culte / Temps de vente",
+        "expr": "COALESCE(s.service_moment, CASE WHEN s.note = 'Import Excel' THEN 'Import historique' ELSE 'Non précisé' END)",
+    },
+    "age": {
+        "label": "Tranche d'Âge",
+        "expr": "COALESCE(s.customer_age_group, CASE WHEN s.note = 'Import Excel' THEN 'Import historique' ELSE 'Non renseigné' END)",
+    },
+    "gender": {
+        "label": "Genre",
+        "expr": "COALESCE(s.customer_gender, CASE WHEN s.note = 'Import Excel' THEN 'Import historique' ELSE 'Non renseigné' END)",
+    },
+    "star": {
+        "label": "Serviteur STAR",
+        "expr": "CASE WHEN s.is_star = 1 THEN 'Serviteurs STAR ⭐' ELSE 'Autres fidèles & Visiteurs' END",
+    },
+    "category": {
+        "label": "Catégorie / Rayon",
+        "expr": "COALESCE(b.category, 'Non catégorisé')",
+    },
+    "publisher": {
+        "label": "Éditeur",
+        "expr": "COALESCE(b.publisher, 'Non renseigné')",
+    },
+    "payment": {
+        "label": "Mode de Paiement",
+        "expr": "COALESCE(s.payment, 'Non renseigné')",
+    },
+    "owner": {
+        "label": "Origine du Stock",
+        "expr": "COALESCE(o.name, 'Sans stock')",
+    },
+    "weekday": {
+        "label": "Jour de la Semaine",
+        "expr": "CASE CAST(strftime('%w', s.date) AS INT) WHEN 0 THEN '0. Dimanche' WHEN 1 THEN '1. Lundi' WHEN 2 THEN '2. Mardi' WHEN 3 THEN '3. Mercredi' WHEN 4 THEN '4. Jeudi' WHEN 5 THEN '5. Vendredi' WHEN 6 THEN '6. Samedi' END",
+    },
+    "month": {
+        "label": "Mois de Vente",
+        "expr": "strftime('%Y-%m', s.date)",
+    }
+}
+MATRIX_ALIASES = {
+    "service_moment": "moment",
+    "customer_age_group": "age",
+    "age_group": "age",
+    "customer_gender": "gender",
+    "is_star": "star",
+}
+
+
+@app.get("/api/stats/matrix")
+def stats_matrix(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    row: str = "moment",
+    col: Optional[str] = None,
+    moment: Optional[str] = None,
+    age_group: Optional[str] = None,
+    gender: Optional[str] = None,
+    is_star: Optional[str] = None,
+    payment: Optional[str] = None,
+    category: Optional[str] = None
+):
+    # Résolution des alias et validation stricte (sécurité SQL)
+    row_key = MATRIX_ALIASES.get(row, row)
+    if row_key not in MATRIX_DIMENSIONS:
+        row_key = "moment"
+
+    col_key = MATRIX_ALIASES.get(col, col) if col else None
+    if col_key and (col_key not in MATRIX_DIMENSIONS or col_key == row_key):
+        col_key = None
+
+    row_cfg = MATRIX_DIMENSIONS[row_key]
+    col_cfg = MATRIX_DIMENSIONS[col_key] if col_key else None
+
+    row_expr = row_cfg["expr"]
+    col_expr = col_cfg["expr"] if col_cfg else None
+
+    where_parts = ["s.date BETWEEN ? AND ?"]
+    where_args = [start or "0000-00-00", end or "9999-12-31"]
+
+    if moment:
+        where_parts.append("s.service_moment = ?")
+        where_args.append(moment)
+    if age_group:
+        where_parts.append("s.customer_age_group = ?")
+        where_args.append(age_group)
+    if gender:
+        where_parts.append("s.customer_gender = ?")
+        where_args.append(gender)
+    if is_star is not None and str(is_star).strip() != "":
+        where_parts.append("s.is_star = ?")
+        where_args.append(int(is_star))
+    if payment:
+        where_parts.append("s.payment = ?")
+        where_args.append(payment)
+    if category:
+        where_parts.append("b.category = ?")
+        where_args.append(category)
+
+    where_sql = " AND ".join(where_parts)
+    params = tuple(where_args)
+
+    from_sql = """
+        FROM allocations a
+        JOIN sale_lines sl ON sl.id = a.line_id
+        JOIN sales s ON s.id = sl.sale_id
+        JOIN books b ON b.id = a.book_id
+        LEFT JOIN owners o ON o.id = a.owner_id
+    """
+
+    with db.tx() as c:
+        # 1. Totaux globaux sur le périmètre sélectionné
+        q_tot = f"""
+            SELECT 
+                COALESCE(SUM(a.revenue), 0) total_revenue,
+                COALESCE(SUM(a.due), 0) total_due,
+                COALESCE(SUM(a.revenue - a.due), 0) total_margin,
+                COALESCE(SUM(a.qty), 0) total_qty,
+                COUNT(DISTINCT s.id) total_tickets,
+                COUNT(DISTINCT CASE WHEN s.is_star = 1 THEN s.id END) total_star_tickets,
+                COALESCE(SUM(CASE WHEN s.is_star = 1 THEN a.revenue ELSE 0 END), 0) total_star_revenue
+            {from_sql}
+            WHERE {where_sql}
+        """
+        tot = c.execute(q_tot, params).fetchone()
+        tot_rev = tot["total_revenue"]
+        tot_margin = tot["total_margin"]
+        tot_qty = tot["total_qty"]
+        tot_tickets = tot["total_tickets"]
+        tot_star_rev = tot["total_star_revenue"]
+
+        # 2. Agrégation principale
+        if not col_key:
+            q_agg = f"""
+                SELECT 
+                    {row_expr} as row_val,
+                    COUNT(DISTINCT s.id) as tickets,
+                    COALESCE(SUM(a.revenue), 0) as revenue,
+                    COALESCE(SUM(a.due), 0) as due,
+                    COALESCE(SUM(a.revenue - a.due), 0) as margin,
+                    COALESCE(SUM(a.qty), 0) as qty,
+                    COUNT(DISTINCT CASE WHEN s.is_star = 1 THEN s.id END) as star_tickets,
+                    COALESCE(SUM(CASE WHEN s.is_star = 1 THEN a.revenue ELSE 0 END), 0) as star_revenue
+                {from_sql}
+                WHERE {where_sql}
+                GROUP BY row_val
+                ORDER BY revenue DESC
+            """
+            raw_rows = [dict(r) for r in c.execute(q_agg, params).fetchall()]
+
+            # Top livre par ligne
+            q_top = f"""
+                WITH book_sales AS (
+                    SELECT 
+                        {row_expr} as row_val,
+                        b.title,
+                        SUM(a.qty) as book_qty,
+                        SUM(a.revenue) as book_rev,
+                        ROW_NUMBER() OVER (PARTITION BY {row_expr} ORDER BY SUM(a.qty) DESC, SUM(a.revenue) DESC) as rn
+                    {from_sql}
+                    WHERE {where_sql}
+                    GROUP BY row_val, b.id
+                )
+                SELECT row_val, title, book_qty, book_rev FROM book_sales WHERE rn = 1
+            """
+            top_map = {r["row_val"]: r for r in c.execute(q_top, params).fetchall()}
+
+            rows_out = []
+            distinct_rows = set()
+            for r in raw_rows:
+                rv = r["row_val"]
+                distinct_rows.add(rv)
+                rev = r["revenue"]
+                tix = r["tickets"]
+                q = r["qty"]
+                mrg = r["margin"]
+                star_r = r["star_revenue"]
+                tb = top_map.get(rv)
+
+                rows_out.append({
+                    "row_val": rv,
+                    "revenue": round(rev, 2),
+                    "due": round(r["due"], 2),
+                    "margin": round(mrg, 2),
+                    "qty": q,
+                    "tickets": tix,
+                    "avg_basket": round(rev / tix, 2) if tix else 0,
+                    "avg_items_per_basket": round(q / tix, 2) if tix else 0,
+                    "pct_revenue": round((rev / tot_rev * 100), 1) if tot_rev else 0,
+                    "pct_margin": round((mrg / rev * 100), 1) if rev else 0,
+                    "star_tickets": r["star_tickets"],
+                    "star_revenue": round(star_r, 2),
+                    "star_pct": round((star_r / rev * 100), 1) if rev else 0,
+                    "top_book": tb["title"] if tb else None,
+                    "top_book_qty": tb["book_qty"] if tb else 0,
+                    "top_book_rev": round(tb["book_rev"], 2) if tb else 0
+                })
+
+            return {
+                "total": {
+                    "revenue": round(tot_rev, 2),
+                    "due": round(tot["total_due"], 2),
+                    "margin": round(tot_margin, 2),
+                    "qty": tot_qty,
+                    "tickets": tot_tickets,
+                    "avg_basket": round(tot_rev / tot_tickets, 2) if tot_tickets else 0,
+                    "avg_items_per_basket": round(tot_qty / tot_tickets, 2) if tot_tickets else 0,
+                    "star_tickets": tot["total_star_tickets"],
+                    "star_revenue": round(tot_star_rev, 2),
+                    "star_pct": round(tot_star_rev / tot_rev * 100, 1) if tot_rev else 0,
+                    "margin_pct": round(tot_margin / tot_rev * 100, 1) if tot_rev else 0,
+                },
+                "rows": rows_out,
+                "dimension_row": row_key,
+                "dimension_row_label": row_cfg["label"],
+                "dimension_col": None,
+                "dimension_col_label": None,
+                "distinct_rows": sorted(list(distinct_rows)),
+                "distinct_cols": []
+            }
+
+        else:
+            # Croisement à deux dimensions
+            q_agg = f"""
+                SELECT 
+                    {row_expr} as row_val,
+                    {col_expr} as col_val,
+                    COUNT(DISTINCT s.id) as tickets,
+                    COALESCE(SUM(a.revenue), 0) as revenue,
+                    COALESCE(SUM(a.due), 0) as due,
+                    COALESCE(SUM(a.revenue - a.due), 0) as margin,
+                    COALESCE(SUM(a.qty), 0) as qty,
+                    COUNT(DISTINCT CASE WHEN s.is_star = 1 THEN s.id END) as star_tickets,
+                    COALESCE(SUM(CASE WHEN s.is_star = 1 THEN a.revenue ELSE 0 END), 0) as star_revenue
+                {from_sql}
+                WHERE {where_sql}
+                GROUP BY row_val, col_val
+                ORDER BY revenue DESC
+            """
+            raw_rows = [dict(r) for r in c.execute(q_agg, params).fetchall()]
+
+            # Top livre par paire (row_val, col_val)
+            q_top = f"""
+                WITH book_sales AS (
+                    SELECT 
+                        {row_expr} as row_val,
+                        {col_expr} as col_val,
+                        b.title,
+                        SUM(a.qty) as book_qty,
+                        SUM(a.revenue) as book_rev,
+                        ROW_NUMBER() OVER (PARTITION BY {row_expr}, {col_expr} ORDER BY SUM(a.qty) DESC, SUM(a.revenue) DESC) as rn
+                    {from_sql}
+                    WHERE {where_sql}
+                    GROUP BY row_val, col_val, b.id
+                )
+                SELECT row_val, col_val, title, book_qty, book_rev FROM book_sales WHERE rn = 1
+            """
+            top_map = {(r["row_val"], r["col_val"]): r for r in c.execute(q_top, params).fetchall()}
+
+            rows_out = []
+            distinct_rows = set()
+            distinct_cols = set()
+            for r in raw_rows:
+                rv = r["row_val"]
+                cv = r["col_val"]
+                distinct_rows.add(rv)
+                distinct_cols.add(cv)
+                rev = r["revenue"]
+                tix = r["tickets"]
+                q = r["qty"]
+                mrg = r["margin"]
+                star_r = r["star_revenue"]
+                tb = top_map.get((rv, cv))
+
+                rows_out.append({
+                    "row_val": rv,
+                    "col_val": cv,
+                    "revenue": round(rev, 2),
+                    "due": round(r["due"], 2),
+                    "margin": round(mrg, 2),
+                    "qty": q,
+                    "tickets": tix,
+                    "avg_basket": round(rev / tix, 2) if tix else 0,
+                    "avg_items_per_basket": round(q / tix, 2) if tix else 0,
+                    "pct_revenue": round((rev / tot_rev * 100), 1) if tot_rev else 0,
+                    "pct_margin": round((mrg / rev * 100), 1) if rev else 0,
+                    "star_tickets": r["star_tickets"],
+                    "star_revenue": round(star_r, 2),
+                    "star_pct": round((star_r / rev * 100), 1) if rev else 0,
+                    "top_book": tb["title"] if tb else None,
+                    "top_book_qty": tb["book_qty"] if tb else 0,
+                    "top_book_rev": round(tb["book_rev"], 2) if tb else 0
+                })
+
+            return {
+                "total": {
+                    "revenue": round(tot_rev, 2),
+                    "due": round(tot["total_due"], 2),
+                    "margin": round(tot_margin, 2),
+                    "qty": tot_qty,
+                    "tickets": tot_tickets,
+                    "avg_basket": round(tot_rev / tot_tickets, 2) if tot_tickets else 0,
+                    "avg_items_per_basket": round(tot_qty / tot_tickets, 2) if tot_tickets else 0,
+                    "star_tickets": tot["total_star_tickets"],
+                    "star_revenue": round(tot_star_rev, 2),
+                    "star_pct": round(tot_star_rev / tot_rev * 100, 1) if tot_rev else 0,
+                    "margin_pct": round(tot_margin / tot_rev * 100, 1) if tot_rev else 0,
+                },
+                "rows": rows_out,
+                "dimension_row": row_key,
+                "dimension_row_label": row_cfg["label"],
+                "dimension_col": col_key,
+                "dimension_col_label": col_cfg["label"],
+                "distinct_rows": sorted(list(distinct_rows)),
+                "distinct_cols": sorted(list(distinct_cols))
+            }
+
+
 # ---------- Excel / sauvegardes ----------
 MAX_IMPORT_BYTES = 25 * 1024 * 1024
 MAX_UNZIPPED_BYTES = 200 * 1024 * 1024

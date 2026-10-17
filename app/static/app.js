@@ -1,5 +1,6 @@
 /* Librairie – interface (vanilla JS, 100 % hors-ligne) */
 const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const eur = n => (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 const nf = n => (Number(n) || 0).toLocaleString('fr-FR');
@@ -47,7 +48,42 @@ const closeModal = () => $('#modalRoot').innerHTML = '';
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 /* ---------- état ---------- */
-const S = { books: [], owners: [], options: { category: [], type: [], payment: [], publisher: [] }, cart: [], view: 'dashboard', range: 'all', from: '', to: '', moment: '' };
+const S = { 
+  books: [], 
+  owners: [], 
+  options: { category: [], type: [], payment: [], publisher: [] }, 
+  cart: [], 
+  view: 'dashboard', 
+  range: 'all', 
+  from: '', 
+  to: '', 
+  moment: '',
+  dashTab: 'summary', // 'summary' | 'matrix'
+  matrix: {
+    row: 'moment',
+    col: '',
+    preset: 'bilan_cultes',
+    filterMoment: '',
+    filterAge: '',
+    filterGender: '',
+    filterStar: '',
+    sortKey: 'revenue',
+    sortDir: 'desc',
+    viewMode: 'table', // 'table' | 'pivot'
+    metrics: {
+      revenue: true,
+      pct_revenue: true,
+      tickets: true,
+      avg_basket: true,
+      qty: true,
+      top_book: true,
+      margin: false,
+      pct_margin: false,
+      star_pct: false,
+      avg_items_per_basket: false
+    }
+  }
+};
 const stockBadge = b => b.stock <= 0 ? '<span class="badge b-out">Rupture</span>' :
   b.stock <= b.min_stock ? `<span class="badge b-low">${b.stock} · bas</span>` : `<span class="badge b-ok">${b.stock}</span>`;
 const ownerChips = b => (b.by_owner || []).map(o => `<span class="chip"><i style="background:${o.color}"></i>${esc(o.owner)} ${o.qty}</span>`).join('');
@@ -265,6 +301,684 @@ function hbars(el, rows, key = 'revenue', fmt = eur, sub) {
 }
 const PALETTE = ['#8f16ad', '#b452d3', '#ca88e3', '#e2c0f2', '#e6a73c', '#38c172', '#e04565'];
 
+/* ================= STUDIO D'ANALYSES CROISÉES ================= */
+const MATRIX_METRIC_DEFS = [
+  { id: 'revenue', label: 'Chiffre d\'Affaires (€)', num: true, fmt: eur },
+  { id: 'pct_revenue', label: 'Part du CA (%)', num: true, fmt: v => (v || 0) + ' %' },
+  { id: 'tickets', label: 'Tickets (Ventes)', num: true, fmt: nf },
+  { id: 'avg_basket', label: 'Panier Moyen (€)', num: true, fmt: eur },
+  { id: 'qty', label: 'Exemplaires (Qté)', num: true, fmt: nf },
+  { id: 'top_book', label: 'Titre Best-seller', num: false, fmt: (v, r) => v ? `🏆 <b>${esc(v)}</b> <span class="muted">(${r.top_book_qty} ex)</span>` : '<span class="muted">—</span>' },
+  { id: 'margin', label: 'Marge conservée (€)', num: true, fmt: eur },
+  { id: 'pct_margin', label: 'Taux de Marge (%)', num: true, fmt: v => (v || 0) + ' %' },
+  { id: 'star_pct', label: 'Taux Serviteurs STAR (%)', num: true, fmt: v => (v || 0) + ' %' },
+  { id: 'avg_items_per_basket', label: 'Livres / Panier', num: true, fmt: v => (Number(v) || 0).toFixed(1) }
+];
+
+const MATRIX_PRESETS = [
+  {
+    id: 'bilan_cultes',
+    icon: '☀️⚡',
+    label: 'Bilan Culte 1 vs Culte 2',
+    desc: 'Performances comparées des cultes dominicaux',
+    row: 'moment',
+    col: '',
+    filterMoment: '',
+    filterAge: '',
+    filterGender: '',
+    filterStar: '',
+    sortKey: 'revenue',
+    sortDir: 'desc',
+    metrics: ['revenue', 'pct_revenue', 'tickets', 'avg_basket', 'qty', 'top_book']
+  },
+  {
+    id: 'jeunesse',
+    icon: '🎓',
+    label: 'Lectures Jeunesse (18-29 ans)',
+    desc: 'Rayons et livres phares chez les jeunes adultes',
+    row: 'category',
+    col: '',
+    filterMoment: '',
+    filterAge: 'Jeune adulte',
+    filterGender: '',
+    filterStar: '',
+    sortKey: 'qty',
+    sortDir: 'desc',
+    metrics: ['revenue', 'pct_revenue', 'qty', 'top_book', 'tickets', 'avg_basket']
+  },
+  {
+    id: 'paiements_ages',
+    icon: '💳',
+    label: 'Habitudes de Paiement',
+    desc: 'Modes de règlement (Wero / CB / Espèces) selon l\'âge',
+    row: 'age',
+    col: 'payment',
+    filterMoment: '',
+    filterAge: '',
+    filterGender: '',
+    filterStar: '',
+    sortKey: 'revenue',
+    sortDir: 'desc',
+    metrics: ['revenue', 'pct_revenue', 'tickets', 'avg_basket']
+  },
+  {
+    id: 'star_impact',
+    icon: '⭐',
+    label: 'Impact Serviteurs STAR',
+    desc: 'Panier et engagement des bénévoles engagés',
+    row: 'star',
+    col: '',
+    filterMoment: '',
+    filterAge: '',
+    filterGender: '',
+    filterStar: '',
+    sortKey: 'revenue',
+    sortDir: 'desc',
+    metrics: ['revenue', 'pct_revenue', 'tickets', 'avg_basket', 'qty', 'margin']
+  },
+  {
+    id: 'stock_owners',
+    icon: '📦',
+    label: 'Origines & Dépôts',
+    desc: 'Répartition Cité Royale vs Stock ICC Rennes',
+    row: 'owner',
+    col: '',
+    filterMoment: '',
+    filterAge: '',
+    filterGender: '',
+    filterStar: '',
+    sortKey: 'revenue',
+    sortDir: 'desc',
+    metrics: ['revenue', 'pct_revenue', 'margin', 'pct_margin', 'qty']
+  },
+  {
+    id: 'categories_all',
+    icon: '📚',
+    label: 'Ventes par Rayon / Catégorie',
+    desc: 'Thématiques de livres les plus plébiscitées',
+    row: 'category',
+    col: '',
+    filterMoment: '',
+    filterAge: '',
+    filterGender: '',
+    filterStar: '',
+    sortKey: 'revenue',
+    sortDir: 'desc',
+    metrics: ['revenue', 'pct_revenue', 'qty', 'top_book', 'tickets', 'avg_basket']
+  }
+];
+
+function applyMatrixPreset(presetId) {
+  const p = MATRIX_PRESETS.find(x => x.id === presetId);
+  if (!p) return;
+  S.matrix.preset = p.id;
+  S.matrix.row = p.row;
+  S.matrix.col = p.col || '';
+  S.matrix.filterMoment = p.filterMoment || '';
+  S.matrix.filterAge = p.filterAge || '';
+  S.matrix.filterGender = p.filterGender || '';
+  S.matrix.filterStar = p.filterStar || '';
+  S.matrix.sortKey = p.sortKey || 'revenue';
+  S.matrix.sortDir = p.sortDir || 'desc';
+  Object.keys(S.matrix.metrics).forEach(k => {
+    S.matrix.metrics[k] = p.metrics.includes(k);
+  });
+  VIEWS.dashboard();
+}
+
+function exportMatrixCsv(data) {
+  if (!data || !data.rows) return;
+  const activeCols = MATRIX_METRIC_DEFS.filter(m => S.matrix.metrics[m.id]);
+  const headers = [data.dimension_row_label];
+  if (data.dimension_col_label) headers.push(data.dimension_col_label);
+  activeCols.forEach(c => headers.push(c.label));
+
+  const csvLines = [headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(';')];
+
+  data.rows.forEach(r => {
+    const rowVals = [
+      `"${String(r.row_val).replace(/"/g, '""')}"`
+    ];
+    if (data.dimension_col_label) {
+      rowVals.push(`"${String(r.col_val).replace(/"/g, '""')}"`);
+    }
+    activeCols.forEach(c => {
+      let v = r[c.id];
+      if (c.id === 'top_book') {
+        v = v ? `${v} (${r.top_book_qty} ex)` : '';
+      } else if (typeof v === 'number') {
+        v = String(v).replace('.', ',');
+      }
+      rowVals.push(`"${String(v ?? '').replace(/"/g, '""')}"`);
+    });
+    csvLines.push(rowVals.join(';'));
+  });
+
+  const totVals = ['"TOTAL GÉNÉRAL"'];
+  if (data.dimension_col_label) totVals.push('""');
+  activeCols.forEach(c => {
+    let tv = '';
+    if (c.id === 'revenue') tv = String(data.total.revenue).replace('.', ',');
+    else if (c.id === 'pct_revenue') tv = '100,0';
+    else if (c.id === 'tickets') tv = String(data.total.tickets);
+    else if (c.id === 'avg_basket') tv = String(data.total.avg_basket).replace('.', ',');
+    else if (c.id === 'qty') tv = String(data.total.qty);
+    else if (c.id === 'margin') tv = String(data.total.margin).replace('.', ',');
+    else if (c.id === 'pct_margin') tv = String(data.total.margin_pct).replace('.', ',');
+    else if (c.id === 'star_pct') tv = String(data.total.star_pct).replace('.', ',');
+    else if (c.id === 'avg_items_per_basket') tv = String(data.total.avg_items_per_basket).replace('.', ',');
+    totVals.push(`"${tv}"`);
+  });
+  csvLines.push(totVals.join(';'));
+
+  const blob = new Blob(['\uFEFF' + csvLines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const dStr = new Date().toISOString().slice(0, 10);
+  a.download = `librairie_analyse_${S.matrix.row}_${dStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Export CSV généré avec succès (ouvrable sous Excel)', 'ok');
+}
+
+function renderMatrixTableOnly(data) {
+  const container = $('#matrixTableContainer');
+  if (!container) return;
+
+  const activeCols = MATRIX_METRIC_DEFS.filter(m => S.matrix.metrics[m.id]);
+  const maxRev = Math.max(...data.rows.map(r => r.revenue)) || 1;
+
+  if (S.matrix.col && S.matrix.viewMode === 'pivot') {
+    // ---------------- 2D PIVOT MATRIX ----------------
+    const rows = data.distinct_rows;
+    const cols = data.distinct_cols;
+
+    const colTotals = {};
+    cols.forEach(cv => {
+      colTotals[cv] = {
+        rev: data.rows.filter(r => r.col_val === cv).reduce((s, r) => s + r.revenue, 0),
+        tix: data.rows.filter(r => r.col_val === cv).reduce((s, r) => s + r.tickets, 0)
+      };
+    });
+
+    let html = `
+      <div class="matrix-table-wrap">
+        <table class="matrix-table pivot-grid-table">
+          <thead>
+            <tr>
+              <th class="pivot-corner">${esc(data.dimension_row_label)} \\ ${esc(data.dimension_col_label)}</th>
+              ${cols.map(cv => `<th class="pivot-col-header">${esc(cv)}</th>`).join('')}
+              <th class="pivot-col-header" style="background:var(--panel2);color:var(--text-title)">Total Ligne</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(rv => {
+              const rowRows = data.rows.filter(r => r.row_val === rv);
+              const rowRev = rowRows.reduce((s, r) => s + r.revenue, 0);
+              const rowTix = rowRows.reduce((s, r) => s + r.tickets, 0);
+              return `
+                <tr>
+                  <td class="pivot-row-header">${esc(rv)}</td>
+                  ${cols.map(cv => {
+                    const cell = data.rows.find(r => r.row_val === rv && r.col_val === cv);
+                    if (!cell || !cell.revenue) {
+                      return `<td class="pivot-cell muted" style="text-align:right">—</td>`;
+                    }
+                    const cellPct = data.total.revenue ? Math.round(cell.revenue / data.total.revenue * 100) : 0;
+                    return `
+                      <td class="pivot-cell">
+                        <div class="pivot-cell-val">${eur(cell.revenue)}</div>
+                        <div class="pivot-cell-sub">${cell.tickets} t. · ${cellPct}%</div>
+                      </td>
+                    `;
+                  }).join('')}
+                  <td class="pivot-cell" style="background:var(--panel2);font-weight:700">
+                    <div class="pivot-cell-val" style="color:var(--icc-light)">${eur(rowRev)}</div>
+                    <div class="pivot-cell-sub">${rowTix} ticket${rowTix > 1 ? 's' : ''}</div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+            <tr class="total-row">
+              <td><b>TOTAL GÉNÉRAL</b></td>
+              ${cols.map(cv => `
+                <td style="text-align:right">
+                  <div style="font-weight:700;color:var(--text-title)">${eur(colTotals[cv].rev)}</div>
+                  <div style="font-size:10.5px;color:var(--mut)">${colTotals[cv].tix} ticket${colTotals[cv].tix > 1 ? 's' : ''}</div>
+                </td>
+              `).join('')}
+              <td style="text-align:right;background:rgba(143,22,173,0.3)">
+                <div style="font-size:15px;font-weight:800;color:#ffffff">${eur(data.total.revenue)}</div>
+                <div style="font-size:11px;color:var(--mut)">${data.total.tickets} tickets</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+    container.innerHTML = html;
+  } else {
+    // ---------------- DETAILED TABLE ----------------
+    const sk = S.matrix.sortKey;
+    const sd = S.matrix.sortDir;
+    let sortedRows = [...data.rows];
+    sortedRows.sort((a, b) => {
+      let va = a[sk] ?? '';
+      let vb = b[sk] ?? '';
+      if (typeof va === 'string') return sd === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      return sd === 'asc' ? (va - vb) : (vb - va);
+    });
+
+    let html = `
+      <div class="matrix-table-wrap">
+        <table class="matrix-table">
+          <thead>
+            <tr>
+              <th class="sortable ${sk === 'row_val' ? 'sorted' : ''}" data-sort="row_val">
+                ${esc(data.dimension_row_label)} ${sk === 'row_val' ? (sd === 'asc' ? '▲' : '▼') : ''}
+              </th>
+              ${data.dimension_col_label ? `
+                <th class="sortable ${sk === 'col_val' ? 'sorted' : ''}" data-sort="col_val">
+                  ${esc(data.dimension_col_label)} ${sk === 'col_val' ? (sd === 'asc' ? '▲' : '▼') : ''}
+                </th>
+              ` : ''}
+              ${activeCols.map(c => `
+                <th class="${c.num ? 'num' : ''} sortable ${sk === c.id ? 'sorted' : ''}" data-sort="${c.id}">
+                  ${esc(c.label)} ${sk === c.id ? (sd === 'asc' ? '▲' : '▼') : ''}
+                </th>
+              `).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${sortedRows.length ? sortedRows.map(r => `
+              <tr>
+                <td><b>${esc(r.row_val)}</b></td>
+                ${data.dimension_col_label ? `<td><span class="badge ghost">${esc(r.col_val)}</span></td>` : ''}
+                ${activeCols.map(c => {
+                  if (c.id === 'revenue') {
+                    const pctBar = Math.round(r.revenue / maxRev * 100);
+                    return `
+                      <td class="num">
+                        <div class="cell-bar-wrap">
+                          <div class="cell-bar-bg" style="width:${pctBar}%"></div>
+                          <span class="cell-bar-text"><b>${eur(r.revenue)}</b></span>
+                        </div>
+                      </td>
+                    `;
+                  }
+                  if (c.id === 'pct_revenue') {
+                    return `
+                      <td class="num">
+                        <span class="badge" style="background:rgba(143,22,173,0.2);color:var(--icc-light);font-weight:700">${r.pct_revenue} %</span>
+                      </td>
+                    `;
+                  }
+                  return `<td class="${c.num ? 'num' : ''}">${c.fmt(r[c.id], r)}</td>`;
+                }).join('')}
+              </tr>
+            `).join('') : `
+              <tr>
+                <td colspan="${1 + (data.dimension_col_label ? 1 : 0) + activeCols.length}" class="muted" style="text-align:center;padding:24px">
+                  Aucune donnée trouvée pour cette sélection.
+                </td>
+              </tr>
+            `}
+            <tr class="total-row">
+              <td><b>TOTAL GÉNÉRAL</b></td>
+              ${data.dimension_col_label ? `<td></td>` : ''}
+              ${activeCols.map(c => {
+                if (c.id === 'revenue') return `<td class="num"><b>${eur(data.total.revenue)}</b></td>`;
+                if (c.id === 'pct_revenue') return `<td class="num"><b>100 %</b></td>`;
+                if (c.id === 'tickets') return `<td class="num"><b>${nf(data.total.tickets)}</b></td>`;
+                if (c.id === 'avg_basket') return `<td class="num"><b>${eur(data.total.avg_basket)}</b></td>`;
+                if (c.id === 'qty') return `<td class="num"><b>${nf(data.total.qty)}</b></td>`;
+                if (c.id === 'top_book') return `<td><span class="muted">—</span></td>`;
+                if (c.id === 'margin') return `<td class="num"><b>${eur(data.total.margin)}</b></td>`;
+                if (c.id === 'pct_margin') return `<td class="num"><b>${data.total.margin_pct} %</b></td>`;
+                if (c.id === 'star_pct') return `<td class="num"><b>${data.total.star_pct} %</b></td>`;
+                if (c.id === 'avg_items_per_basket') return `<td class="num"><b>${data.total.avg_items_per_basket}</b></td>`;
+                return `<td class="${c.num ? 'num' : ''}">—</td>`;
+              }).join('')}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+    container.innerHTML = html;
+
+    $$('th.sortable', container).forEach(th => {
+      th.onclick = () => {
+        const colId = th.dataset.sort;
+        if (S.matrix.sortKey === colId) {
+          S.matrix.sortDir = S.matrix.sortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          S.matrix.sortKey = colId;
+          S.matrix.sortDir = (colId === 'row_val' || colId === 'col_val') ? 'asc' : 'desc';
+        }
+        renderMatrixTableOnly(data);
+      };
+    });
+  }
+}
+
+function setupMatrixEvents(data) {
+  $$('.matrix-preset-pill').forEach(btn => {
+    btn.onclick = () => {
+      const pId = btn.dataset.preset;
+      if (pId === 'custom') {
+        S.matrix.preset = 'custom';
+        VIEWS.dashboard();
+      } else {
+        applyMatrixPreset(pId);
+      }
+    };
+  });
+
+  const selRow = $('#mRow');
+  if (selRow) {
+    selRow.onchange = () => {
+      S.matrix.row = selRow.value;
+      if (S.matrix.col === S.matrix.row) S.matrix.col = '';
+      S.matrix.preset = 'custom';
+      VIEWS.dashboard();
+    };
+  }
+  const selCol = $('#mCol');
+  if (selCol) {
+    selCol.onchange = () => {
+      S.matrix.col = selCol.value;
+      S.matrix.preset = 'custom';
+      VIEWS.dashboard();
+    };
+  }
+
+  const selFm = $('#mFilterMoment');
+  if (selFm) {
+    selFm.onchange = () => {
+      S.matrix.filterMoment = selFm.value;
+      S.matrix.preset = 'custom';
+      VIEWS.dashboard();
+    };
+  }
+  const selFa = $('#mFilterAge');
+  if (selFa) {
+    selFa.onchange = () => {
+      S.matrix.filterAge = selFa.value;
+      S.matrix.preset = 'custom';
+      VIEWS.dashboard();
+    };
+  }
+  const selFs = $('#mFilterStar');
+  if (selFs) {
+    selFs.onchange = () => {
+      S.matrix.filterStar = selFs.value;
+      S.matrix.preset = 'custom';
+      VIEWS.dashboard();
+    };
+  }
+  const btnReset = $('#btnResetFilters');
+  if (btnReset) {
+    btnReset.onclick = () => {
+      S.matrix.filterMoment = '';
+      S.matrix.filterAge = '';
+      S.matrix.filterGender = '';
+      S.matrix.filterStar = '';
+      S.matrix.preset = 'custom';
+      VIEWS.dashboard();
+    };
+  }
+
+  $$('.metric-pill-btn').forEach(btn => {
+    btn.onclick = () => {
+      const mId = btn.dataset.metric;
+      S.matrix.metrics[mId] = !S.matrix.metrics[mId];
+      const hasActive = Object.values(S.matrix.metrics).some(Boolean);
+      if (!hasActive) S.matrix.metrics[mId] = true;
+      S.matrix.preset = 'custom';
+
+      $$('.metric-pill-btn').forEach(b => {
+        const id = b.dataset.metric;
+        const on = !!S.matrix.metrics[id];
+        b.classList.toggle('active', on);
+        const iconSpan = $('.pill-check', b);
+        if (iconSpan) iconSpan.textContent = on ? '☑' : '☐';
+      });
+
+      renderMatrixTableOnly(data);
+    };
+  });
+
+  const vmSeg = $('#matrixViewModeSeg');
+  if (vmSeg) {
+    vmSeg.onclick = e => {
+      const vm = e.target.closest('button')?.dataset.vm;
+      if (vm && vm !== S.matrix.viewMode) {
+        S.matrix.viewMode = vm;
+        $$('button', vmSeg).forEach(b => b.classList.toggle('on', b.dataset.vm === vm));
+        renderMatrixTableOnly(data);
+      }
+    };
+  }
+
+  const btnExp1 = $('#btnExportMatrix');
+  if (btnExp1) btnExp1.onclick = () => exportMatrixCsv(data);
+  const btnExp2 = $('#btnExportMatrixBody');
+  if (btnExp2) btnExp2.onclick = () => exportMatrixCsv(data);
+}
+
+async function renderMatrixStudio(from, to, effectiveFrom, effectiveTo) {
+  const q = new URLSearchParams({
+    start: from,
+    end: to,
+    row: S.matrix.row
+  });
+  if (S.matrix.col) q.set('col', S.matrix.col);
+  if (S.matrix.filterMoment) q.set('moment', S.matrix.filterMoment);
+  if (S.matrix.filterAge) q.set('age_group', S.matrix.filterAge);
+  if (S.matrix.filterGender) q.set('gender', S.matrix.filterGender);
+  if (S.matrix.filterStar !== '') q.set('is_star', S.matrix.filterStar);
+
+  let data;
+  try {
+    data = await api(`/api/stats/matrix?${q.toString()}`);
+  } catch (err) {
+    $('#view').innerHTML = `
+      <div class="card" style="padding:28px;text-align:center;max-width:540px;margin:40px auto">
+        <div style="font-size:36px;margin-bottom:12px">⚠️</div>
+        <h3 style="color:var(--bad);margin-bottom:8px">Impossible de charger les données du Studio</h3>
+        <p style="color:var(--text);font-size:13.5px;line-height:1.5;margin-bottom:18px">
+          ${esc(err.message)}
+        </p>
+        <div class="row" style="justify-content:center;gap:10px">
+          <button class="btn ghost" onclick="VIEWS.dashboard()">Réessayer</button>
+          <button class="btn primary" onclick="S.dashTab='summary';VIEWS.dashboard()">Revenir à la Synthèse Graphique</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+  S.matrix._lastData = data;
+
+  const DIM_OPTIONS = [
+    { id: 'moment', label: '☀️ Culte / Temps de vente' },
+    { id: 'age', label: '🎂 Tranche d\'Âge' },
+    { id: 'gender', label: '👤 Genre (Femme / Homme)' },
+    { id: 'star', label: '⭐ Engagement Serviteur STAR' },
+    { id: 'category', label: '📚 Rayon / Catégorie' },
+    { id: 'publisher', label: '🏢 Éditeur' },
+    { id: 'payment', label: '💳 Mode de Paiement' },
+    { id: 'owner', label: '📦 Origine de Stock' },
+    { id: 'weekday', label: '📅 Jour de la Semaine' },
+    { id: 'month', label: '🗓 Mois de Vente' }
+  ];
+
+  $('#view').innerHTML = `
+    <!-- Barre de Presets 1-clic -->
+    <div class="card" style="padding:10px 14px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mut)">
+          ⚡ Préréglages Rapides (1-clic)
+        </div>
+        <span class="muted" style="font-size:11.5px">Configurations d'analyses courantes pour la gouvernance</span>
+      </div>
+      <div class="matrix-presets-bar">
+        ${MATRIX_PRESETS.map(p => `
+          <button type="button" class="matrix-preset-pill ${S.matrix.preset === p.id ? 'active' : ''}" data-preset="${p.id}" title="${esc(p.desc)}">
+            <span>${p.icon}</span>
+            <span>${esc(p.label)}</span>
+          </button>
+        `).join('')}
+        <button type="button" class="matrix-preset-pill ${S.matrix.preset === 'custom' ? 'active' : ''}" data-preset="custom" title="Paramétrage personnalisé libre">
+          <span>🛠</span>
+          <span>Sur-mesure (libre)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Panneau de Contrôle : Dimensions & Filtres -->
+    <div class="matrix-ctrl-card" style="margin-bottom:14px">
+      <div class="matrix-ctrl-row">
+        <!-- Dimension Principale (Lignes) -->
+        <div class="matrix-ctrl-field">
+          <label for="mRow">Dimension Principale (Lignes)</label>
+          <select id="mRow">
+            ${DIM_OPTIONS.map(d => `<option value="${d.id}" ${S.matrix.row === d.id ? 'selected' : ''}>${d.label}</option>`).join('')}
+          </select>
+        </div>
+
+        <!-- Croisement Secondaire (Optionnel) -->
+        <div class="matrix-ctrl-field">
+          <label for="mCol">Croisement Secondaire (Optionnel)</label>
+          <select id="mCol">
+            <option value="">(Aucun — Analyse 1 dimension)</option>
+            ${DIM_OPTIONS.filter(d => d.id !== S.matrix.row).map(d => `<option value="${d.id}" ${S.matrix.col === d.id ? 'selected' : ''}>${d.label}</option>`).join('')}
+          </select>
+        </div>
+
+        <!-- Filtre Culte -->
+        <div class="matrix-ctrl-field" style="max-width:160px">
+          <label for="mFilterMoment">Filtre Culte</label>
+          <select id="mFilterMoment">
+            <option value="">Tous les cultes</option>
+            <option value="1er Culte (Principal)" ${S.matrix.filterMoment === '1er Culte (Principal)' ? 'selected' : ''}>1er Culte (Principal)</option>
+            <option value="2e Culte (Jeunes EJP)" ${S.matrix.filterMoment === '2e Culte (Jeunes EJP)' ? 'selected' : ''}>2e Culte (Jeunes EJP)</option>
+            <option value="Occasion spéciale" ${S.matrix.filterMoment === 'Occasion spéciale' ? 'selected' : ''}>Occasion spéciale</option>
+            <option value="En semaine / Autre" ${S.matrix.filterMoment === 'En semaine / Autre' ? 'selected' : ''}>En semaine / Autre</option>
+          </select>
+        </div>
+
+        <!-- Filtre Âge -->
+        <div class="matrix-ctrl-field" style="max-width:150px">
+          <label for="mFilterAge">Filtre Âge</label>
+          <select id="mFilterAge">
+            <option value="">Toutes tranches</option>
+            <option value="Enfant / Ado" ${S.matrix.filterAge === 'Enfant / Ado' ? 'selected' : ''}>Enfant / Ado (&lt;18)</option>
+            <option value="Jeune adulte" ${S.matrix.filterAge === 'Jeune adulte' ? 'selected' : ''}>Jeune adulte (18-29)</option>
+            <option value="Adulte" ${S.matrix.filterAge === 'Adulte' ? 'selected' : ''}>Adulte (30-59)</option>
+            <option value="Senior" ${S.matrix.filterAge === 'Senior' ? 'selected' : ''}>Senior (60+)</option>
+          </select>
+        </div>
+
+        <!-- Filtre STAR -->
+        <div class="matrix-ctrl-field" style="max-width:140px">
+          <label for="mFilterStar">Filtre STAR</label>
+          <select id="mFilterStar">
+            <option value="">Tous profils</option>
+            <option value="1" ${S.matrix.filterStar === '1' ? 'selected' : ''}>STAR ⭐ seulement</option>
+            <option value="0" ${S.matrix.filterStar === '0' ? 'selected' : ''}>Autres fidèles</option>
+          </select>
+        </div>
+
+        ${(S.matrix.filterMoment || S.matrix.filterAge || S.matrix.filterGender || S.matrix.filterStar) ? `
+          <button type="button" class="btn ghost sm" id="btnResetFilters" style="height:34px;padding:4px 10px;font-size:11.5px;border-color:var(--bad);color:var(--bad)" title="Effacer tous les filtres secondaires">
+            ✕ Réinitialiser filtres
+          </button>
+        ` : ''}
+      </div>
+
+      <!-- Sélecteur de Colonnes & Métriques -->
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin-bottom:6px">
+          Colonnes &amp; Métriques à afficher (Cochez / décochez selon vos besoins d'analyse) :
+        </div>
+        <div class="metric-pills-wrap" id="metricPillsWrap">
+          ${MATRIX_METRIC_DEFS.map(m => {
+            const on = !!S.matrix.metrics[m.id];
+            return `
+              <button type="button" class="metric-pill-btn ${on ? 'active' : ''}" data-metric="${m.id}" title="Afficher ou masquer la colonne ${esc(m.label)}">
+                <span class="pill-check">${on ? '☑' : '☐'}</span>
+                <span>${esc(m.label)}</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Ruban KPI du périmètre -->
+    <div class="grid g-kpi" style="margin-bottom:14px">
+      <div class="card kpi" style="--c:#7c5cff">
+        <div class="l">CA du périmètre</div>
+        <div class="v">${eur(data.total.revenue)}</div>
+        <div class="s">${nf(data.total.qty)} exemplaires vendus</div>
+      </div>
+      <div class="card kpi" style="--c:#27d3c3">
+        <div class="l">Marge nette conservée</div>
+        <div class="v">${eur(data.total.margin)}</div>
+        <div class="s">${data.total.margin_pct} % de marge locale</div>
+      </div>
+      <div class="card kpi" style="--c:#5a9bff">
+        <div class="l">Panier moyen caisse</div>
+        <div class="v">${eur(data.total.avg_basket)}</div>
+        <div class="s">${nf(data.total.tickets)} ventes (${data.total.avg_items_per_basket} liv./panier)</div>
+      </div>
+      <div class="card kpi" style="--c:#c77dff">
+        <div class="l">Part Serviteurs STAR ⭐</div>
+        <div class="v">${data.total.star_pct} %</div>
+        <div class="s">${eur(data.total.star_revenue)} (${data.total.star_tickets} tickets)</div>
+      </div>
+    </div>
+
+    <!-- Section Tableau Dynamique / Pivot -->
+    <div class="card" style="padding:16px 20px">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <h3 style="margin:0;display:inline-flex;align-items:center;gap:8px">
+            <span>Tableau d'analyse croisée :</span>
+            <span style="color:var(--icc-light);font-size:15px">${esc(data.dimension_row_label)}</span>
+            ${data.dimension_col_label ? `<span class="muted" style="font-weight:400">×</span><span style="color:var(--icc-soft);font-size:15px">${esc(data.dimension_col_label)}</span>` : ''}
+          </h3>
+          <div class="muted" style="font-size:12px;margin-top:2px">
+            ${data.rows.length} segment${data.rows.length > 1 ? 's' : ''} analysé${data.rows.length > 1 ? 's' : ''} · Cliquez sur les en-têtes pour trier les lignes
+          </div>
+        </div>
+
+        <div class="row" style="gap:8px;align-items:center">
+          ${S.matrix.col ? `
+            <div class="seg" id="matrixViewModeSeg">
+              <button data-vm="table" class="${S.matrix.viewMode === 'table' ? 'on' : ''}">📋 Liste Détaillée</button>
+              <button data-vm="pivot" class="${S.matrix.viewMode === 'pivot' ? 'on' : ''}">⊞ Matrice Croisée 2D</button>
+            </div>
+          ` : ''}
+          <button class="btn ghost sm" id="btnExportMatrixBody" style="font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px">
+            <span>📥</span> Exporter en CSV
+          </button>
+        </div>
+      </div>
+
+      <div id="matrixTableContainer">
+        <!-- Rendu par renderMatrixTableOnly() -->
+      </div>
+    </div>
+  `;
+
+  setupMatrixEvents(data);
+  renderMatrixTableOnly(data);
+}
+
 /* ================= VUES ================= */
 const VIEWS = {};
 
@@ -275,21 +989,95 @@ VIEWS.dashboard = async () => {
   const dToday = `${y}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   const ms = `${y}-${pad(now.getMonth() + 1)}-01`;
   const d30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-  // Dimanche est le 1er jour de la semaine
-  const dayOfWeek = now.getDay(); // 0 pour Dimanche
+  const dayOfWeek = now.getDay();
   const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
   const wStart = `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`;
+  const lastDayOfMonth = new Date(y, now.getMonth() + 1, 0).getDate();
+  const mEnd = `${y}-${pad(now.getMonth() + 1)}-${pad(lastDayOfMonth)}`;
+  const saturday = new Date(sunday.getTime() + 6 * 864e5);
+  const wEnd = `${saturday.getFullYear()}-${pad(saturday.getMonth() + 1)}-${pad(saturday.getDate())}`;
 
   const ranges = {
     all: ['', ''],
-    year: [`${y}-01-01`, ''],
-    month: [ms, ''],
-    '30': [d30, ''],
-    week: [wStart, ''],
+    year: [`${y}-01-01`, `${y}-12-31`],
+    month: [ms, mEnd],
+    '30': [d30, dToday],
+    week: [wStart, wEnd],
     today: [dToday, dToday],
     custom: [S.from, S.to]
   };
   const [from, to] = ranges[S.range] || ['', ''];
+
+  // Remplir S.from et S.to avec les dates effectives si une période prédéfinie est active
+  const effectiveFrom = from || S.from;
+  const effectiveTo = to || S.to;
+
+  // SI MODE STUDIO ACTIF
+  if (S.dashTab === 'matrix') {
+    $('#title').textContent = "Studio d'Analyses Croisées & Métriques";
+    $('#topActions').innerHTML = `
+      <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:center">
+        <!-- Commutateur de Mode : Synthèse vs Studio -->
+        <div class="seg" id="dashTabSeg">
+          <button data-tab="summary" class="">📊 Synthèse</button>
+          <button data-tab="matrix" class="on">🔬 Studio d'Analyses</button>
+        </div>
+
+        <!-- Filtres rapides en 1 clic direct -->
+        <div class="seg" id="seg">${[
+          ['all', 'Tout'],
+          ['year', 'Année'],
+          ['month', 'Ce mois'],
+          ['week', 'Semaine'],
+          ['today', 'Aujourd\'hui']
+        ].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+
+        <!-- Plage de dates De / À -->
+        <div id="dateBox" title="Cliquer pour appliquer cette plage de dates sur mesure" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2);padding:2px 8px;border-radius:8px;border:1px solid ${S.range === 'custom' ? 'var(--icc-purple)' : 'var(--line)'};height:32px;box-sizing:border-box;cursor:pointer">
+          <input type="date" id="dFrom" value="${effectiveFrom}" title="Date de début" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
+          <span style="color:var(--mut);font-size:10px;user-select:none">→</span>
+          <input type="date" id="dTo" value="${effectiveTo}" title="Date de fin" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
+        </div>
+
+        <button class="btn ghost sm" id="btnExportMatrix" title="Télécharger le tableau configuré en CSV pour Excel" style="font-size:11px;padding:2px 10px;height:32px;border-color:var(--icc-light);color:var(--text-title);display:inline-flex;align-items:center;gap:5px;font-weight:600">
+          <span style="font-size:14px">📥</span> Exporter en CSV
+        </button>
+      </div>
+    `;
+
+    $('#dashTabSeg').onclick = e => {
+      const t = e.target.closest('button')?.dataset.tab;
+      if (t && t !== S.dashTab) {
+        S.dashTab = t;
+        VIEWS.dashboard();
+      }
+    };
+
+    $('#seg').onclick = e => { 
+      const r = e.target.closest('button')?.dataset.r;
+      if (r) { S.range = r; VIEWS.dashboard(); } 
+    };
+
+    $('#dateBox').onclick = e => {
+      if (e.target.tagName !== 'INPUT' || S.range !== 'custom') {
+        const fVal = $('#dFrom').value;
+        const tVal = $('#dTo').value;
+        if (fVal || tVal) {
+          S.from = fVal; S.to = tVal; S.range = 'custom'; VIEWS.dashboard();
+        }
+      }
+    };
+
+    $('#dFrom').onchange = $('#dTo').onchange = () => { 
+      S.from = $('#dFrom').value; S.to = $('#dTo').value; S.range = 'custom'; VIEWS.dashboard(); 
+    };
+
+    await renderMatrixStudio(from, to, effectiveFrom, effectiveTo);
+    return;
+  }
+
+  // SINON : MODE SYNTHÈSE GRAPHIQUE
+  $('#title').textContent = "Tableau de bord";
   const momentParam = S.moment ? `&moment=${encodeURIComponent(S.moment)}` : '';
   const st = await api(`/api/stats?start=${from}&end=${to}${momentParam}`);
   const k = st.kpi;
@@ -307,12 +1095,14 @@ VIEWS.dashboard = async () => {
     }
   });
 
-  // Remplir S.from et S.to avec les dates effectives si une période prédéfinie est active
-  const effectiveFrom = from || S.from;
-  const effectiveTo = to || (S.range === 'today' ? dToday : S.to);
-
   $('#topActions').innerHTML = `
     <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:center">
+      <!-- Commutateur de Mode : Synthèse vs Studio -->
+      <div class="seg" id="dashTabSeg">
+        <button data-tab="summary" class="on">📊 Synthèse</button>
+        <button data-tab="matrix" class="">🔬 Studio d'Analyses</button>
+      </div>
+
       <!-- Filtres rapides en 1 clic direct -->
       <div class="seg" id="seg">${[
         ['all', 'Tout'],
@@ -322,7 +1112,7 @@ VIEWS.dashboard = async () => {
         ['today', 'Aujourd\'hui']
       ].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
 
-      <!-- Plage de dates De / À (taille fixe, compacte, cliquable pour réactiver directement les dates choisies) -->
+      <!-- Plage de dates De / À -->
       <div id="dateBox" title="Cliquer pour appliquer cette plage de dates sur mesure" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2);padding:2px 8px;border-radius:8px;border:1px solid ${S.range === 'custom' ? 'var(--icc-purple)' : 'var(--line)'};height:32px;box-sizing:border-box;cursor:pointer">
         <input type="date" id="dFrom" value="${effectiveFrom}" title="Date de début" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
         <span style="color:var(--mut);font-size:10px;user-select:none">→</span>
@@ -340,6 +1130,14 @@ VIEWS.dashboard = async () => {
     </div>
   `;
 
+  $('#dashTabSeg').onclick = e => {
+    const t = e.target.closest('button')?.dataset.tab;
+    if (t && t !== S.dashTab) {
+      S.dashTab = t;
+      VIEWS.dashboard();
+    }
+  };
+
   $('#seg').onclick = e => { 
     const r = e.target.closest('button')?.dataset.r;
     if (r) { 
@@ -348,7 +1146,6 @@ VIEWS.dashboard = async () => {
     } 
   };
 
-  // Clic direct sur le bloc de dates pour réactiver la période sur-mesure sans avoir à re-choisir une date
   $('#dateBox').onclick = e => {
     if (e.target.tagName !== 'INPUT' || S.range !== 'custom') {
       const fVal = $('#dFrom').value;
@@ -469,6 +1266,20 @@ VIEWS.dashboard = async () => {
         <h3>Répartition par origine du stock</h3>
         <div id="cOwner"></div>
       </div>
+    </div>
+
+    <!-- Bannière d'accès direct au Studio d'Analyses Croisées (Vue Responsable) -->
+    <div class="studio-banner" style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="font-size:26px">🔬</span>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--text-title)">Studio d'Analyses Croisées &amp; Métriques Personnalisables</div>
+          <div style="font-size:12px;color:var(--mut)">Besoin d'analyses plus poussées ? Croisez librement les cultes, tranches d'âge, modes de paiement, rayons et exportez vos tableaux en Excel.</div>
+        </div>
+      </div>
+      <button type="button" class="btn primary sm" id="btnGoStudio" style="white-space:nowrap;padding:7px 16px;font-weight:700;font-size:12.5px">
+        Accéder au Studio →
+      </button>
     </div>
 
     <!-- Section Cultes & Rushes Dominicaux -->
@@ -668,6 +1479,15 @@ VIEWS.dashboard = async () => {
       VIEWS.dashboard();
     };
   });
+
+  // Accès direct au Studio depuis la bannière
+  const bStudio = $('#btnGoStudio');
+  if (bStudio) {
+    bStudio.onclick = () => {
+      S.dashTab = 'matrix';
+      VIEWS.dashboard();
+    };
+  }
 };
 
 /* ---- Caisse ---- */
