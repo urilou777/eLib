@@ -553,8 +553,17 @@ button, select, input { font:inherit; color:inherit; }
     <!-- Ligne 1 bis (Smart Split Origines Multiples) : Mini-cartes par propriétaire avec sous-totaux et modes de paiement distincts -->
     <div id="splitOriginsContainer" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px"></div>
 
+    <!-- Profil acheteur replié automatiquement une fois rempli -->
+    <div id="mDemoCardCollapsed" style="display:none;align-items:center;justify-content:space-between;padding:7px 10px;margin-bottom:8px;background:linear-gradient(135deg, rgba(143,22,173,0.18), rgba(94,11,117,0.14));border:1px solid var(--icc-purple);border-radius:12px;cursor:pointer">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text)">
+        <span>👤</span>
+        <span id="mDemoSummaryText">Profil client</span>
+      </div>
+      <span style="font-size:11px;color:var(--a2);font-weight:600">Modifier ✏️</span>
+    </div>
+
     <!-- Ligne 2 : Profil acheteur (Catégories visuelles distinctes, séparateurs, couleurs dédiées, 0 défilement) -->
-    <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:6px 8px;margin-bottom:8px">
+    <div id="mDemoCardExpanded" style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:6px 8px;margin-bottom:8px">
       <!-- Rangée 1 : Genre (Rose Femme / Bleu Homme) | Séparateur | Client Star (Étoile dorée) -->
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
         <div style="display:flex;gap:5px;flex:1;position:relative" id="mDemoGender">

@@ -1686,7 +1686,18 @@ VIEWS.pos = async () => {
     <div class="total"><span>Total</span><b id="tot">0 €</b></div>
     <div class="row" style="margin-bottom:8px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option><option>CB</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
 
-    <div class="card" style="padding:10px;margin-bottom:10px;background:var(--panel2);border:1px solid var(--line)">
+    <!-- Profil démographique client (Complet / Replié automatiquement une fois renseigné) -->
+    <div id="demoCardCollapsed" style="display:none;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:10px;background:linear-gradient(135deg, rgba(143,22,173,0.18), rgba(94,11,117,0.14));border:1px solid var(--icc-purple);border-radius:10px;cursor:pointer;transition:all .2s ease">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-title);font-weight:600">
+        <span style="font-size:14px">👤</span>
+        <span id="demoSummaryText">Profil client</span>
+      </div>
+      <span style="font-size:11px;color:var(--icc-light);font-weight:600;display:flex;align-items:center;gap:3px">
+        Modifier ✏️
+      </span>
+    </div>
+
+    <div id="demoCardExpanded" class="card" style="padding:10px;margin-bottom:10px;background:var(--panel2);border:1px solid var(--line)">
       <div class="row" style="justify-content:space-between;margin-bottom:6px">
         <span style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Profil client (statistique)</span>
         <button type="button" class="btn sm ghost demo-btn" id="btnStar" data-star="0" style="padding:2px 8px!important;font-weight:700">⭐ Serviteur STAR</button>
@@ -1715,6 +1726,63 @@ VIEWS.pos = async () => {
   let curGender = '';
   let curAge = '';
   let curStar = 0;
+  let isDemoManuallyExpanded = false;
+
+  const updateDemoCollapse = (triggerTimer = false) => {
+    const cardExp = $('#demoCardExpanded');
+    const cardCol = $('#demoCardCollapsed');
+    const sumTxt = $('#demoSummaryText');
+    if (!cardExp || !cardCol) return;
+
+    const isFilled = !!(curGender && curAge);
+    if (!isFilled) {
+      isDemoManuallyExpanded = false;
+      cardExp.style.display = 'block';
+      cardCol.style.display = 'none';
+      return;
+    }
+
+    const parts = [];
+    if (curGender === 'Couple') parts.push('Couple 💜');
+    else if (curGender) parts.push(curGender);
+
+    const ageMap = {
+      'Enfant / Ado': 'Ado (<18 ans)',
+      'Jeune adulte': '18-29 ans',
+      'Adulte': '30-59 ans',
+      'Senior': '60+ ans'
+    };
+    if (curAge) parts.push(ageMap[curAge] || curAge);
+    if (curStar) parts.push('⭐ STAR');
+
+    if (sumTxt) sumTxt.textContent = parts.join(' · ');
+
+    if (isDemoManuallyExpanded) {
+      cardExp.style.display = 'block';
+      cardCol.style.display = 'none';
+      return;
+    }
+
+    if (triggerTimer) {
+      setTimeout(() => {
+        if (curGender && curAge && !isDemoManuallyExpanded) {
+          cardExp.style.display = 'none';
+          cardCol.style.display = 'flex';
+        }
+      }, 260);
+    } else {
+      cardExp.style.display = 'none';
+      cardCol.style.display = 'flex';
+    }
+  };
+
+  const cardCol = $('#demoCardCollapsed');
+  if (cardCol) {
+    cardCol.onclick = () => {
+      isDemoManuallyExpanded = true;
+      updateDemoCollapse();
+    };
+  }
 
   const btnStar = $('#btnStar');
   if (btnStar) {
@@ -1724,6 +1792,7 @@ VIEWS.pos = async () => {
       btnStar.style.background = curStar ? '#e6a73c' : '';
       btnStar.style.borderColor = curStar ? '#e6a73c' : '';
       btnStar.style.color = curStar ? '#000' : '';
+      if (curGender && curAge) updateDemoCollapse();
     };
   }
   $('#demoGender').onclick = e => {
@@ -1750,6 +1819,8 @@ VIEWS.pos = async () => {
         $('#demoGender').classList.remove('is-couple');
         if (cplBadge) cplBadge.style.display = 'none';
       }
+      isDemoManuallyExpanded = false;
+      updateDemoCollapse(true);
     }
   };
   $('#demoAge').onclick = e => {
@@ -1763,6 +1834,8 @@ VIEWS.pos = async () => {
         b.classList.add('on');
         curAge = b.dataset.a;
       }
+      isDemoManuallyExpanded = false;
+      updateDemoCollapse(true);
     }
   };
   const draw = () => {

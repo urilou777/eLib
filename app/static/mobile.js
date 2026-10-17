@@ -623,8 +623,62 @@ function getAutoMobileMoment() {
 
 let mMoment = localStorage.getItem('librairie_mobile_moment') || getAutoMobileMoment();
 
-function updateProfileSummary() {
-  // Profil directement visible sans tiroir
+let isMDemoManuallyExpanded = false;
+
+function updateProfileSummary(triggerTimer = false) {
+  const cardExp = $('#mDemoCardExpanded');
+  const cardCol = $('#mDemoCardCollapsed');
+  const sumTxt = $('#mDemoSummaryText');
+  if (!cardExp || !cardCol) return;
+
+  const isFilled = !!(mGender && mAge);
+  if (!isFilled) {
+    isMDemoManuallyExpanded = false;
+    cardExp.style.display = 'block';
+    cardCol.style.display = 'none';
+    return;
+  }
+
+  const parts = [];
+  if (mGender === 'Couple') parts.push('Couple 💜');
+  else if (mGender) parts.push(mGender);
+
+  const ageMap = {
+    'Enfant / Ado': '<18 ans',
+    'Jeune adulte': '18-29 ans',
+    'Adulte': '30-59 ans',
+    'Senior': '60+ ans'
+  };
+  if (mAge) parts.push(ageMap[mAge] || mAge);
+  if (mStar) parts.push('⭐ STAR');
+
+  if (sumTxt) sumTxt.textContent = parts.join(' · ');
+
+  if (isMDemoManuallyExpanded) {
+    cardExp.style.display = 'block';
+    cardCol.style.display = 'none';
+    return;
+  }
+
+  if (triggerTimer) {
+    setTimeout(() => {
+      if (mGender && mAge && !isMDemoManuallyExpanded) {
+        cardExp.style.display = 'none';
+        cardCol.style.display = 'flex';
+      }
+    }, 260);
+  } else {
+    cardExp.style.display = 'none';
+    cardCol.style.display = 'flex';
+  }
+}
+
+const mCardCol = $('#mDemoCardCollapsed');
+if (mCardCol) {
+  mCardCol.onclick = () => {
+    isMDemoManuallyExpanded = true;
+    updateProfileSummary();
+  };
 }
 
 /* ---------- Contrôle de la taille de la Caméra (Plein écran Panier) & Veille auto ---------- */
@@ -660,7 +714,7 @@ if (mStarBtn) {
   mStarBtn.addEventListener('click', () => {
     mStar = mStar ? 0 : 1;
     mStarBtn.classList.toggle('on', !!mStar);
-    updateProfileSummary();
+    if (mGender && mAge) updateProfileSummary();
   });
 }
 
@@ -690,7 +744,8 @@ if (mGenEl) {
         mGenEl.classList.remove('is-couple');
         if (cBadge) cBadge.style.display = 'none';
       }
-      updateProfileSummary();
+      isMDemoManuallyExpanded = false;
+      updateProfileSummary(true);
     }
   });
 }
@@ -708,7 +763,8 @@ if (mAgeEl) {
         b.classList.add('on');
         mAge = b.dataset.a;
       }
-      updateProfileSummary();
+      isMDemoManuallyExpanded = false;
+      updateProfileSummary(true);
     }
   });
 }
