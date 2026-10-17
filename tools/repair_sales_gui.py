@@ -370,6 +370,29 @@ class SalesRepairHandler(BaseHTTPRequestHandler):
                     "moments": ["1er Culte", "2e Culte", "Culte Unique", "Séminaire / Soirée"]
                 })
 
+            elif path == "/api/books":
+                books = conn.execute("""
+                    SELECT b.id, b.code, b.title, b.author, b.publisher, b.category, b.type,
+                           b.price, b.is_pack,
+                           (SELECT COALESCE(SUM(sl.qty), 0) FROM sale_lines sl WHERE sl.book_id = b.id) as sales_count,
+                           COALESCE((SELECT SUM(l.qty_in - COALESCE((SELECT SUM(a.qty) FROM allocations a WHERE a.lot_id=l.id), 0)) FROM lots l WHERE l.book_id=b.id), 0) as stock_est
+                    FROM books b
+                    ORDER BY b.title COLLATE NOCASE ASC
+                """).fetchall()
+
+                res = []
+                for b in books:
+                    item = dict(b)
+                    code = (item["code"] or "").strip()
+                    item["is_placeholder"] = bool(
+                        (not code) or
+                        code.upper().startswith(("NA-", "ICCREN-", "AUTO-", "DUMMY-", "TEMP-")) or
+                        (len(code) < 10 and not item["is_pack"])
+                    )
+                    res.append(item)
+
+                self._send_json({"ok": True, "books": res})
+
             else:
                 self._send_json({"error": "Endpoint introuvable"}, 404)
         except Exception as e:
@@ -433,6 +456,51 @@ class SalesRepairHandler(BaseHTTPRequestHandler):
                 
                 res = execute_split(sale_id, baskets)
                 self._send_json(res)
+
+            elif path.startswith("/api/books/") and path.endswith("/barcode"):
+                book_id = int(path.split("/")[3])
+                new_code = (data.get("code") or "").strip()
+                if not new_code:
+                    self._send_json({"ok": False, "error": "Le code-barres ne peut pas être vide."}, 400)
+                    return
+
+                # Validation unicité
+                dup = conn.execute("SELECT id, title FROM books WHERE code = ? AND id != ?", (new_code, book_id)).fetchone()
+                if dup:
+                    self._send_json({
+                        "ok": False,
+                        "error": f"Le code « {new_code} » est déjà utilisé par « {dup['title']} » (Livre #{dup['id']})."
+                    }, 400)
+                    return
+
+                old_book = conn.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+                if not old_book:
+                    self._send_json({"ok": False, "error": f"Livre #{book_id} introuvable."}, 404)
+                    return
+
+                b_file = create_pre_backup(f"pre_barcode_book_{book_id}")
+
+                with conn:
+                    conn.execute("UPDATE books SET code = ? WHERE id = ?", (new_code, book_id))
+                    conn.execute("""
+                        INSERT INTO audit_logs (timestamp, user_name, action, target_type, target_id, summary, snapshot_before, snapshot_after)
+                        VALUES (?, ?, 'UPDATE_BARCODE', 'book', ?, ?, ?, ?)
+                    """, (
+                        datetime.now().isoformat(),
+                        "Atelier Scission / Codes-barres",
+                        book_id,
+                        f"Attribution code-barres pour « {old_book['title']} » : « {old_book['code']} » → « {new_code} »",
+                        json.dumps(dict(old_book)),
+                        json.dumps({"id": book_id, "title": old_book["title"], "code": new_code})
+                    ))
+
+                self._send_json({
+                    "ok": True,
+                    "book_id": book_id,
+                    "new_code": new_code,
+                    "backup_file": b_file,
+                    "message": f"Code-barres enregistré : « {new_code} » pour « {old_book['title']} »"
+                })
 
             else:
                 self._send_json({"error": "Endpoint introuvable"}, 404)
@@ -787,6 +855,238 @@ main.workspace {
 .toast.warn { border-color: var(--warn); background: #78350f; }
 .toast.bad { border-color: var(--bad); background: #7f1d1d; }
 @keyframes slideIn { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Navigation d'en-tête (Scission vs Codes-barres) */
+.nav-switch {
+  display: inline-flex;
+  background: var(--panel2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 4px;
+}
+.nav-btn {
+  background: transparent;
+  color: var(--mut);
+  border: none;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 7px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all .15s ease;
+}
+.nav-btn:hover { color: #fff; background: rgba(255,255,255,0.05); }
+.nav-btn.active {
+  background: var(--pri);
+  color: #fff;
+  box-shadow: 0 0 12px var(--pri-glow);
+}
+.nav-badge-warn {
+  background: #ef4444;
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+/* Badges de statut de code-barres */
+.badge-placeholder {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.badge-valid {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--good);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-barcode-quick {
+  background: #312e81;
+  border-color: #4f46e5;
+  color: #e0e7ff;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.btn-barcode-quick:hover {
+  background: #3730a3;
+  color: #fff;
+}
+
+/* Vue Codes-barres Catalogue */
+.barcodes-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 24px;
+  gap: 18px;
+  overflow-y: auto;
+  max-height: calc(100vh - 57px);
+}
+.barcodes-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.barcodes-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.b-stat-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.b-stat-card .lbl { font-size: 11.5px; font-weight: 700; color: var(--mut); text-transform: uppercase; }
+.b-stat-card .val { font-family: var(--font-h); font-size: 22px; font-weight: 800; color: #fff; }
+.b-stat-card.warn { border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.08); }
+.b-stat-card.warn .val { color: var(--warn); }
+.b-stat-card.good { border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.08); }
+.b-stat-card.good .val { color: var(--good); }
+
+.barcodes-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.search-box { flex: 1; min-width: 260px; max-width: 480px; }
+.filter-pills { display: flex; gap: 6px; }
+.b-filter-pill {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mut);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.b-filter-pill:hover { color: #fff; border-color: var(--line-strong); }
+.b-filter-pill.active { background: var(--pri); border-color: var(--pri); color: #fff; }
+
+.barcodes-table-wrap {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow-x: auto;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+.barcodes-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.barcodes-table th {
+  background: var(--panel2);
+  color: var(--mut);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-strong);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  white-space: nowrap;
+}
+.barcodes-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.barcodes-table tr:hover { background: rgba(255,255,255,0.03); }
+.barcodes-table tr.row-placeholder { background: rgba(239, 68, 68, 0.04); }
+.barcodes-table tr.row-saved {
+  animation: rowFlash 1.4s ease forwards;
+}
+@keyframes rowFlash {
+  0% { background: rgba(16, 185, 129, 0.35); }
+  100% { background: transparent; }
+}
+.barcodes-table .num { text-align: right; }
+.bc-input {
+  width: 100%;
+  max-width: 240px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+/* Modale de saisie de code-barres */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalPop .2s ease;
+}
+@keyframes modalPop { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-head h3 { font-family: var(--font-h); font-size: 15px; font-weight: 700; color: #fff; margin: 0; }
+.modal-body { padding: 18px; display: flex; flex-direction: column; }
+.modal-foot {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--panel2);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 </style>
 </head>
 <body>
@@ -795,11 +1095,21 @@ main.workspace {
   <div class="brand">
     <span style="font-size:22px">🛠️</span>
     <div>
-      <h1>Atelier de Scission & Réparation des Ventes</h1>
-      <div style="font-size:11px;color:var(--mut)">Librairi-E · Outil autonome et jetable pour les 14 ventes historiques</div>
+      <h1>Atelier de Scission & Codes-barres Catalogue</h1>
+      <div style="font-size:11px;color:var(--mut)">Librairi-E · Scission des ventes &amp; Renseignement des codes-barres manquants</div>
     </div>
     <span class="badge-ephemere">Outil Éphémère</span>
   </div>
+
+  <div class="nav-switch">
+    <button class="nav-btn active" id="btnNavSplit" onclick="switchMainView('split')">
+      ✂️ Scission des Ventes
+    </button>
+    <button class="nav-btn" id="btnNavBarcode" onclick="switchMainView('barcodes')">
+      🏷️ Codes-barres Catalogue <span class="nav-badge-warn" id="navPlaceholderBadge" style="display:none">0</span>
+    </button>
+  </div>
+
   <div style="display:flex;align-items:center;gap:10px">
     <button class="btn sm" id="btnManualBackup" title="Créer une sauvegarde immédiate de précaution">
       💾 Sauvegarde de sécurité
@@ -807,7 +1117,8 @@ main.workspace {
   </div>
 </header>
 
-<div class="layout">
+<!-- Vue 1 : Atelier de Scission des Ventes -->
+<div class="layout" id="splitLayout">
   <!-- Colonne Gauche : Liste des Ventes -->
   <aside class="sidebar">
     <div class="sidebar-title">
@@ -830,6 +1141,91 @@ main.workspace {
       <p style="font-size:12px">Cliquez sur l'une des 14 ventes à gauche pour ouvrir l'atelier de réparation et de qualification.</p>
     </div>
   </main>
+</div>
+
+<!-- Vue 2 : Gestion des Codes-barres Catalogue -->
+<div class="barcodes-layout" id="barcodesLayout" style="display:none">
+  <div class="barcodes-header">
+    <div class="barcodes-stats">
+      <div class="b-stat-card">
+        <span class="lbl">Total Ouvrages au catalogue</span>
+        <b class="val" id="bcTotalBooks">0</b>
+      </div>
+      <div class="b-stat-card warn">
+        <span class="lbl">⚠️ Codes provisoires / manquants à renseigner</span>
+        <b class="val" id="bcPlaceholderCount">0</b>
+      </div>
+      <div class="b-stat-card good">
+        <span class="lbl">✓ Codes EAN-13 conformes</span>
+        <b class="val" id="bcValidCount">0</b>
+      </div>
+    </div>
+
+    <div class="barcodes-toolbar">
+      <div class="search-box">
+        <input type="text" id="bcSearchInput" class="text-input" placeholder="🔍 Rechercher un ouvrage par titre, auteur, code actuel..." oninput="filterBooks()">
+      </div>
+      <div class="filter-pills">
+        <button class="b-filter-pill active" id="pillPlaceholder" onclick="setBookFilter('placeholder')">
+          ⚠️ Codes provisoires (<span id="pillCountPlaceholder">0</span>)
+        </button>
+        <button class="b-filter-pill" id="pillAll" onclick="setBookFilter('all')">
+          Tous les ouvrages (<span id="pillCountAll">0</span>)
+        </button>
+        <button class="b-filter-pill" id="pillValid" onclick="setBookFilter('valid')">
+          ✓ Codes valides (<span id="pillCountValid">0</span>)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="barcodes-table-wrap">
+    <table class="barcodes-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Titre de l'ouvrage</th>
+          <th>Auteur / Éditeur</th>
+          <th class="num">Prix</th>
+          <th class="num">Ventes</th>
+          <th class="num">Stock</th>
+          <th>Code actuel</th>
+          <th style="min-width:240px">Nouveau Code EAN-13</th>
+          <th class="num">Action</th>
+        </tr>
+      </thead>
+      <tbody id="barcodesTableBody">
+        <tr><td colspan="9" style="text-align:center;padding:30px;color:var(--mut)">Chargement du catalogue...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal Rapide de Saisie de Code-barres -->
+<div class="modal-overlay" id="barcodeModal" style="display:none" onclick="if(event.target===this) closeBarcodeModal()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>🏷️ Renseigner le Code-barres</h3>
+      <button class="btn sm" onclick="closeBarcodeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--mut);text-transform:uppercase;font-weight:700">Ouvrage sélectionné</div>
+      <div style="font-weight:700;font-size:14px;color:#fff;margin:2px 0 6px" id="modalBookTitle">Titre</div>
+      <div style="font-size:12px;color:var(--mut);margin-bottom:14px">
+        Code actuel : <span id="modalCurrentCode" class="badge-placeholder">ICCREN-1</span>
+      </div>
+      
+      <div class="form-group">
+        <label>Nouveau Code EAN-13 / ISBN (13 chiffres)</label>
+        <input type="text" class="text-input" id="modalNewCodeInput" placeholder="Ex: 9782847000123" style="font-size:14px;padding:8px 12px;letter-spacing:0.5px" onkeydown="if(event.key==='Enter') saveBarcodeFromModal()">
+        <small style="color:var(--mut);font-size:11px;margin-top:4px">Une sauvegarde de précaution automatique sera générée avant d'enregistrer.</small>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn sm" onclick="closeBarcodeModal()">Annuler</button>
+      <button class="btn pri" id="btnModalSaveBarcode" onclick="saveBarcodeFromModal()">💾 Enregistrer le code-barres</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
@@ -1017,11 +1413,20 @@ function renderSplitTab() {
       bRev += lineCost;
       bQty += it.qty;
 
+      const isPlaceholder = !l.code || l.code.length < 10 || /^(NA-|ICCREN-|AUTO-|DUMMY-|TEMP-)/i.test(l.code);
+      const codeHtml = (isPlaceholder && !l.is_pack)
+        ? `<span class="badge-placeholder">⚠️ Provisoire : ${l.code}</span> <button type="button" class="btn sm btn-barcode-quick" data-book-id="${l.book_id}" onclick="handleBarcodeQuickClick(this)">✎ Renseigner EAN-13</button>`
+        : `<span class="badge-valid" style="font-size:10px;padding:1px 5px">✓ ${l.code}</span>`;
+
       return `
         <div class="b-item">
           <div class="b-item-info">
-            <div class="b-item-title">${l.title}</div>
-            <div class="b-item-sub">${eur(l.unit_price)} / ex. · ${l.code}</div>
+            <div class="b-item-title">${esc(l.title)}</div>
+            <div class="b-item-sub" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
+              <span>${eur(l.unit_price)} / ex.</span>
+              <span>·</span>
+              ${codeHtml}
+            </div>
           </div>
           <div class="b-item-actions">
             <div class="qty-stepper">
@@ -1370,6 +1775,237 @@ async function saveEditDirect() {
 }
 
 // -----------------------------------------------------------------------------
+// GESTION DES CODES-BARRES DU CATALOGUE
+// -----------------------------------------------------------------------------
+let allBooks = [];
+let currentMainView = 'split'; // 'split' | 'barcodes'
+let bookFilter = 'placeholder'; // 'placeholder' | 'all' | 'valid'
+let bookSearchQuery = '';
+let modalActiveBookId = null;
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function loadBooks() {
+  const res = await api('/api/books');
+  if (!res.ok) return;
+  allBooks = res.books || [];
+  updateBookCounts();
+  if (currentMainView === 'barcodes') {
+    renderBarcodesView();
+  }
+}
+
+function updateBookCounts() {
+  const placeholders = allBooks.filter(b => b.is_placeholder);
+  const badge = document.getElementById('navPlaceholderBadge');
+  if (badge) {
+    badge.textContent = placeholders.length;
+    badge.style.display = placeholders.length ? 'inline-block' : 'none';
+  }
+  const bcTotal = document.getElementById('bcTotalBooks');
+  if (bcTotal) bcTotal.textContent = allBooks.length;
+  const bcPl = document.getElementById('bcPlaceholderCount');
+  if (bcPl) bcPl.textContent = placeholders.length;
+  const bcVal = document.getElementById('bcValidCount');
+  if (bcVal) bcVal.textContent = allBooks.length - placeholders.length;
+
+  const pPl = document.getElementById('pillCountPlaceholder');
+  if (pPl) pPl.textContent = placeholders.length;
+  const pAll = document.getElementById('pillCountAll');
+  if (pAll) pAll.textContent = allBooks.length;
+  const pVal = document.getElementById('pillCountValid');
+  if (pVal) pVal.textContent = allBooks.length - placeholders.length;
+}
+
+function switchMainView(view) {
+  currentMainView = view;
+  document.getElementById('btnNavSplit').classList.toggle('active', view === 'split');
+  document.getElementById('btnNavBarcode').classList.toggle('active', view === 'barcodes');
+  
+  document.getElementById('splitLayout').style.display = view === 'split' ? 'grid' : 'none';
+  document.getElementById('barcodesLayout').style.display = view === 'barcodes' ? 'flex' : 'none';
+
+  if (view === 'barcodes') {
+    renderBarcodesView();
+  }
+}
+
+function setBookFilter(filter) {
+  bookFilter = filter;
+  ['placeholder', 'all', 'valid'].forEach(f => {
+    const el = document.getElementById('pill' + f.charAt(0).toUpperCase() + f.slice(1));
+    if (el) el.classList.toggle('active', f === filter);
+  });
+  renderBarcodesView();
+}
+
+function filterBooks() {
+  bookSearchQuery = (document.getElementById('bcSearchInput').value || '').trim().toLowerCase();
+  renderBarcodesView();
+}
+
+function renderBarcodesView() {
+  updateBookCounts();
+  const tb = document.getElementById('barcodesTableBody');
+  if (!tb) return;
+
+  let filtered = allBooks.filter(b => {
+    if (bookFilter === 'placeholder' && !b.is_placeholder) return false;
+    if (bookFilter === 'valid' && b.is_placeholder) return false;
+    if (bookSearchQuery) {
+      const matchTitle = (b.title || '').toLowerCase().includes(bookSearchQuery);
+      const matchAuthor = (b.author || '').toLowerCase().includes(bookSearchQuery);
+      const matchCode = (b.code || '').toLowerCase().includes(bookSearchQuery);
+      if (!matchTitle && !matchAuthor && !matchCode) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    tb.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--mut)">Aucun ouvrage ne correspond à ce filtre.</td></tr>`;
+    return;
+  }
+
+  tb.innerHTML = filtered.map(b => `
+    <tr id="bookRow_${b.id}" class="${b.is_placeholder ? 'row-placeholder' : ''}">
+      <td class="muted" style="font-size:11px">#${b.id}</td>
+      <td style="font-weight:700;color:#fff">${esc(b.title)}</td>
+      <td class="muted" style="font-size:12px">${esc(b.author || '—')} ${b.publisher ? `<small>(${esc(b.publisher)})</small>` : ''}</td>
+      <td class="num font-h" style="font-weight:700;color:var(--text)">${eur(b.price)}</td>
+      <td class="num muted">${b.sales_count}</td>
+      <td class="num muted">${b.stock_est}</td>
+      <td>
+        ${b.is_placeholder ? `<span class="badge-placeholder">⚠️ ${esc(b.code || 'VIDE')}</span>` : `<span class="badge-valid">✓ ${esc(b.code)}</span>`}
+      </td>
+      <td>
+        <input type="text" class="text-input bc-input" id="input_bc_${b.id}" data-id="${b.id}" placeholder="${b.is_placeholder ? 'Saisir EAN-13 (13 chiffres)...' : 'Modifier le code...'}" value="${b.is_placeholder ? '' : esc(b.code)}" onkeydown="if(event.key==='Enter') saveBookBarcode(${b.id})">
+      </td>
+      <td class="num">
+        <button class="btn pri sm" id="btn_save_${b.id}" onclick="saveBookBarcode(${b.id})">💾 Enregistrer</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function saveBookBarcode(bookId) {
+  const inp = document.getElementById(`input_bc_${bookId}`);
+  if (!inp) return;
+  const newCode = inp.value.trim();
+  if (!newCode) {
+    return toast('Veuillez saisir un code-barres non vide', 'warn');
+  }
+
+  const btn = document.getElementById(`btn_save_${bookId}`);
+  if (btn) btn.disabled = true;
+
+  const res = await api(`/api/books/${bookId}/barcode`, 'POST', { code: newCode });
+  if (btn) btn.disabled = false;
+
+  if (!res.ok) {
+    return alert('Erreur : ' + (res.error || 'Impossible d\'enregistrer'));
+  }
+
+  toast(res.message, 'good');
+
+  // Mettre à jour allBooks
+  const book = allBooks.find(b => b.id === bookId);
+  if (book) {
+    book.code = newCode;
+    book.is_placeholder = false;
+  }
+
+  // Mettre à jour la vente active si elle contient ce livre
+  if (activeSaleData && activeSaleData.lines) {
+    activeSaleData.lines.forEach(l => {
+      if (l.book_id === bookId) l.code = newCode;
+    });
+    if (activeTab === 'split') renderSplitTab();
+  }
+
+  // Animation visuelle de succès
+  const row = document.getElementById(`bookRow_${bookId}`);
+  if (row) {
+    row.classList.remove('row-placeholder');
+    row.classList.add('row-saved');
+  }
+
+  updateBookCounts();
+
+  // Focus automatique sur le prochain champ placeholder si présent
+  const nextPlaceholderInput = document.querySelector('.row-placeholder .bc-input');
+  if (nextPlaceholderInput) {
+    nextPlaceholderInput.focus();
+  }
+}
+
+// Modal rapide pour la scission
+function handleBarcodeQuickClick(btn) {
+  const bookId = Number(btn.dataset.bookId);
+  const book = allBooks.find(b => b.id === bookId) || (activeSaleData && activeSaleData.lines ? activeSaleData.lines.find(x => x.book_id === bookId) : null);
+  if (!book) return;
+  openBarcodeModal(bookId, book.title, book.code);
+}
+
+function openBarcodeModal(bookId, title, currentCode) {
+  modalActiveBookId = bookId;
+  document.getElementById('modalBookTitle').textContent = title;
+  document.getElementById('modalCurrentCode').textContent = currentCode || 'VIDE';
+  const inp = document.getElementById('modalNewCodeInput');
+  inp.value = '';
+  document.getElementById('barcodeModal').style.display = 'flex';
+  setTimeout(() => inp.focus(), 50);
+}
+
+function closeBarcodeModal() {
+  document.getElementById('barcodeModal').style.display = 'none';
+  modalActiveBookId = null;
+}
+
+async function saveBarcodeFromModal() {
+  if (!modalActiveBookId) return;
+  const inp = document.getElementById('modalNewCodeInput');
+  const newCode = inp.value.trim();
+  if (!newCode) return toast('Veuillez saisir un code-barres non vide', 'warn');
+
+  const btn = document.getElementById('btnModalSaveBarcode');
+  btn.disabled = true;
+  const res = await api(`/api/books/${modalActiveBookId}/barcode`, 'POST', { code: newCode });
+  btn.disabled = false;
+
+  if (!res.ok) {
+    return alert('Erreur : ' + (res.error || 'Impossible d\'enregistrer'));
+  }
+
+  toast(res.message, 'good');
+
+  // Mettre à jour allBooks
+  const book = allBooks.find(b => b.id === modalActiveBookId);
+  if (book) {
+    book.code = newCode;
+    book.is_placeholder = false;
+  }
+
+  // Mettre à jour la vente active
+  if (activeSaleData && activeSaleData.lines) {
+    activeSaleData.lines.forEach(l => {
+      if (l.book_id === modalActiveBookId) l.code = newCode;
+    });
+    if (activeTab === 'split') renderSplitTab();
+  }
+
+  closeBarcodeModal();
+  updateBookCounts();
+}
+
+// Raccourci clavier Échap pour fermer la modale
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeBarcodeModal();
+});
+
+// -----------------------------------------------------------------------------
 // SAUVEGARDE MANUELLE
 // -----------------------------------------------------------------------------
 document.getElementById('btnManualBackup').onclick = async () => {
@@ -1381,8 +2017,9 @@ document.getElementById('btnManualBackup').onclick = async () => {
   }
 };
 
-// Initialisation
+// Initialisation globale
 loadSales();
+loadBooks();
 </script>
 </body>
 </html>
