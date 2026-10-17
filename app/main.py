@@ -575,6 +575,26 @@ def _books(c, where="1=1", args=()):
             JOIN owners o ON o.id=l.owner_id GROUP BY l.book_id, o.id"""):
         if r["rem"]:
             byo.setdefault(r["book_id"], []).append({"owner": r["name"], "color": r["color"], "qty": r["rem"]})
+    packs_by_book = {}
+    for r in db.rows(c, """
+        SELECT pi.book_id, p.id pack_id, p.code pack_code, p.title pack_title, p.price pack_price,
+               (SELECT SUM(bk.price * pi2.qty) FROM pack_items pi2 JOIN books bk ON bk.id = pi2.book_id WHERE pi2.pack_id = p.id) separate_price,
+               (SELECT GROUP_CONCAT(bk2.title, ' + ') FROM pack_items pi3 JOIN books bk2 ON bk2.id = pi3.book_id WHERE pi3.pack_id = p.id AND bk2.id != pi.book_id) other_items
+        FROM pack_items pi
+        JOIN books p ON p.id = pi.pack_id
+        WHERE p.active = 1
+    """):
+        saving = round(float(r["separate_price"] or 0) - float(r["pack_price"] or 0), 2)
+        packs_by_book.setdefault(r["book_id"], []).append({
+            "id": r["pack_id"],
+            "code": r["pack_code"],
+            "title": r["pack_title"],
+            "price": r["pack_price"],
+            "separate_price": r["separate_price"],
+            "other_items": r["other_items"] or "",
+            "saving": saving
+        })
+
     for b in bl:
         b["by_owner"] = byo.get(b["id"], [])
         b["lots"] = lots_by.get(b["id"], [])
@@ -584,6 +604,12 @@ def _books(c, where="1=1", args=()):
                 JOIN books bk ON bk.id=pi.book_id WHERE pi.pack_id=?""", (b["id"],))
             for it in b["items"]:
                 it["lots"] = lots_by.get(it["book_id"], [])
+            b["suggested_packs"] = []
+        else:
+            s_packs = packs_by_book.get(b["id"], [])
+            for sp in s_packs:
+                sp["stock"] = db.pack_stock(c, sp["id"])
+            b["suggested_packs"] = s_packs
     return bl
 
 
@@ -1745,13 +1771,66 @@ def qr_svg(data: str):
 
 
 def _mobile_book(c, b):
+    if b["is_pack"]:
+        stock = db.pack_stock(c, b["id"])
+        items = db.rows(c, """SELECT pi.book_id, pi.qty, bk.title, bk.price FROM pack_items pi
+            JOIN books bk ON bk.id=pi.book_id WHERE pi.pack_id=?""", (b["id"],))
+        for it in items:
+            it["lots"] = db.rows(c, f"""
+                SELECT l.id, l.date, o.name owner, o.color, ({db.LOT_REMAINING}) remaining
+                FROM lots l JOIN owners o ON o.id=l.owner_id
+                WHERE l.book_id=? AND ({db.LOT_REMAINING}) > 0
+                ORDER BY o.priority, l.date, l.id""", (it["book_id"],))
+        return {
+            "id": b["id"], "code": b["code"], "title": b["title"], "volume": b["volume"], "price": b["price"],
+            "is_pack": 1, "lots": [], "stock": stock, "items": items, "suggested_packs": []
+        }
+
     lots = db.rows(c, f"""
         SELECT l.id, l.date, o.name owner, o.color, ({db.LOT_REMAINING}) remaining
         FROM lots l JOIN owners o ON o.id=l.owner_id
         WHERE l.book_id=? AND ({db.LOT_REMAINING}) > 0
         ORDER BY o.priority, l.date, l.id""", (b["id"],))
-    return {"id": b["id"], "code": b["code"], "title": b["title"], "volume": b["volume"], "price": b["price"],
-            "is_pack": b["is_pack"], "lots": lots, "stock": sum(l["remaining"] for l in lots)}
+
+    raw_packs = db.rows(c, """
+        SELECT p.id, p.code, p.title, p.price,
+               (SELECT SUM(bk.price * pi2.qty) FROM pack_items pi2 JOIN books bk ON bk.id = pi2.book_id WHERE pi2.pack_id = p.id) separate_price,
+               (SELECT GROUP_CONCAT(bk2.title, ' + ') FROM pack_items pi3 JOIN books bk2 ON bk2.id = pi3.book_id WHERE pi3.pack_id = p.id AND bk2.id != ?) other_items
+        FROM pack_items pi
+        JOIN books p ON p.id = pi.pack_id
+        WHERE pi.book_id = ? AND p.active = 1
+    """, (b["id"], b["id"]))
+
+    suggested_packs = []
+    for sp in raw_packs:
+        sp_stock = db.pack_stock(c, sp["id"])
+        saving = round(float(sp["separate_price"] or 0) - float(sp["price"] or 0), 2)
+        sp_items = db.rows(c, """SELECT pi.book_id, pi.qty, bk.title, bk.price FROM pack_items pi
+            JOIN books bk ON bk.id=pi.book_id WHERE pi.pack_id=?""", (sp["id"],))
+        for it in sp_items:
+            it["lots"] = db.rows(c, f"""
+                SELECT l.id, l.date, o.name owner, o.color, ({db.LOT_REMAINING}) remaining
+                FROM lots l JOIN owners o ON o.id=l.owner_id
+                WHERE l.book_id=? AND ({db.LOT_REMAINING}) > 0
+                ORDER BY o.priority, l.date, l.id""", (it["book_id"],))
+        suggested_packs.append({
+            "id": sp["id"],
+            "code": sp["code"],
+            "title": sp["title"],
+            "price": sp["price"],
+            "separate_price": sp["separate_price"],
+            "other_items": sp["other_items"] or "",
+            "saving": saving,
+            "stock": sp_stock,
+            "is_pack": 1,
+            "items": sp_items
+        })
+
+    return {
+        "id": b["id"], "code": b["code"], "title": b["title"], "volume": b["volume"], "price": b["price"],
+        "is_pack": 0, "lots": lots, "stock": sum(l["remaining"] for l in lots),
+        "suggested_packs": suggested_packs
+    }
 
 
 @app.get("/api/books/scan/{code}")

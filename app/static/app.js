@@ -1644,7 +1644,29 @@ VIEWS.pos = async () => {
   $('#view').innerHTML = `<div class="pos"><div class="pos-l"><div class="toolbar"><input class="search" id="q" placeholder="Rechercher un titre, ou scanner / saisir un code ISBN puis Entrée…" autofocus>
     <select id="fOwner"><option value="">Toutes origines</option>${S.owners.map(o => `<option>${esc(o.name)}</option>`).join('')}</select><label class="row muted"><input type="checkbox" id="inStock" checked> En stock</label></div>
     <div class="books" id="books"></div></div>
-    <div class="card cart" id="cart"><h3>Panier <button class="btn ghost sm" id="clear">Vider</button></h3><div class="cart-items" id="items"></div>
+    <div class="card cart" id="cart">
+      <div id="desktopPackUpsell" style="display:none;margin-bottom:12px;background:radial-gradient(circle at 90% 10%, rgba(168, 85, 247, 0.22) 0%, var(--panel2) 75%);border:1px solid rgba(192, 132, 252, 0.45);box-shadow:0 4px 16px rgba(147, 51, 234, 0.25);border-radius:12px;padding:10px 14px">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-size:11.5px;font-weight:700;color:#d8b4fe;text-transform:uppercase;letter-spacing:0.5px">
+            🎁 Offre Pack Recommandée (Upsell)
+          </div>
+          <button type="button" id="btnDeskClosePack" class="btn ghost sm" style="padding:1px 6px;line-height:1;border:none" title="Fermer">✕</button>
+        </div>
+        <div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:8px">
+          <div>
+            <b id="deskPackTitle" style="font-size:14px;color:#fff">PACK</b>
+            <div id="deskPackOther" class="muted" style="font-size:12px;margin-top:2px">Inclus également</div>
+          </div>
+          <div style="text-align:right">
+            <span id="deskPackOldPrice" class="muted" style="text-decoration:line-through;font-size:12px;margin-right:6px">0 €</span>
+            <b id="deskPackPrice" style="font-size:17px;color:#c084fc">0 €</b>
+          </div>
+        </div>
+        <button type="button" id="btnDeskConvertPack" class="btn good sm" style="width:100%;padding:8px 12px;font-weight:700;background:linear-gradient(135deg, #9333ea, #c026d3);border-color:#f0abfc;color:#fff;box-shadow:0 0 10px rgba(168,85,247,0.4)">
+          ⚡ Remplacer par le Pack <span id="deskPackSaving" style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:10px;margin-left:6px;font-size:11px;color:#86efac">Éco 0 €</span>
+        </button>
+      </div>
+      <h3>Panier <button class="btn ghost sm" id="clear">Vider</button></h3><div class="cart-items" id="items"></div>
     <div class="total"><span>Total</span><b id="tot">0 €</b></div>
     <div class="row" style="margin-bottom:8px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option><option>CB</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
 
@@ -1740,7 +1762,17 @@ VIEWS.pos = async () => {
   const complete = l => comps(l).every(c => got(l, c.book_id) === c.need);
   const defaultAllocForBook = (b, qty = 1) => {
     const alloc = {};
-    if (b.is_pack) return alloc;
+    if (b.is_pack) {
+      (b.items || []).forEach(it => {
+        const lots = (it.lots || []).filter(l => l.remaining > 0);
+        let cr = lots.find(l => (l.owner || '').trim().toLowerCase() === 'cité royale');
+        if (!cr && lots.length) cr = lots[0];
+        if (cr) {
+          alloc[`${it.book_id}|${cr.id}`] = (it.qty || 1) * qty;
+        }
+      });
+      return alloc;
+    }
     const lots = (b.lots || []).filter(l => l.remaining > 0);
     if (!lots.length) return alloc;
     let chosen = lots.find(l => (l.owner || '').trim().toLowerCase() === 'cité royale');
@@ -1750,30 +1782,99 @@ VIEWS.pos = async () => {
     }
     return alloc;
   };
+
+  let currentDeskUpsell = null;
+
+  const checkDeskPackUpsell = b => {
+    if (!b || b.is_pack) {
+      hideDeskPackUpsell();
+      return;
+    }
+    const packs = (b.suggested_packs || []).filter(p => p.saving > 0);
+    if (!packs.length) {
+      hideDeskPackUpsell();
+      return;
+    }
+    const pack = packs.find(p => p.stock > 0) || packs[0];
+    currentDeskUpsell = { singleBook: b, pack };
+    const banner = $('#desktopPackUpsell');
+    if (!banner) return;
+    $('#deskPackTitle').textContent = pack.title;
+    $('#deskPackOther').textContent = 'Inclus également : ' + (pack.other_items || 'Composition avantageuse');
+    $('#deskPackOldPrice').textContent = eur(pack.separate_price);
+    $('#deskPackPrice').textContent = eur(pack.price);
+    $('#deskPackSaving').textContent = `Éco ${eur(pack.saving)}`;
+    banner.style.display = 'block';
+  };
+
+  const hideDeskPackUpsell = () => {
+    currentDeskUpsell = null;
+    const banner = $('#desktopPackUpsell');
+    if (banner) banner.style.display = 'none';
+  };
+
   const add = id => {
+    const b = S.books.find(x => x.id === id);
     const l = S.cart.find(x => x.id === id);
     if (l) {
       l.qty++;
-      const b = S.books.find(x => x.id === id);
-      const curAllocTotal = got(l, b.id);
-      if (curAllocTotal < l.qty) {
-        const allLots = (b.lots || []).filter(lot => lot.remaining > 0);
-        let cr = allLots.find(lot => (lot.owner || '').trim().toLowerCase() === 'cité royale');
-        if (!cr && allLots.length === 1) cr = allLots[0];
-        if (cr) {
-          const key = `${b.id}|${cr.id}`;
-          const currentInKey = l.alloc[key] || 0;
-          if (currentInKey < cr.remaining) {
-            l.alloc[key] = currentInKey + 1;
+      if (!b.is_pack) {
+        const curAllocTotal = got(l, b.id);
+        if (curAllocTotal < l.qty) {
+          const allLots = (b.lots || []).filter(lot => lot.remaining > 0);
+          let cr = allLots.find(lot => (lot.owner || '').trim().toLowerCase() === 'cité royale');
+          if (!cr && allLots.length === 1) cr = allLots[0];
+          if (cr) {
+            const key = `${b.id}|${cr.id}`;
+            const currentInKey = l.alloc[key] || 0;
+            if (currentInKey < cr.remaining) {
+              l.alloc[key] = currentInKey + 1;
+            }
           }
         }
+      } else {
+        // Auto-increment pack component allocations
+        (b.items || []).forEach(it => {
+          const lots = (it.lots || []).filter(lot => lot.remaining > 0);
+          let cr = lots.find(lot => (lot.owner || '').trim().toLowerCase() === 'cité royale');
+          if (!cr && lots.length) cr = lots[0];
+          if (cr) {
+            const key = `${it.book_id}|${cr.id}`;
+            l.alloc[key] = (l.alloc[key] || 0) + (it.qty || 1);
+          }
+        });
       }
     } else {
-      const b = S.books.find(x => x.id === id);
       S.cart.push({ id, qty: 1, price: b.price, alloc: defaultAllocForBook(b, 1) });
     }
     cart();
+    checkDeskPackUpsell(b);
   };
+
+  const btnDeskConvert = $('#btnDeskConvertPack');
+  if (btnDeskConvert) {
+    btnDeskConvert.onclick = () => {
+      if (!currentDeskUpsell) return;
+      const { singleBook, pack } = currentDeskUpsell;
+      const idx = S.cart.findIndex(x => x.id === singleBook.id);
+      if (idx !== -1) {
+        if (S.cart[idx].qty > 1) {
+          S.cart[idx].qty--;
+        } else {
+          S.cart.splice(idx, 1);
+        }
+      }
+      add(pack.id);
+      toast(`✓ Converti en ${pack.title} (-${eur(pack.saving)} d'économie client) !`);
+      hideDeskPackUpsell();
+    };
+  }
+  const btnDeskClose = $('#btnDeskClosePack');
+  if (btnDeskClose) {
+    btnDeskClose.onclick = () => {
+      hideDeskPackUpsell();
+    };
+  }
 
   const updatePayDropdown = () => {
     const paySel = $('#pay');
@@ -1812,7 +1913,7 @@ VIEWS.pos = async () => {
     if (t.dataset.p != null) { S.cart[+t.dataset.p].price = +t.value; cart() }
     else if (t.dataset.a != null) { const mx = t.dataset.max ? +t.dataset.max : Infinity; S.cart[+t.dataset.a].alloc[t.dataset.k] = Math.max(0, Math.min(mx, parseInt(t.value) || 0)); cart() }
   };
-  $('#clear').onclick = () => { S.cart = []; cart() };
+  $('#clear').onclick = () => { S.cart = []; hideDeskPackUpsell(); cart() };
   $('#valid').onclick = safe(async () => {
     if (!S.cart.length) return toast('Panier vide', 'warn');
     const bad = S.cart.find(l => !complete(l));
@@ -1831,7 +1932,7 @@ VIEWS.pos = async () => {
       }))
     });
     toast(`Vente enregistrée : ${eur(r.total)}`);
-    S.cart = []; curGender = ''; curAge = ''; curStar = 0;
+    S.cart = []; curGender = ''; curAge = ''; curStar = 0; hideDeskPackUpsell();
     if (btnStar) {
       btnStar.classList.remove('on');
       btnStar.style.background = '';

@@ -110,6 +110,7 @@ let payOptions = [];
 let originPayments = {};  // { [ownerName]: { method: 'CB'|'Espèces'|'Wero'|'Multi', parts: [{payment, amount}]|null } }
 
 function getItemOwner(item) {
+  if (item.book.is_pack) return 'Cité Royale';
   if (item.lot === 'none') return 'Hors stock';
   if (item.lot === undefined) return 'À préciser';
   const l = (item.book.lots || []).find(x => x.id === item.lot);
@@ -146,6 +147,7 @@ function getDefaultPaymentForOwner(owner) {
 }
 
 function lotRemaining(item) {
+  if (item.book.is_pack) return item.book.stock != null ? item.book.stock : Infinity;
   if (item.lot === undefined || item.lot === 'none') return Infinity;
   const l = item.book.lots.find(x => x.id === item.lot);
   return l ? l.remaining : 0;
@@ -159,8 +161,51 @@ function defaultLotForBook(book) {
   return cr ? cr.id : lots[0].id;
 }
 
+let currentUpsellContext = null;
+
+function checkAndShowPackUpsell(book) {
+  const packs = (book.suggested_packs || []).filter(p => p.saving > 0);
+  if (!packs.length) {
+    hidePackUpsell();
+    return;
+  }
+  const pack = packs.find(p => p.stock > 0) || packs[0];
+  currentUpsellContext = { singleBook: book, pack };
+
+  const card = $('#packUpsellCard');
+  if (!card) return;
+  $('#packUpsellTitle').textContent = pack.title;
+  $('#packUpsellOldPrice').textContent = eur(pack.separate_price);
+  $('#packUpsellPrice').textContent = eur(pack.price);
+  $('#packUpsellOther').textContent = pack.other_items || 'Articles du pack';
+  $('#packUpsellSavingBadge').textContent = `Éco ${eur(pack.saving)}`;
+  card.style.display = 'block';
+}
+
+function hidePackUpsell() {
+  currentUpsellContext = null;
+  const card = $('#packUpsellCard');
+  if (card) card.style.display = 'none';
+}
+
+function addPackToCart(pack) {
+  beep();
+  const ex = cart.find(i => i.book.id === pack.id);
+  if (ex) {
+    if (ex.qty + 1 > (pack.stock || 999)) toast('Stock maximum atteint pour ce pack', 'warn');
+    else ex.qty++;
+  } else {
+    cart.push({ book: pack, qty: 1, lot: 'pack' });
+  }
+  toast('Pack ajouté : ' + pack.title);
+  renderCart();
+}
+
 function addToCart(book) {
-  if (book.is_pack) return toast('Pack : à encaisser depuis la caisse du poste (composition à répartir)', 'warn');
+  if (book.is_pack) {
+    addPackToCart(book);
+    return;
+  }
   beep();
   const defLot = defaultLotForBook(book);
   const ex = cart.find(i => i.book.id === book.id && (i.lot === defLot || i.lot === undefined));
@@ -170,6 +215,7 @@ function addToCart(book) {
   } else cart.push({ book, qty: 1, lot: defLot });
   toast('Ajouté : ' + book.title);
   renderCart();
+  checkAndShowPackUpsell(book);
 }
 
 /* ---------- Modale Paiement Fractionné / Multi-modes ---------- */
@@ -321,7 +367,30 @@ function renderCart() {
   } else {
     list.replaceChildren(...cart.map((item, idx) => {
       const b = item.book;
-      const lots = b.lots.map(l => el('button', {
+      if (b.is_pack) {
+        return el('div', { class: 'cart-item pack-cart-item' },
+          el('div', { class: 'ci-top' },
+            el('div', {},
+              el('div', { class: 'ci-title' },
+                el('span', { class: 'badge b-pack', style: 'background:linear-gradient(135deg, #9333ea, #c026d3);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px' }, 'PACK'),
+                b.title
+              ),
+              el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:2px' },
+                `${eur(b.price)} / pack · ${(b.items || []).map(i => i.title).join(' + ')}`
+              )
+            ),
+            el('div', { class: 'qty' },
+              el('button', { type: 'button', text: '−', onclick: () => { item.qty--; if (item.qty <= 0) cart.splice(idx, 1); renderCart(); } }),
+              el('b', { text: item.qty }),
+              el('button', { type: 'button', text: '+', onclick: () => { if (item.qty + 1 > (b.stock || 999)) toast('Stock pack atteint', 'warn'); else { item.qty++; renderCart(); } } })
+            )
+          ),
+          el('div', { class: 'lots', style: 'font-size:11px;color:#c084fc;padding:3px 0;font-weight:600' },
+            `📦 Composition : ${b.items ? b.items.length : 2} livres groupés (Cité Royale)`
+          )
+        );
+      }
+      const lots = (b.lots || []).map(l => el('button', {
         class: 'chip' + (item.lot === l.id ? ' on' : ''), type: 'button',
         onclick: () => { item.lot = l.id; item.qty = Math.min(item.qty, l.remaining); renderCart(); }
       }, el('i', { style: 'background:' + (/^#[0-9a-fA-F]{3,8}$/.test(l.color || '') ? l.color : '#8892b0') }),
@@ -504,7 +573,33 @@ function renderCart() {
   $('#btnValidate').disabled = !cart.length || missingLot || missingPay;
   $('#validHint').textContent = !cart.length ? '' : missingLot ? 'Choisissez l\'origine de chaque livre' : missingPay ? 'Choisissez le mode de paiement' : '';
 }
-$('#clearCart').addEventListener('click', () => { cart = []; originPayments = {}; renderCart(); });
+$('#clearCart').addEventListener('click', () => { cart = []; originPayments = {}; hidePackUpsell(); renderCart(); });
+
+const btnConvert = $('#btnConvertPack');
+if (btnConvert) {
+  btnConvert.addEventListener('click', () => {
+    if (!currentUpsellContext) return;
+    const { singleBook, pack } = currentUpsellContext;
+    const idx = cart.findIndex(i => i.book.id === singleBook.id);
+    if (idx !== -1) {
+      if (cart[idx].qty > 1) {
+        cart[idx].qty--;
+      } else {
+        cart.splice(idx, 1);
+      }
+    }
+    addPackToCart(pack);
+    toast(`✓ Converti en ${pack.title} (-${eur(pack.saving)} d'économie) !`);
+    if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
+    hidePackUpsell();
+  });
+}
+const btnCloseUpsell = $('#btnClosePackUpsell');
+if (btnCloseUpsell) {
+  btnCloseUpsell.addEventListener('click', () => {
+    hidePackUpsell();
+  });
+}
 
 async function loadPayOptions() {
   try {
@@ -631,12 +726,34 @@ $('#btnValidate').addEventListener('click', async () => {
     for (let idx = 0; idx < origins.length; idx++) {
       const g = origins[idx];
       const payState = originPayments[g.owner] || { method: 'Espèces', parts: null };
-      const lines = g.items.map(i => ({
-        book_id: i.book.id,
-        qty: i.qty,
-        unit_price: i.book.price,
-        allocations: [{ book_id: i.book.id, lot_id: i.lot === 'none' ? null : i.lot, qty: i.qty }]
-      }));
+      const lines = g.items.map(i => {
+        if (i.book.is_pack) {
+          const allocs = [];
+          for (const comp of (i.book.items || [])) {
+            const compLots = (comp.lots || []).filter(l => l.remaining > 0);
+            let chosenLot = compLots.find(l => (l.owner || '').trim().toLowerCase() === 'cité royale');
+            if (!chosenLot && compLots.length) chosenLot = compLots[0];
+            allocs.push({
+              book_id: comp.book_id,
+              lot_id: chosenLot ? chosenLot.id : null,
+              qty: i.qty * (comp.qty || 1)
+            });
+          }
+          return {
+            book_id: i.book.id,
+            qty: i.qty,
+            unit_price: i.book.price,
+            allocations: allocs
+          };
+        } else {
+          return {
+            book_id: i.book.id,
+            qty: i.qty,
+            unit_price: i.book.price,
+            allocations: [{ book_id: i.book.id, lot_id: i.lot === 'none' ? null : i.lot, qty: i.qty }]
+          };
+        }
+      });
 
       const payload = {
         payment: payState.parts ? payState.parts.map(p => `${p.amount.toFixed(2)} € ${p.payment}`).join(' + ') : payState.method,
@@ -672,6 +789,7 @@ $('#btnValidate').addEventListener('click', async () => {
 
     cart = [];
     originPayments = {};
+    hidePackUpsell();
     mGender = ''; mAge = ''; mStar = 0;
     if (mStarBtn) mStarBtn.classList.remove('on');
     if (mGenEl) {
