@@ -372,6 +372,7 @@ function renderCart() {
       const chips = availablePays.map(p => el('button', {
         type: 'button',
         class: 'chip' + (!currentPay.parts && currentPay.method === p ? ' on' : ''),
+        style: 'flex:1;justify-content:center;padding:7px 2px;font-size:12px',
         onclick: () => {
           originPayments[currentOwner] = { method: p, parts: null };
           renderCart();
@@ -379,19 +380,27 @@ function renderCart() {
       }, p));
 
       // Bouton Cumul / Multi
+      const mpSumm = $('#multiPaySummary');
       if (currentPay.parts && currentPay.parts.length >= 2) {
+        const mpText = `${currentPay.parts[0].amount.toFixed(2)} € ${currentPay.parts[0].payment} + ${currentPay.parts[1].amount.toFixed(2)} € ${currentPay.parts[1].payment}`;
+        if (mpSumm) {
+          mpSumm.textContent = mpText;
+          mpSumm.style.display = 'block';
+        }
         chips.push(el('button', {
           type: 'button',
           class: 'chip multi-on',
-          title: 'Modifier le paiement combiné',
+          style: 'flex:1;justify-content:center;padding:7px 2px;font-size:12px',
+          title: 'Modifier le paiement combiné : ' + mpText,
           onclick: () => openMultiPayModal(currentOwner, total)
-        }, `${currentPay.parts[0].amount.toFixed(0)}€ ${currentPay.parts[0].payment.slice(0,3)}. + ${currentPay.parts[1].amount.toFixed(0)}€ ${currentPay.parts[1].payment.slice(0,2)}. ✎`));
+        }, '✓ Multi ✎'));
       } else {
+        if (mpSumm) mpSumm.style.display = 'none';
         chips.push(el('button', {
           type: 'button',
           class: 'chip',
+          style: 'flex:1;justify-content:center;padding:7px 2px;font-size:12px;color:var(--mut)',
           title: 'Combiner deux modes de paiement (ex: 10€ Espèces + reste CB)',
-          style: 'color:var(--mut)',
           onclick: () => {
             if (!total) return toast('Ajoutez d\'abord un livre au panier', 'warn');
             openMultiPayModal(currentOwner, total);
@@ -404,6 +413,8 @@ function renderCart() {
   } else {
     // Cas 2 : Smart Split - Origines multiples (Cité Royale + ICC Rennes...)
     if (singleRow) singleRow.style.display = 'none';
+    const mpSumm = $('#multiPaySummary');
+    if (mpSumm) mpSumm.style.display = 'none';
     if (splitCont) splitCont.style.display = 'flex';
 
     if (splitCont) {
@@ -420,7 +431,7 @@ function renderCart() {
         const chips = availablePays.map(p => el('button', {
           type: 'button',
           class: 'chip' + (!payState.parts && payState.method === p ? ' on' : ''),
-          style: 'padding:4px 8px;font-size:11.5px',
+          style: 'flex:1;justify-content:center;padding:5px 2px;font-size:11.5px',
           onclick: () => {
             originPayments[g.owner] = { method: p, parts: null };
             renderCart();
@@ -428,28 +439,36 @@ function renderCart() {
         }, p));
 
         if (payState.parts && payState.parts.length >= 2) {
+          const mpText = `${payState.parts[0].amount.toFixed(2)} € ${payState.parts[0].payment} + ${payState.parts[1].amount.toFixed(2)} € ${payState.parts[1].payment}`;
           chips.push(el('button', {
             type: 'button',
             class: 'chip multi-on',
-            style: 'padding:4px 8px;font-size:11.5px',
-            title: 'Modifier le paiement combiné',
+            style: 'flex:1;justify-content:center;padding:5px 2px;font-size:11.5px',
+            title: 'Modifier le paiement combiné : ' + mpText,
             onclick: () => openMultiPayModal(g.owner, g.total)
-          }, `${payState.parts[0].amount.toFixed(0)}€ + ${payState.parts[1].amount.toFixed(0)}€ ✎`));
+          }, '✓ Multi ✎'));
         } else {
           chips.push(el('button', {
             type: 'button',
             class: 'chip',
-            style: 'padding:4px 7px;font-size:11px;color:var(--mut)',
+            style: 'flex:1;justify-content:center;padding:5px 2px;font-size:11.5px;color:var(--mut)',
             onclick: () => openMultiPayModal(g.owner, g.total)
           }, '＋ Multi'));
         }
+
+        const headRight = el('div', { style: 'text-align:right' },
+          el('div', { style: 'font-size:13px;font-weight:800;color:var(--good)' }, eur(g.total)),
+          payState.parts && payState.parts.length >= 2
+            ? el('div', { style: 'font-size:9.5px;color:#c4b5fd;font-weight:700;line-height:1.1' },
+                `${payState.parts[0].amount.toFixed(0)}€ ${payState.parts[0].payment.slice(0,3)} + ${payState.parts[1].amount.toFixed(0)}€ ${payState.parts[1].payment.slice(0,2)}`)
+            : null);
 
         return el('div', { class: cardClass },
           el('div', { class: 'split-head' },
             el('span', { style: 'display:flex;align-items:center;gap:4px' },
               icon + g.owner,
               el('span', { style: 'font-size:10px;color:var(--mut);font-weight:400' }, `(${g.count} ex.)`)),
-            el('span', { style: 'font-size:13px;font-weight:800;color:var(--good)' }, eur(g.total))),
+            headRight),
           el('div', { class: 'split-chips' }, chips));
       }));
     }

@@ -164,7 +164,7 @@ button, select, input { font:inherit; color:inherit; }
 .qty { display:flex; align-items:center; gap:8px; flex:none; }
 .qty button { width:30px; height:30px; border-radius:9px; border:1px solid var(--line); background:var(--card); font-size:17px; cursor:pointer; }
 .lots { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.chip { border:1px solid var(--line); background:var(--card); border-radius:999px; padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+.chip { border:1px solid var(--line); background:var(--card); border-radius:999px; padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; user-select:none; }
 .chip i { width:8px; height:8px; border-radius:50%; display:inline-block; }
 .chip.on { background:var(--a1); border-color:var(--a1); }
 .hint { font-size:11px; color:var(--warn); margin-top:6px; }
@@ -393,13 +393,16 @@ button, select, input { font:inherit; color:inherit; }
   </main>
 
   <footer class="bottom-bar" id="saleBottom">
-    <!-- Ligne 1 (Origine Unique) : Total et modes de paiement sur la même ligne ultra-compacte -->
-    <div id="singleOriginRow" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
-      <div>
-        <div style="font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</div>
-        <div class="val" id="totalVal" style="font-size:22px;font-weight:800;color:var(--good);line-height:1.1">0,00 €</div>
+    <!-- Ligne 1 (Origine Unique) : Total & Résumé multi-mode au dessus, puis 4 modes de paiement équilibrés à 100% de largeur -->
+    <div id="singleOriginRow" style="margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <span style="font-size:11px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</span>
+          <span class="val" id="totalVal" style="font-size:20px;font-weight:800;color:var(--good);line-height:1">0,00 €</span>
+        </div>
+        <div id="multiPaySummary" style="display:none;font-size:11px;color:#c4b5fd;font-weight:700;text-align:right"></div>
       </div>
-      <div class="pay-chips" id="payChips" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
+      <div class="pay-chips" id="payChips" style="display:flex;gap:4px;width:100%"></div>
       <input type="hidden" id="payMethod" value="">
     </div>
 
