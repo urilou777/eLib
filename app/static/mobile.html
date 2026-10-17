@@ -220,6 +220,19 @@ button, select, input { font:inherit; color:inherit; }
 }
 .chip-homme.on svg { stroke: #fff !important; }
 
+/* 2-Tap Couple / Foyer : Union harmonieuse violette des deux puces */
+#mDemoGender.is-couple .chip-femme.on,
+#mDemoGender.is-couple .chip-homme.on {
+  background: linear-gradient(135deg, #9333ea, #c026d3) !important;
+  border-color: #f0abfc !important;
+  box-shadow: 0 0 12px rgba(192, 38, 211, 0.5) !important;
+  color: #fff !important;
+}
+#mDemoGender.is-couple .chip-femme.on svg,
+#mDemoGender.is-couple .chip-homme.on svg {
+  stroke: #fff !important;
+}
+
 .chip-star {
   border-color: rgba(245, 158, 11, 0.4) !important;
   color: #fbbf24 !important;
@@ -416,11 +429,12 @@ button, select, input { font:inherit; color:inherit; }
     <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:6px 8px;margin-bottom:8px">
       <!-- Rangée 1 : Genre (Rose Femme / Bleu Homme) | Séparateur | Client Star (Étoile dorée) -->
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-        <div style="display:flex;gap:5px;flex:1" id="mDemoGender">
+        <div style="display:flex;gap:5px;flex:1;position:relative" id="mDemoGender">
           <button type="button" class="chip chip-femme" data-g="Femme" title="Femme" style="flex:1;justify-content:center;padding:5px 6px;font-size:12px">
             <svg style="width:13px;height:13px;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
             <span>Femme</span>
           </button>
+          <span id="mCoupleBadge" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg, #9333ea, #c026d3);color:#fff;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;box-shadow:0 0 10px rgba(0,0,0,0.45);pointer-events:none;z-index:3;white-space:nowrap;letter-spacing:0.3px">Couple 💜</span>
           <button type="button" class="chip chip-homme" data-g="Homme" title="Homme" style="flex:1;justify-content:center;padding:5px 6px;font-size:12px">
             <svg style="width:13px;height:13px;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
             <span>Homme</span>

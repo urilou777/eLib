@@ -956,6 +956,12 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   color: #fff !important;
   border-color: var(--icc-purple) !important;
 }
+#demoGender.is-couple .demo-btn.on {
+  background: linear-gradient(135deg, #9333ea, #c026d3) !important;
+  border-color: #f0abfc !important;
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.45) !important;
+}
 
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--mut); flex-wrap: wrap; margin-top: 10px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
@@ -1052,7 +1058,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
 
 .gender-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
 }
 .gender-card {
@@ -1082,6 +1088,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
 }
 .gender-icon-f { background: rgba(180, 82, 211, 0.2); color: #d37cf0; }
 .gender-icon-m { background: rgba(90, 155, 255, 0.2); color: #7cb3ff; }
+.gender-icon-c { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
 
 .star-highlight {
   background: radial-gradient(circle at 100% 0%, rgba(230, 167, 60, 0.15) 0%, transparent 70%), var(--panel2);

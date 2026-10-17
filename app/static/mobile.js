@@ -574,13 +574,26 @@ if (mGenEl) {
   mGenEl.addEventListener('click', e => {
     const b = e.target.closest('button[data-g]');
     if (b) {
-      const isAlreadyOn = b.classList.contains('on');
-      mGenEl.querySelectorAll('button').forEach(btn => btn.classList.remove('on'));
-      if (isAlreadyOn) {
-        mGender = '';
+      b.classList.toggle('on');
+      const fOn = mGenEl.querySelector('button[data-g="Femme"]')?.classList.contains('on');
+      const hOn = mGenEl.querySelector('button[data-g="Homme"]')?.classList.contains('on');
+      const cBadge = $('#mCoupleBadge');
+      if (fOn && hOn) {
+        mGender = 'Couple';
+        mGenEl.classList.add('is-couple');
+        if (cBadge) cBadge.style.display = 'block';
+      } else if (fOn) {
+        mGender = 'Femme';
+        mGenEl.classList.remove('is-couple');
+        if (cBadge) cBadge.style.display = 'none';
+      } else if (hOn) {
+        mGender = 'Homme';
+        mGenEl.classList.remove('is-couple');
+        if (cBadge) cBadge.style.display = 'none';
       } else {
-        b.classList.add('on');
-        mGender = b.dataset.g;
+        mGender = '';
+        mGenEl.classList.remove('is-couple');
+        if (cBadge) cBadge.style.display = 'none';
       }
       updateProfileSummary();
     }
@@ -661,7 +674,12 @@ $('#btnValidate').addEventListener('click', async () => {
     originPayments = {};
     mGender = ''; mAge = ''; mStar = 0;
     if (mStarBtn) mStarBtn.classList.remove('on');
-    if (mGenEl) mGenEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    if (mGenEl) {
+      mGenEl.classList.remove('is-couple');
+      mGenEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+      const cb = $('#mCoupleBadge');
+      if (cb) cb.style.display = 'none';
+    }
     if (mAgeEl) mAgeEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
     updateProfileSummary();
   } catch (e) {

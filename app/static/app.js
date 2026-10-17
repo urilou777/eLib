@@ -805,7 +805,7 @@ async function renderMatrixStudio(from, to, effectiveFrom, effectiveTo) {
   const DIM_OPTIONS = [
     { id: 'moment', label: '☀️ Culte / Temps de vente' },
     { id: 'age', label: '🎂 Tranche d\'Âge' },
-    { id: 'gender', label: '👤 Genre (Femme / Homme)' },
+    { id: 'gender', label: '👤 Démographie (Femme / Homme / Couple)' },
     { id: 'star', label: '⭐ Engagement Serviteur STAR' },
     { id: 'category', label: '📚 Rayon / Catégorie' },
     { id: 'publisher', label: '🏢 Éditeur' },
@@ -1219,10 +1219,12 @@ VIEWS.dashboard = async () => {
   // Démographie : Genre avec pictogrammes
   const f = (st.by_gender || []).find(x => x.label === 'Femme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
   const h = (st.by_gender || []).find(x => x.label === 'Homme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
-  const unkGen = (st.by_gender || []).find(x => x.label !== 'Femme' && x.label !== 'Homme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
-  const totQualGen = (f.revenue + h.revenue) || 1;
+  const cpl = (st.by_gender || []).find(x => x.label === 'Couple') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
+  const unkGen = (st.by_gender || []).find(x => x.label !== 'Femme' && x.label !== 'Homme' && x.label !== 'Couple') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
+  const totQualGen = (f.revenue + h.revenue + cpl.revenue) || 1;
   const fPct = Math.round((f.revenue / totQualGen) * 100);
   const hPct = Math.round((h.revenue / totQualGen) * 100);
+  const cplPct = Math.round((cpl.revenue / totQualGen) * 100);
 
   // Démographie : Tranches d'âge
   const ageLabels = {
@@ -1330,6 +1332,23 @@ VIEWS.dashboard = async () => {
             <div style="font-size:11.5px;color:var(--mut)">${h.n} ticket${h.n > 1 ? 's' : ''} · Panier <b>${eur(h.avg_basket)}</b></div>
             <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
               <div class="fl" style="width:${hPct}%;height:100%;background:linear-gradient(90deg, #5a9bff, #7cb3ff)"></div>
+            </div>
+          </div>
+
+          <div class="gender-card">
+            <div class="gender-header">
+              <div class="gender-icon-box gender-icon-c" title="Couple">
+                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </div>
+              <div>
+                <div>Couples &amp; Foyers</div>
+                <div class="muted" style="font-size:11px;font-weight:400">${cplPct}% qualifié</div>
+              </div>
+            </div>
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(cpl.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut)">${cpl.n} ticket${cpl.n > 1 ? 's' : ''} · Panier <b>${eur(cpl.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+              <div class="fl" style="width:${cplPct}%;height:100%;background:linear-gradient(90deg, #a855f7, #ec4899)"></div>
             </div>
           </div>
         </div>
@@ -1634,7 +1653,7 @@ VIEWS.pos = async () => {
         <span style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Profil client (statistique)</span>
         <button type="button" class="btn sm ghost demo-btn" id="btnStar" data-star="0" style="padding:2px 8px!important;font-weight:700">⭐ Serviteur STAR</button>
       </div>
-      <div class="row" style="gap:6px;margin-bottom:6px" id="demoGender">
+      <div class="row" style="gap:6px;margin-bottom:6px;align-items:center" id="demoGender">
         <button type="button" class="btn sm ghost demo-btn" data-g="Femme" style="display:inline-flex;align-items:center;gap:5px">
           <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
           Femme
@@ -1643,6 +1662,7 @@ VIEWS.pos = async () => {
           <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
           Homme
         </button>
+        <span id="demoGenderCoupleBadge" style="display:none;font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;background:linear-gradient(135deg, #9333ea, #c026d3);color:#fff;box-shadow:0 0 8px rgba(168,85,247,0.4)">Couple / Foyer 💜</span>
       </div>
       <div class="row" style="gap:6px" id="demoAge">
         <button type="button" class="btn sm ghost demo-btn" data-a="Enfant / Ado">Ado (&lt;18)</button>
@@ -1671,13 +1691,26 @@ VIEWS.pos = async () => {
   $('#demoGender').onclick = e => {
     const b = e.target.closest('button[data-g]');
     if (b) {
-      const isAlreadyOn = b.classList.contains('on');
-      $('#demoGender').querySelectorAll('button').forEach(btn => btn.classList.remove('on'));
-      if (isAlreadyOn) {
-        curGender = '';
+      b.classList.toggle('on');
+      const fOn = $('#demoGender button[data-g="Femme"]')?.classList.contains('on');
+      const hOn = $('#demoGender button[data-g="Homme"]')?.classList.contains('on');
+      const cplBadge = $('#demoGenderCoupleBadge');
+      if (fOn && hOn) {
+        curGender = 'Couple';
+        $('#demoGender').classList.add('is-couple');
+        if (cplBadge) cplBadge.style.display = 'inline-block';
+      } else if (fOn) {
+        curGender = 'Femme';
+        $('#demoGender').classList.remove('is-couple');
+        if (cplBadge) cplBadge.style.display = 'none';
+      } else if (hOn) {
+        curGender = 'Homme';
+        $('#demoGender').classList.remove('is-couple');
+        if (cplBadge) cplBadge.style.display = 'none';
       } else {
-        b.classList.add('on');
-        curGender = b.dataset.g;
+        curGender = '';
+        $('#demoGender').classList.remove('is-couple');
+        if (cplBadge) cplBadge.style.display = 'none';
       }
     }
   };
@@ -1798,7 +1831,19 @@ VIEWS.pos = async () => {
       }))
     });
     toast(`Vente enregistrée : ${eur(r.total)}`);
-    S.cart = []; curGender = ''; curAge = ''; curStar = 0; await loadRef(); draw(); cart();
+    S.cart = []; curGender = ''; curAge = ''; curStar = 0;
+    if (btnStar) {
+      btnStar.classList.remove('on');
+      btnStar.style.background = '';
+      btnStar.style.borderColor = '';
+      btnStar.style.color = '';
+    }
+    const cplBadge = $('#demoGenderCoupleBadge');
+    if (cplBadge) cplBadge.style.display = 'none';
+    $('#demoGender')?.classList.remove('is-couple');
+    $('#demoGender')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    $('#demoAge')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    await loadRef(); draw(); cart();
   });
   draw(); cart();
 };
@@ -1915,8 +1960,17 @@ VIEWS.catalog = async () => {
 /* ---- Ventes ---- */
 VIEWS.sales = async () => {
   const rows = await api('/api/sales?limit=500');
-  $('#view').innerHTML = `<div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Culte / Temps</th><th>Détail</th><th>Paiement</th><th>Libraire</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
-  ${rows.map(s => `<tr><td>${s.date}</td><td><span class="chip" style="font-size:11px">${esc(s.service_moment || 'Non précisé')}</span></td><td class="td-wrap">${esc(s.detail)}</td><td><span class="chip">${esc(s.payment)}</span></td><td><span class="chip"><i style="background:var(--a1)"></i>${esc(s.user_name || 'Anonyme')}</span></td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`).join('') || '<tr><td colspan=8 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
+  $('#view').innerHTML = `<div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Culte / Temps</th><th>Profil</th><th>Détail</th><th>Paiement</th><th>Libraire</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
+  ${rows.map(s => {
+    let demoTag = '';
+    if (s.customer_gender === 'Couple') demoTag += '<span class="chip" style="background:rgba(168,85,247,0.18);color:#c084fc;font-weight:600">Couple 💜</span> ';
+    else if (s.customer_gender === 'Femme') demoTag += '<span class="chip" style="background:rgba(236,72,153,0.18);color:#f472b6;font-weight:600">Femme</span> ';
+    else if (s.customer_gender === 'Homme') demoTag += '<span class="chip" style="background:rgba(59,130,246,0.18);color:#60a5fa;font-weight:600">Homme</span> ';
+    if (s.customer_age_group) demoTag += `<span class="chip" style="font-size:10.5px">${esc(s.customer_age_group)}</span> `;
+    if (s.is_star) demoTag += '<span class="chip" style="background:rgba(230,167,60,0.18);color:#fbbf24;font-weight:700">⭐ STAR</span>';
+    if (!demoTag) demoTag = '<span class="muted" style="font-size:11px">—</span>';
+    return `<tr><td>${s.date}</td><td><span class="chip" style="font-size:11px">${esc(s.service_moment || 'Non précisé')}</span></td><td>${demoTag}</td><td class="td-wrap">${esc(s.detail)}</td><td><span class="chip">${esc(s.payment)}</span></td><td><span class="chip"><i style="background:var(--a1)"></i>${esc(s.user_name || 'Anonyme')}</span></td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`;
+  }).join('') || '<tr><td colspan=9 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
   $('#view').onclick = safe(async e => { const b = e.target.closest('button[data-id]'); if (b && confirm('Annuler cette vente ? Le stock sera restitué.')) { await api(`/api/sales/${b.dataset.id}`, 'DELETE'); toast('Vente annulée'); go('sales') } });
 };
 
