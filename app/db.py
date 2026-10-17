@@ -153,6 +153,8 @@ def init():
             c.execute("ALTER TABLE sales ADD COLUMN customer_age_group TEXT")
         if "is_star" not in cols_sales:
             c.execute("ALTER TABLE sales ADD COLUMN is_star INTEGER DEFAULT 0")
+        if "service_moment" not in cols_sales:
+            c.execute("ALTER TABLE sales ADD COLUMN service_moment TEXT")
         if not c.execute("SELECT 1 FROM owners").fetchone():
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('Cité Royale','maison_mere',100,1,'#ffb454')")
             c.execute("INSERT INTO owners(name,kind,reverse_pct,priority,color) VALUES('ICC Rennes','locale',0,2,'#5ee6b0')")
@@ -163,6 +165,7 @@ def init():
                 ('category', 'Standard'), ('category', 'Bible'), ('category', 'Pack'), ('category', 'Enfant'), ('category', 'Vie chrétienne'),
                 ('type', 'Souple'), ('type', 'Rigide'), ('type', 'Poche'), ('type', 'Broché'),
                 ('payment', 'Espèces'), ('payment', 'PayPal POS (CB)'), ('payment', 'Wero'), ('payment', 'Don / Offert'),
+                ('service_moment', '1er Culte (Principal)'), ('service_moment', '2e Culte (Jeunes EJP)'), ('service_moment', 'Occasion spéciale'), ('service_moment', 'En semaine / Autre'),
                 ('publisher', 'Metanoia & Vie'), ('publisher', 'Société Biblique de Genève'), ('publisher', 'Excelsis'), ('publisher', 'RADD')
             ]
             c.executemany("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES(?,?)", default_opts)
@@ -170,6 +173,9 @@ def init():
             # S'assurer que PayPal POS (CB) et Wero sont proposés dans les options de paiement
             c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'PayPal POS (CB)')")
             c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('payment', 'Wero')")
+            # S'assurer des options de cultes par défaut
+            for sm in ['1er Culte (Principal)', '2e Culte (Jeunes EJP)', 'Occasion spéciale', 'En semaine / Autre']:
+                c.execute("INSERT OR IGNORE INTO dropdown_options(group_key, label) VALUES('service_moment', ?)", (sm,))
 
         # Initialisation d'un premier profil utilisateur si vide
         if not c.execute("SELECT 1 FROM users").fetchone():
@@ -261,7 +267,7 @@ def _insert_alloc(c, line_id, book_id, lot_id, qty, unit_rev, day):
               (line_id, book_id, lot_id, lot["owner_id"], qty, unit_rev * qty, due, day))
 
 
-def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme", customer_gender=None, customer_age_group=None, is_star=0):
+def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme", customer_gender=None, customer_age_group=None, is_star=0, service_moment=None):
     """lines: [{book_id, qty, unit_price, allocations:[{book_id, lot_id, qty}]}] -> (sale_id, warnings).
     manual=True : le libraire désigne explicitement les lots (aucun choix automatique).
     manual=False : réservé à l'import de l'historique Excel (répartition auto, priorité des origines)."""
@@ -269,8 +275,8 @@ def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme", 
     if not lines:
         raise ValueError("Panier vide")
     warnings = []
-    sale_id = c.execute("INSERT INTO sales(date,payment,note,user_name,customer_gender,customer_age_group,is_star) VALUES(?,?,?,?,?,?,?)",
-                        (day, payment or "Espèces", note, user_name or "Anonyme", customer_gender, customer_age_group, int(bool(is_star)))).lastrowid
+    sale_id = c.execute("INSERT INTO sales(date,payment,note,user_name,customer_gender,customer_age_group,is_star,service_moment) VALUES(?,?,?,?,?,?,?,?)",
+                        (day, payment or "Espèces", note, user_name or "Anonyme", customer_gender, customer_age_group, int(bool(is_star)), service_moment)).lastrowid
     for ln in lines:
         b = c.execute("SELECT * FROM books WHERE id=?", (ln["book_id"],)).fetchone()
         qty = int(ln["qty"])

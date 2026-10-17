@@ -113,13 +113,23 @@ function lotRemaining(item) {
   const l = item.book.lots.find(x => x.id === item.lot);
   return l ? l.remaining : 0;
 }
+function defaultLotForBook(book) {
+  const lots = (book.lots || []).filter(l => l.remaining > 0);
+  if (!lots.length) return undefined;
+  if (lots.length === 1) return lots[0].id;
+  const cr = lots.find(l => (l.owner || '').trim().toLowerCase() === 'cité royale');
+  return cr ? cr.id : lots[0].id;
+}
+
 function addToCart(book) {
   if (book.is_pack) return toast('Pack : à encaisser depuis la caisse du poste (composition à répartir)', 'warn');
   beep();
-  const ex = cart.find(i => i.book.id === book.id);
+  const defLot = defaultLotForBook(book);
+  const ex = cart.find(i => i.book.id === book.id && (i.lot === defLot || i.lot === undefined));
   if (ex) {
+    if (ex.lot === undefined && defLot !== undefined) ex.lot = defLot;
     if (ex.qty + 1 > lotRemaining(ex)) toast('Stock du lot choisi atteint', 'warn'); else ex.qty++;
-  } else cart.push({ book, qty: 1, lot: undefined });
+  } else cart.push({ book, qty: 1, lot: defLot });
   toast('Ajouté : ' + book.title);
   renderCart();
 }
@@ -160,37 +170,27 @@ function renderCart() {
 
   const missingLot = cart.some(i => i.lot === undefined);
   
-  // Règle PayPal POS : réservé exclusivement à Cité Royale
-  const hasNonCR = cart.some(i => {
-    if (i.lot === 'none') return true;
-    if (i.lot !== undefined) {
-      const lot = (i.book.lots || []).find(x => x.id === i.lot);
-      if (lot && (lot.owner || '').trim().toLowerCase() !== 'cité royale') return true;
+  const payChipsEl = $('#payChips');
+  const payInput = $('#payMethod');
+  if (payChipsEl && payInput) {
+    if (!payInput.value && payOptions.length) {
+      payInput.value = payOptions[0]; // sélection par défaut fluide
     }
-    return false;
-  });
-
-  const paySelect = $('#payMethod');
-  const curPay = paySelect.value;
-  const filteredPay = payOptions.filter(p => {
-    if (p.toLowerCase().includes('paypal') && hasNonCR) return false;
-    return true;
-  });
-
-  paySelect.replaceChildren(
-    el('option', { value: '', text: '— Mode de paiement —' }),
-    ...filteredPay.map(p => el('option', { value: p, text: p, selected: p === curPay }))
-  );
-  if (curPay.toLowerCase().includes('paypal') && hasNonCR) {
-    paySelect.value = '';
+    payChipsEl.replaceChildren(...payOptions.map(p => el('button', {
+      type: 'button',
+      class: 'chip' + (payInput.value === p ? ' on' : ''),
+      onclick: () => {
+        payInput.value = p;
+        renderCart();
+      }
+    }, p)));
   }
 
-  const missingPay = !paySelect.value;
+  const missingPay = !payInput || !payInput.value;
   $('#btnValidate').disabled = !cart.length || missingLot || missingPay;
   $('#validHint').textContent = !cart.length ? '' : missingLot ? 'Choisissez l\'origine de chaque livre' : missingPay ? 'Choisissez le mode de paiement' : '';
 }
 $('#clearCart').addEventListener('click', () => { cart = []; renderCart(); });
-$('#payMethod').addEventListener('change', renderCart);
 
 async function loadPayOptions() {
   try { const o = await api('/api/options'); payOptions = (o.payment || []).map(p => p.label); } catch (e) { payOptions = []; }
@@ -201,6 +201,63 @@ async function loadPayOptions() {
 let mGender = '';
 let mAge = '';
 let mStar = 0;
+
+const DEFAULT_MOBILE_MOMENTS = [
+  '1er Culte (Principal)',
+  '2e Culte (Jeunes EJP)',
+  'Occasion spéciale',
+  'En semaine / Autre'
+];
+
+function getAutoMobileMoment() {
+  const isSunday = new Date().getDay() === 0;
+  const currentHour = new Date().getHours();
+  return isSunday ? (currentHour >= 12 ? '2e Culte (Jeunes EJP)' : '1er Culte (Principal)') : 'En semaine / Autre';
+}
+
+let mMoment = localStorage.getItem('librairie_mobile_moment') || getAutoMobileMoment();
+
+function updateMomentDisplay() {
+  const lbl = $('#mMomentLabel');
+  if (lbl) {
+    // Version raccourcie pour l'affichage mobile compact
+    let short = mMoment;
+    if (short.startsWith('1er Culte')) short = '1er Culte';
+    else if (short.startsWith('2e Culte')) short = '2e Culte';
+    else if (short.startsWith('Occasion')) short = 'Spécial';
+    else if (short.startsWith('En semaine')) short = 'Semaine';
+    lbl.textContent = short;
+  }
+}
+updateMomentDisplay();
+
+function openMomentModal() {
+  const list = $('#momentList');
+  if (!list) return;
+  list.replaceChildren(...DEFAULT_MOBILE_MOMENTS.map(m => el('button', {
+    class: 'user-btn' + (mMoment === m ? ' on' : ''),
+    style: mMoment === m ? 'border-color:var(--a1);background:var(--card2)' : '',
+    type: 'button',
+    text: m + (mMoment === m ? ' ✓' : ''),
+    onclick: () => {
+      mMoment = m;
+      localStorage.setItem('librairie_mobile_moment', m);
+      updateMomentDisplay();
+      $('#momentModal').hidden = true;
+      toast('Culte configuré : ' + m);
+    }
+  })));
+  $('#momentModal').hidden = false;
+}
+
+const mBtnMoment = $('#mBtnMoment');
+if (mBtnMoment) {
+  mBtnMoment.addEventListener('click', openMomentModal);
+}
+const btnCloseMom = $('#btnCloseMomentModal');
+if (btnCloseMom) {
+  btnCloseMom.addEventListener('click', () => $('#momentModal').hidden = true);
+}
 
 const mStarBtn = $('#mBtnStar');
 if (mStarBtn) {
@@ -218,8 +275,14 @@ if (mGenEl) {
   mGenEl.addEventListener('click', e => {
     const b = e.target.closest('button[data-g]');
     if (b) {
-      mGenEl.querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
-      mGender = b.dataset.g;
+      const isAlreadyOn = b.classList.contains('on');
+      mGenEl.querySelectorAll('button').forEach(btn => btn.classList.remove('on'));
+      if (isAlreadyOn) {
+        mGender = '';
+      } else {
+        b.classList.add('on');
+        mGender = b.dataset.g;
+      }
     }
   });
 }
@@ -229,8 +292,14 @@ if (mAgeEl) {
   mAgeEl.addEventListener('click', e => {
     const b = e.target.closest('button[data-a]');
     if (b) {
-      mAgeEl.querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
-      mAge = b.dataset.a;
+      const isAlreadyOn = b.classList.contains('on');
+      mAgeEl.querySelectorAll('button').forEach(btn => btn.classList.remove('on'));
+      if (isAlreadyOn) {
+        mAge = '';
+      } else {
+        b.classList.add('on');
+        mAge = b.dataset.a;
+      }
     }
   });
 }
@@ -247,6 +316,7 @@ $('#btnValidate').addEventListener('click', async () => {
         customer_gender: mGender || null,
         customer_age_group: mAge || null,
         is_star: mStar ? 1 : 0,
+        service_moment: mMoment || null,
         lines: cart.map(i => ({
           book_id: i.book.id, qty: i.qty, unit_price: i.book.price,
           allocations: [{ book_id: i.book.id, lot_id: i.lot === 'none' ? null : i.lot, qty: i.qty }]
@@ -263,8 +333,8 @@ $('#btnValidate').addEventListener('click', async () => {
       mStarBtn.style.borderColor = '';
       mStarBtn.style.color = '';
     }
-    if (mGenEl) mGenEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', !b.dataset.g));
-    if (mAgeEl) mAgeEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', !b.dataset.a));
+    if (mGenEl) mGenEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    if (mAgeEl) mAgeEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
   } catch (e) { toast(e.message, 'err'); }
   renderCart();
 });

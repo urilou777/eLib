@@ -863,10 +863,10 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
 }
 .donut-svg {
   width: 100%;
-  max-width: 320px;
+  max-width: 275px;
   flex: 1 1 auto;
-  min-height: clamp(240px, 30vh, 320px);
-  max-height: clamp(280px, 36vh, 380px);
+  min-height: clamp(210px, 26vh, 275px);
+  max-height: clamp(240px, 30vh, 310px);
   aspect-ratio: 1 / 1;
   display: block;
   margin: 0 auto;

@@ -156,6 +156,7 @@ class SaleIn(BaseModel):
     customer_gender: Optional[str] = Field(None, max_length=20)
     customer_age_group: Optional[str] = Field(None, max_length=40)
     is_star: Optional[int] = 0
+    service_moment: Optional[str] = Field(None, max_length=60)
     lines: List[LineIn] = Field(min_length=1, max_length=200)
 
 
@@ -694,14 +695,15 @@ def sale_add(s: SaleIn, request: Request):
                                     manual=True, user_name=user,
                                     customer_gender=s.customer_gender,
                                     customer_age_group=s.customer_age_group,
-                                    is_star=s.is_star or 0)
+                                    is_star=s.is_star or 0,
+                                    service_moment=s.service_moment)
         total = sum((l.unit_price if l.unit_price is not None else
                      c.execute("SELECT price FROM books WHERE id=?", (l.book_id,)).fetchone()["price"]) * l.qty for l in s.lines)
         db.log_audit(c, user, "INSERT", "sale", sid,
                      f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {s.payment}) par {user}",
                      snapshot_after={"id": sid, "date": s.date, "total": total, "payment": s.payment, "user_name": user,
                                      "customer_gender": s.customer_gender, "customer_age_group": s.customer_age_group,
-                                     "is_star": s.is_star, "lines": [l.dict() for l in s.lines]})
+                                     "is_star": s.is_star, "service_moment": s.service_moment, "lines": [l.dict() for l in s.lines]})
     return {"id": sid, "total": total, "warnings": warns}
 
 
@@ -709,7 +711,7 @@ def sale_add(s: SaleIn, request: Request):
 def sales(limit: int = 200):
     with db.tx() as c:
         return db.rows(c, """SELECT s.id,s.date,s.payment,s.note,COALESCE(s.user_name,'Anonyme') user_name,
-            s.customer_gender, s.customer_age_group, COALESCE(s.is_star, 0) is_star,
+            s.customer_gender, s.customer_age_group, COALESCE(s.is_star, 0) is_star, s.service_moment,
             SUM(l.qty*l.unit_price) total, SUM(l.qty) qty,
             GROUP_CONCAT(l.qty||'× '||b.title, ' · ') detail
             FROM sales s JOIN sale_lines l ON l.sale_id=s.id JOIN books b ON b.id=l.book_id
@@ -1081,6 +1083,16 @@ def stats(start: Optional[str] = None, end: Optional[str] = None):
             GROUP BY (s.is_star = 1) ORDER BY (s.is_star = 1) DESC
         """, A)
 
+        by_moment = db.rows(c, f"""
+            SELECT COALESCE(s.service_moment, 'Non précisé') label,
+                   COUNT(DISTINCT s.id) n,
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+            GROUP BY label ORDER BY revenue DESC
+        """, A)
+
         return {"kpi": {"revenue": k["rev"], "due": k["due"], "margin": k["rev"] - k["due"], "qty": k["qty"],
                         "sales": nb, "pos_sales": pos_nb, "pos_avg_basket": pos_avg_basket,
                         "avg_book_price": avg_book_price,
@@ -1088,7 +1100,7 @@ def stats(start: Optional[str] = None, end: Optional[str] = None):
                         "stock_value": sv["v"], "stock_units": sv["u"], "due_open": due_open},
                 "monthly": monthly, "by_owner_month": by_owner_month, "forecast": fc,
                 "daily": daily, "top": top, "by_category": by_cat, "by_publisher": by_pub, "by_owner": by_owner,
-                "payments": pay, "weekday": wd, "by_gender": by_gender, "by_age": by_age, "by_star": by_star, "low_stock": low[:30]}
+                "payments": pay, "weekday": wd, "by_gender": by_gender, "by_age": by_age, "by_star": by_star, "by_moment": by_moment, "low_stock": low[:30]}
 
 
 # ---------- Excel / sauvegardes ----------

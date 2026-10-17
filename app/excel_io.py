@@ -202,9 +202,9 @@ def export_workbook(path):
         _sheet(wb, "Livraisons", ["Date", "Code", "Titre", "Propriétaire", "Quantité reçue", "Coût unitaire",
                                   "% reversé", "Restant", "Observation"],
                [list(x.values()) for x in lots])
-        sales = db.rows(c, """SELECT s.date,s.payment,b.code,b.title,l.qty,l.unit_price,l.qty*l.unit_price total
+        sales = db.rows(c, """SELECT s.date, COALESCE(s.service_moment, 'Non précisé') moment, s.payment, COALESCE(s.user_name, 'Anonyme') user, b.code, b.title, l.qty, l.unit_price, l.qty*l.unit_price total
             FROM sale_lines l JOIN sales s ON s.id=l.sale_id JOIN books b ON b.id=l.book_id ORDER BY s.date,s.id""")
-        _sheet(wb, "Ventes", ["Date", "Moyen", "Code", "Titre", "Quantité", "Prix unitaire", "Prix total"],
+        _sheet(wb, "Ventes", ["Date", "Culte / Moment", "Moyen", "Libraire", "Code", "Titre", "Quantité", "Prix unitaire", "Prix total"],
                [list(x.values()) for x in sales])
         rev = db.rows(c, """SELECT o.name,COALESCE(SUM(a.revenue),0) rev,COALESCE(SUM(a.due),0) due
             FROM owners o LEFT JOIN allocations a ON a.owner_id=o.id GROUP BY o.id""")

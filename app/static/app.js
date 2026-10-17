@@ -56,6 +56,83 @@ async function loadRef() {
   [S.books, S.owners, S.options] = await Promise.all([api('/api/books'), api('/api/owners'), api('/api/options')]); 
 }
 
+/* ---------- Culte / Temps de vente & Mode Focus ---------- */
+const DEFAULT_MOMENTS = [
+  '1er Culte (Principal)',
+  '2e Culte (Jeunes EJP)',
+  'Occasion spéciale',
+  'En semaine / Autre'
+];
+
+function getAutoDetectedMoment() {
+  const isSun = new Date().getDay() === 0;
+  if (isSun) {
+    return new Date().getHours() >= 12 ? '2e Culte (Jeunes EJP)' : '1er Culte (Principal)';
+  }
+  return 'En semaine / Autre';
+}
+
+function getActiveMoment() {
+  return localStorage.getItem('librairie_focus_moment') || getAutoDetectedMoment();
+}
+
+function setActiveMoment(moment) {
+  if (moment) {
+    localStorage.setItem('librairie_focus_moment', moment);
+  } else {
+    localStorage.removeItem('librairie_focus_moment');
+  }
+  updateFocusUI();
+}
+
+function openMomentSelectorModal(onDone) {
+  const current = getActiveMoment();
+  const content = `
+    <div style="padding:4px">
+      <h3 style="margin-top:0;margin-bottom:6px">Configuration du Culte / Temps de vente</h3>
+      <p style="color:var(--mut);font-size:13px;margin-bottom:14px">
+        Toutes les ventes réalisées lors de cette session ou en Mode Focus seront automatiquement rattachées à ce temps sans manipulation par ticket.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:8px" id="modalMomentList">
+        ${DEFAULT_MOMENTS.map(m => `
+          <button type="button" class="btn ${m === current ? 'primary' : 'ghost'}" data-m="${esc(m)}" style="padding:12px 14px;text-align:left;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+            <span>${esc(m)}</span>
+            ${m === current ? '<span style="font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px">Actif</span>' : ''}
+          </button>
+        `).join('')}
+      </div>
+      <div class="row" style="margin-top:16px;justify-content:space-between">
+        <button type="button" class="btn ghost sm" id="btnResetAutoMoment">Auto-détection (heure/jour)</button>
+        <button type="button" class="btn sm" id="btnCloseMomentModal">Fermer</button>
+      </div>
+    </div>
+  `;
+  modal(content);
+  const mList = $('#modalMomentList');
+  if (mList) {
+    mList.onclick = e => {
+      const b = e.target.closest('button[data-m]');
+      if (b) {
+        setActiveMoment(b.dataset.m);
+        closeModal();
+        if (onDone) onDone(b.dataset.m);
+      }
+    };
+  }
+  const btnReset = $('#btnResetAutoMoment');
+  if (btnReset) {
+    btnReset.onclick = () => {
+      localStorage.removeItem('librairie_focus_moment');
+      updateFocusUI();
+      closeModal();
+      if (onDone) onDone(getActiveMoment());
+      toast('Détection automatique réactivée : ' + getActiveMoment(), 'ok');
+    };
+  }
+  const btnClose = $('#btnCloseMomentModal');
+  if (btnClose) btnClose.onclick = closeModal;
+}
+
 /* ---------- Mode Focus (poste sécurisé non spécifique à une session) ---------- */
 function isFocusMode() {
   return localStorage.getItem('librairie_focus_mode') === 'true';
@@ -63,6 +140,7 @@ function isFocusMode() {
 
 function updateFocusUI() {
   const active = isFocusMode();
+  const moment = getActiveMoment();
   document.body.classList.toggle('focus-mode-on', active);
   const btn = $('#btnFocusMode');
   const banner = $('#focusBanner');
@@ -70,15 +148,22 @@ function updateFocusUI() {
   if (btn) {
     btn.classList.toggle('focus-active', active);
     if (active) {
-      btn.title = "Mode Focus ACTIF. Cliquez pour déverrouiller et revenir au mode complet.";
+      btn.title = `Mode Focus ACTIF (${moment}). Cliquez pour déverrouiller ou changer de culte.`;
       if (label) label.textContent = "Quitter Focus";
     } else {
-      btn.title = "Activer le Mode Focus (sécurise le poste, restreint aux opérations de vente/caisse)";
+      btn.title = "Activer le Mode Focus (sécurise le poste pour le rush du culte)";
       if (label) label.textContent = "Mode Focus";
     }
   }
   if (banner) {
     banner.style.display = active ? 'inline-flex' : 'none';
+    banner.innerHTML = `<span class="focus-pulse"></span><span>MODE FOCUS · <b style="cursor:pointer;text-decoration:underline" id="bannerMomentTxt">${esc(moment)}</b></span>`;
+    banner.onclick = (e) => {
+      e.stopPropagation();
+      openMomentSelectorModal(() => {
+        if (S.view === 'pos') go('pos');
+      });
+    };
   }
 }
 
@@ -91,12 +176,15 @@ function toggleFocusMode() {
       toast("Mode Focus désactivé : accès complet rétabli", "ok");
     }
   } else {
-    localStorage.setItem('librairie_focus_mode', 'true');
-    updateFocusUI();
-    toast("Mode Focus activé : poste restreint aux opérations de caisse", "ok");
-    if (S.view !== 'pos') {
-      go('pos');
-    }
+    // Lors de l'activation du Mode Focus, on configure le culte si souhaité
+    openMomentSelectorModal((chosenMoment) => {
+      localStorage.setItem('librairie_focus_mode', 'true');
+      updateFocusUI();
+      toast(`Mode Focus activé pour : ${chosenMoment}`, "ok");
+      if (S.view !== 'pos') {
+        go('pos');
+      }
+    });
   }
 }
 
@@ -160,14 +248,14 @@ function trendChart(el, monthly, fc, ownerMonth) {
 }
 function donut(el, data, fmt = eur) {
   const tot = data.reduce((s, d) => s + d.value, 0); if (!tot) { el.innerHTML = '<div class="empty">—</div>'; return; }
-  let a = -Math.PI / 2, s = '<svg viewBox="-105 -105 210 210" class="donut-svg">';
+  let a = -Math.PI / 2, s = '<svg viewBox="-108 -108 216 216" class="donut-svg">';
   data.forEach(d => {
-    const ang = d.value / tot * Math.PI * 2, r = 92, x1 = r * Math.cos(a), y1 = r * Math.sin(a); a += ang;
+    const ang = d.value / tot * Math.PI * 2, r = 88, x1 = r * Math.cos(a), y1 = r * Math.sin(a); a += ang;
     const x2 = r * Math.cos(a), y2 = r * Math.sin(a), big = ang > Math.PI ? 1 : 0;
-    if (d.value / tot > .999) s += `<circle r="${r}" fill="none" stroke="${d.color}" stroke-width="25"/>`;
-    else s += `<path d="M${x1} ${y1} A${r} ${r} 0 ${big} 1 ${x2} ${y2}" fill="none" stroke="${d.color}" stroke-width="25"><title>${esc(d.label)} : ${fmt(d.value)}</title></path>`;
+    if (d.value / tot > .999) s += `<circle r="${r}" fill="none" stroke="${d.color}" stroke-width="24"/>`;
+    else s += `<path d="M${x1} ${y1} A${r} ${r} 0 ${big} 1 ${x2} ${y2}" fill="none" stroke="${d.color}" stroke-width="24"><title>${esc(d.label)} : ${fmt(d.value)}</title></path>`;
   });
-  s += `<text text-anchor="middle" y="-2" class="donut-total-val" style="font-size:23px;font-weight:800">${fmt(tot)}</text><text text-anchor="middle" y="16" class="donut-sub-text">total</text></svg>`;
+  s += `<text text-anchor="middle" y="-2" class="donut-total-val" style="font-size:22px;font-weight:800">${fmt(tot)}</text><text text-anchor="middle" y="16" class="donut-sub-text">total</text></svg>`;
   el.innerHTML = `<div class="donut-wrap">${s}<div class="legend" style="justify-content:center">${data.map(d => `<span><i style="background:${d.color}"></i>${esc(d.label)} · ${Math.round(d.value / tot * 100)}%</span>`).join('')}</div></div>`;
 }
 function hbars(el, rows, key = 'revenue', fmt = eur, sub) {
@@ -182,13 +270,36 @@ const VIEWS = {};
 
 /* ---- Tableau de bord ---- */
 VIEWS.dashboard = async () => {
-  const now = new Date(), y = now.getFullYear(), ms = `${y}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const now = new Date(), y = now.getFullYear();
+  const pad = n => String(n).padStart(2, '0');
+  const dToday = `${y}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const ms = `${y}-${pad(now.getMonth() + 1)}-01`;
   const d30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-  const ranges = { all: ['', ''], '30': [d30, ''], month: [ms, ''], year: [`${y}-01-01`, ''], custom: [S.from, S.to] };
-  const [from, to] = ranges[S.range];
+  // Dimanche est le 1er jour de la semaine
+  const dayOfWeek = now.getDay(); // 0 pour Dimanche
+  const sunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+  const wStart = `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`;
+
+  const ranges = {
+    all: ['', ''],
+    year: [`${y}-01-01`, ''],
+    month: [ms, ''],
+    '30': [d30, ''],
+    week: [wStart, ''],
+    today: [dToday, dToday],
+    custom: [S.from, S.to]
+  };
+  const [from, to] = ranges[S.range] || ['', ''];
   const st = await api(`/api/stats?start=${from}&end=${to}`);
   const k = st.kpi;
-  $('#topActions').innerHTML = `<div class="row"><div class="seg" id="seg">${[['all', 'Tout'], ['year', 'Année'], ['month', 'Ce mois'], ['30', '30 jours']].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+  $('#topActions').innerHTML = `<div class="row"><div class="seg" id="seg">${[
+    ['all', 'Tout'],
+    ['year', 'Année'],
+    ['month', 'Ce mois'],
+    ['30', '30 jours'],
+    ['week', 'Semaine'],
+    ['today', 'Aujourd\'hui']
+  ].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
     <input type="date" id="dFrom" value="${S.from}"><input type="date" id="dTo" value="${S.to}"></div>`;
   $('#seg').onclick = e => { if (e.target.dataset.r) { S.range = e.target.dataset.r; VIEWS.dashboard() } };
   $('#dFrom').onchange = $('#dTo').onchange = () => { S.from = $('#dFrom').value; S.to = $('#dTo').value; S.range = 'custom'; VIEWS.dashboard() };
@@ -205,10 +316,11 @@ VIEWS.dashboard = async () => {
   <div class="grid g3" style="margin-bottom:16px"><div class="card"><h3>Top 10 des ventes</h3><div id="cTop"></div></div>
     <div class="card"><h3>Par catégorie</h3><div id="cCat"></div><h3 style="margin-top:22px">Par éditeur</h3><div id="cPub"></div></div>
     <div class="card"><h3>Jours de la semaine</h3><div id="cWd"></div><h3 style="margin-top:22px">Moyens de paiement</h3><div id="cPay"></div></div></div>
-  <div class="grid g3" style="margin-bottom:16px">
-    <div class="card"><h3>Profil acheteurs · Tranche d'âge</h3><div id="cAge"></div></div>
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card"><h3>Temps de culte / Événement</h3><div id="cMoment"></div></div>
+    <div class="card"><h3>Profil acheteurs · Âge</h3><div id="cAge"></div></div>
     <div class="card"><h3>Profil acheteurs · Genre</h3><div id="cGen"></div></div>
-    <div class="card"><h3>Engagement · Serviteurs STAR ⭐</h3><div id="cStar"></div></div>
+    <div class="card"><h3>Engagement · STAR ⭐</h3><div id="cStar"></div></div>
   </div>
   <div class="card"><h3>Alertes de stock bas (${st.low_stock.length})</h3><div class="table-wrap" style="max-height:clamp(200px, 34vh, 420px)"><table><thead><tr><th>Titre</th><th>Origine</th><th class="num">Stock</th><th class="num">Seuil</th><th class="num">Autonomie estimée</th></tr></thead><tbody>
   ${st.low_stock.map(b => `<tr><td>${esc(b.title)} ${b.volume ? `<span class="muted">Vol. ${esc(b.volume)}</span>` : ''}</td><td>${ownerChips(b)}</td><td class="num">${stockBadge(b)}</td><td class="num">${b.min_stock}</td><td class="num">${b.days_left == null ? '<span class="muted">pas de ventes récentes</span>' : b.days_left + ' j'}</td></tr>`).join('') || '<tr><td colspan=5 class="muted">Stock optimal sur l\'ensemble des titres.</td></tr>'}</tbody></table></div></div>`;
@@ -219,6 +331,7 @@ VIEWS.dashboard = async () => {
   const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']; const wd = {}; st.weekday.forEach(w => wd[w.d] = w.revenue);
   hbars($('#cWd'), [0, 1, 2, 3, 4, 5, 6].map(d => ({ label: days[d], revenue: wd[d] || 0 })));
   hbars($('#cPay'), st.payments.map(p => ({ label: p.label, n: p.n })), 'n', nf);
+  hbars($('#cMoment'), (st.by_moment || []).map(m => ({ label: m.label, revenue: m.revenue, n: m.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
   hbars($('#cAge'), (st.by_age || []).map(a => ({ label: a.label, revenue: a.revenue, n: a.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
   hbars($('#cGen'), (st.by_gender || []).map(g => ({ label: g.label, revenue: g.revenue, n: g.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
   hbars($('#cStar'), (st.by_star || []).map(s => ({ label: s.label, revenue: s.revenue, n: s.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
@@ -363,18 +476,29 @@ VIEWS.pos = async () => {
     <div class="total"><span>Total</span><b id="tot">0 €</b></div>
     <div class="row" style="margin-bottom:8px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
     
+    <div class="row" style="justify-content:space-between;align-items:center;padding:6px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;font-size:12px">
+      <span class="muted">Temps de vente :</span>
+      <button type="button" class="btn ghost sm" id="btnChangeActiveMoment" style="padding:2px 8px;font-size:11px;font-weight:700" title="Cliquer pour changer le culte ou activer le Mode Focus">
+        <span id="posActiveMomentTxt">${esc(getActiveMoment())}</span> ▾
+      </button>
+    </div>
+
     <div class="card" style="padding:10px;margin-bottom:10px;background:var(--panel2);border:1px solid var(--line)">
       <div class="row" style="justify-content:space-between;margin-bottom:6px">
         <span style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Profil client (statistique)</span>
         <button type="button" class="btn sm ghost demo-btn" id="btnStar" data-star="0" style="padding:2px 8px!important;font-weight:700">⭐ Serviteur STAR</button>
       </div>
       <div class="row" style="gap:6px;margin-bottom:6px" id="demoGender">
-        <button type="button" class="btn sm ghost demo-btn on" data-g="">Indéfini</button>
-        <button type="button" class="btn sm ghost demo-btn" data-g="Femme">Femme</button>
-        <button type="button" class="btn sm ghost demo-btn" data-g="Homme">Homme</button>
+        <button type="button" class="btn sm ghost demo-btn" data-g="Femme" style="display:inline-flex;align-items:center;gap:5px">
+          <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+          Femme
+        </button>
+        <button type="button" class="btn sm ghost demo-btn" data-g="Homme" style="display:inline-flex;align-items:center;gap:5px">
+          <svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
+          Homme
+        </button>
       </div>
       <div class="row" style="gap:6px" id="demoAge">
-        <button type="button" class="btn sm ghost demo-btn on" data-a="">Indéfini</button>
         <button type="button" class="btn sm ghost demo-btn" data-a="Enfant / Ado">Ado (&lt;18)</button>
         <button type="button" class="btn sm ghost demo-btn" data-a="Jeune adulte">18-29</button>
         <button type="button" class="btn sm ghost demo-btn" data-a="Adulte">30-59</button>
@@ -387,6 +511,16 @@ VIEWS.pos = async () => {
   let curGender = '';
   let curAge = '';
   let curStar = 0;
+
+  const btnChangeMoment = $('#btnChangeActiveMoment');
+  if (btnChangeMoment) {
+    btnChangeMoment.onclick = () => {
+      openMomentSelectorModal((m) => {
+        const txt = $('#posActiveMomentTxt');
+        if (txt) txt.textContent = m;
+      });
+    };
+  }
   const btnStar = $('#btnStar');
   if (btnStar) {
     btnStar.onclick = () => {
@@ -400,15 +534,27 @@ VIEWS.pos = async () => {
   $('#demoGender').onclick = e => {
     const b = e.target.closest('button[data-g]');
     if (b) {
-      $('#demoGender').querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
-      curGender = b.dataset.g;
+      const isAlreadyOn = b.classList.contains('on');
+      $('#demoGender').querySelectorAll('button').forEach(btn => btn.classList.remove('on'));
+      if (isAlreadyOn) {
+        curGender = '';
+      } else {
+        b.classList.add('on');
+        curGender = b.dataset.g;
+      }
     }
   };
   $('#demoAge').onclick = e => {
     const b = e.target.closest('button[data-a]');
     if (b) {
-      $('#demoAge').querySelectorAll('button').forEach(btn => btn.classList.toggle('on', btn === b));
-      curAge = b.dataset.a;
+      const isAlreadyOn = b.classList.contains('on');
+      $('#demoAge').querySelectorAll('button').forEach(btn => btn.classList.remove('on'));
+      if (isAlreadyOn) {
+        curAge = '';
+      } else {
+        b.classList.add('on');
+        curAge = b.dataset.a;
+      }
     }
   };
   const draw = () => {
@@ -422,7 +568,42 @@ VIEWS.pos = async () => {
   const comps = l => { const b = S.books.find(x => x.id === l.id); return b.is_pack ? (b.items || []).map(i => ({ book_id: i.book_id, title: i.title, need: l.qty * i.qty, lots: i.lots })) : [{ book_id: b.id, title: b.title, need: l.qty, lots: b.lots }] };
   const got = (l, bid) => Object.entries(l.alloc).filter(([k]) => k.startsWith(bid + '|')).reduce((s, [, v]) => s + v, 0);
   const complete = l => comps(l).every(c => got(l, c.book_id) === c.need);
-  const add = id => { const l = S.cart.find(x => x.id === id); if (l) l.qty++; else { const b = S.books.find(x => x.id === id); S.cart.push({ id, qty: 1, price: b.price, alloc: {} }) } cart() };
+  const defaultAllocForBook = (b, qty = 1) => {
+    const alloc = {};
+    if (b.is_pack) return alloc;
+    const lots = (b.lots || []).filter(l => l.remaining > 0);
+    if (!lots.length) return alloc;
+    let chosen = lots.find(l => (l.owner || '').trim().toLowerCase() === 'cité royale');
+    if (!chosen && lots.length === 1) chosen = lots[0];
+    if (chosen) {
+      alloc[`${b.id}|${chosen.id}`] = Math.min(qty, chosen.remaining);
+    }
+    return alloc;
+  };
+  const add = id => {
+    const l = S.cart.find(x => x.id === id);
+    if (l) {
+      l.qty++;
+      const b = S.books.find(x => x.id === id);
+      const curAllocTotal = got(l, b.id);
+      if (curAllocTotal < l.qty) {
+        const allLots = (b.lots || []).filter(lot => lot.remaining > 0);
+        let cr = allLots.find(lot => (lot.owner || '').trim().toLowerCase() === 'cité royale');
+        if (!cr && allLots.length === 1) cr = allLots[0];
+        if (cr) {
+          const key = `${b.id}|${cr.id}`;
+          const currentInKey = l.alloc[key] || 0;
+          if (currentInKey < cr.remaining) {
+            l.alloc[key] = currentInKey + 1;
+          }
+        }
+      }
+    } else {
+      const b = S.books.find(x => x.id === id);
+      S.cart.push({ id, qty: 1, price: b.price, alloc: defaultAllocForBook(b, 1) });
+    }
+    cart();
+  };
 
   const updatePayDropdown = () => {
     const paySel = $('#pay');
@@ -511,6 +692,7 @@ VIEWS.pos = async () => {
       customer_gender: curGender || null,
       customer_age_group: curAge || null,
       is_star: curStar ? 1 : 0,
+      service_moment: curMoment || null,
       lines: S.cart.map(l => ({
         book_id: l.id, qty: l.qty, unit_price: l.price,
         allocations: Object.entries(l.alloc).filter(([, q]) => q > 0).map(([k, q]) => { const [bid, lid] = k.split('|'); return { book_id: +bid, lot_id: lid === 'none' ? null : +lid, qty: q } })
@@ -634,8 +816,8 @@ VIEWS.catalog = async () => {
 /* ---- Ventes ---- */
 VIEWS.sales = async () => {
   const rows = await api('/api/sales?limit=500');
-  $('#view').innerHTML = `<div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Détail</th><th>Paiement</th><th>Libraire</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
-  ${rows.map(s => `<tr><td>${s.date}</td><td class="td-wrap">${esc(s.detail)}</td><td><span class="chip">${esc(s.payment)}</span></td><td><span class="chip"><i style="background:var(--a1)"></i>${esc(s.user_name || 'Anonyme')}</span></td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`).join('') || '<tr><td colspan=7 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
+  $('#view').innerHTML = `<div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Culte / Temps</th><th>Détail</th><th>Paiement</th><th>Libraire</th><th class="num">Qté</th><th class="num">Total</th><th></th></tr></thead><tbody>
+  ${rows.map(s => `<tr><td>${s.date}</td><td><span class="chip" style="font-size:11px">${esc(s.service_moment || 'Non précisé')}</span></td><td class="td-wrap">${esc(s.detail)}</td><td><span class="chip">${esc(s.payment)}</span></td><td><span class="chip"><i style="background:var(--a1)"></i>${esc(s.user_name || 'Anonyme')}</span></td><td class="num">${s.qty}</td><td class="num"><b>${eur(s.total)}</b></td><td class="num"><button class="btn bad sm" data-id="${s.id}">Annuler</button></td></tr>`).join('') || '<tr><td colspan=8 class="muted">Aucune vente</td></tr>'}</tbody></table></div></div>`;
   $('#view').onclick = safe(async e => { const b = e.target.closest('button[data-id]'); if (b && confirm('Annuler cette vente ? Le stock sera restitué.')) { await api(`/api/sales/${b.dataset.id}`, 'DELETE'); toast('Vente annulée'); go('sales') } });
 };
 
@@ -925,7 +1107,7 @@ VIEWS.data = async () => {
   <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>Cité Royale</b> et <b>ICC Rennes</b> sont les 2 origines fondamentales fixes et non modifiables. <b>% reversé</b> = part du prix de vente rendue à l'origine (100 = Cité Royale 100% de reversement ; 0 = stock acquis ICC Rennes). En caisse, <b>PayPal POS</b> est réservé exclusivement aux ouvrages de Cité Royale.</p></div>
   
   <div class="card" style="margin-top:16px">
-    <h3>Listes &amp; Paramètres personnalisables (Catégories, Types, Paiements, Éditeurs)</h3>
+    <h3>Listes &amp; Paramètres personnalisables (Catégories, Types, Paiements, Cultes, Éditeurs)</h3>
     <p class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.6">
       Vous pouvez <b>ajouter</b>, <b>renommer</b> ou <b>fusionner</b> des libellés.
       En cas de renommage ou de fusion, la mise à jour s'applique <b>en cascade sur tous les livres et ventes existants</b>, ainsi que sur les futurs miroirs et exports Excel. 
@@ -936,6 +1118,7 @@ VIEWS.data = async () => {
         ['category', 'Catégories de livres'],
         ['type', 'Types & Reliures (Souple, Rigide...)'],
         ['payment', 'Moyens de paiement en caisse'],
+        ['service_moment', 'Cultes & Temps de vente (1er, 2e EJP, Spécial...)'],
         ['publisher', 'Éditeurs fréquents']
       ].map(([grp, titre]) => `
         <div style="background:var(--panel2);padding:14px;border-radius:12px;border:1px solid var(--line)">

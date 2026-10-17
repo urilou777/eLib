@@ -32,11 +32,11 @@
 *::-webkit-scrollbar-thumb:hover { background:var(--a1); }
 [hidden] { display:none !important; }
 body { font-family:'DM Sans',system-ui,-apple-system,sans-serif; background:var(--bg);
-  color:var(--text); min-height:100vh; display:flex; flex-direction:column; }
+  color:var(--text); height:100vh; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
 button, select, input { font:inherit; color:inherit; }
 
 .m-head { padding:10px 14px; background:rgba(29,11,40,.92); border-bottom:1px solid var(--line); display:flex;
-  justify-content:space-between; align-items:center; position:sticky; top:0; z-index:10; backdrop-filter:blur(12px); }
+  justify-content:space-between; align-items:center; flex-shrink:0; z-index:10; backdrop-filter:blur(12px); }
 .logo { font-weight:800; font-size:16px; font-family:'Playfair Display',serif; color:#faf7f2; letter-spacing:.5px; }
 .mode-switch { display:inline-flex; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:18px; padding:2px; }
 .mode-btn { background:none; border:0; color:var(--mut); font-size:11.5px; font-weight:700; padding:5px 9px; border-radius:15px; cursor:pointer; transition:.2s; }
@@ -46,13 +46,22 @@ button, select, input { font:inherit; color:inherit; }
   padding:6px 10px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; }
 .user-chip i { width:8px; height:8px; border-radius:50%; background:var(--good); }
 
+#app {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .cam-container { 
   position: relative; 
   width: 100%; 
-  height: clamp(200px, 34vh, 320px); 
+  height: clamp(180px, 30vh, 260px); 
   background: #000; 
   overflow: hidden; 
   flex-shrink: 0;
+  touch-action: pan-x pinch-zoom;
 }
 #video { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; }
 .target-box { position: absolute; inset: 12% 8%; border: 2px solid rgba(255,255,255,.2); border-radius: 14px;
@@ -82,7 +91,16 @@ button, select, input { font:inherit; color:inherit; }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 10px; }
 
-.main-body { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.main-body { 
+  flex: 1; 
+  padding: 12px; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 10px; 
+  min-height: 0; 
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch; 
+}
 .row { display: flex; gap: 8px; }
 .field { flex: 1; padding: 11px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; min-width: 0; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
@@ -212,20 +230,31 @@ button, select, input { font:inherit; color:inherit; }
 
   <footer class="bottom-bar" id="saleBottom">
     <div class="total-row"><span class="muted">Total à encaisser</span><span class="val" id="totalVal">0,00 €</span></div>
-    <select class="pay-select" id="payMethod" aria-label="Mode de paiement"></select>
+    <div class="pay-chips-title" style="font-size:10.5px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Mode de paiement</div>
+    <div class="pay-chips" id="payChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+    <input type="hidden" id="payMethod" value="">
     
     <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-size:10.5px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Profil acheteur</span>
+        <span style="font-size:10.5px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Temps & Profil</span>
         <button type="button" class="chip" id="mBtnStar" style="padding:3px 8px;font-size:11px">⭐ STAR</button>
       </div>
-      <div style="display:flex;gap:4px;overflow-x:auto;padding-bottom:4px;margin-bottom:4px" id="mDemoGender">
-        <button type="button" class="chip on" data-g="">Indéfini</button>
-        <button type="button" class="chip" data-g="Femme">Femme</button>
-        <button type="button" class="chip" data-g="Homme">Homme</button>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <button type="button" class="chip" id="mBtnMoment" style="font-size:11px;font-weight:700;background:rgba(255,255,255,0.06)">
+          <span id="mMomentLabel">1er Culte</span> ▾
+        </button>
+        <div style="display:flex;gap:4px" id="mDemoGender">
+          <button type="button" class="chip" data-g="Femme" title="Femme" style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px">
+            <svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+            <span>Femme</span>
+          </button>
+          <button type="button" class="chip" data-g="Homme" title="Homme" style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px">
+            <svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
+            <span>Homme</span>
+          </button>
+        </div>
       </div>
       <div style="display:flex;gap:4px;overflow-x:auto;padding-bottom:2px" id="mDemoAge">
-        <button type="button" class="chip on" data-a="">Indéfini</button>
         <button type="button" class="chip" data-a="Enfant / Ado">&lt;18</button>
         <button type="button" class="chip" data-a="Jeune adulte">18-29</button>
         <button type="button" class="chip" data-a="Adulte">30-59</button>
@@ -282,6 +311,18 @@ button, select, input { font:inherit; color:inherit; }
     <h2>Qui tient la caisse ?</h2>
     <p>Vos ventes et encaissements seront attribués à votre profil.</p>
     <div id="userList"></div>
+  </div>
+</section>
+
+<!-- Choix du Culte / Moment de vente -->
+<section class="overlay" id="momentModal" hidden>
+  <div class="sheet">
+    <h2>Culte / Temps de vente</h2>
+    <p>Sélectionnez le culte ou l'événement en cours pour les ventes :</p>
+    <div id="momentList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div style="margin-top:14px">
+      <button class="btn sm" id="btnCloseMomentModal" type="button" style="width:100%">Fermer</button>
+    </div>
   </div>
 </section>
 
