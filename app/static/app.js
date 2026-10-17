@@ -1682,14 +1682,42 @@ VIEWS.pos = async () => {
           ⚡ Remplacer par le Pack <span id="deskPackSaving" style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:10px;margin-left:6px;font-size:11px;color:#86efac">Éco 0 €</span>
         </button>
       </div>
-      <h3>Panier <button class="btn ghost sm" id="clear">Vider</button></h3><div class="cart-items" id="items"></div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+        <h3 style="margin:0">Panier</h3>
+        <div class="row" style="gap:5px">
+          <button type="button" class="btn ghost sm" id="btnStandby" title="Mettre ce panier en attente pour encaisser un client rapide" style="display:none;padding:2px 8px;font-size:11.5px;color:var(--warn);border-color:var(--warn);font-weight:600;align-items:center;gap:4px">
+            <svg class="ico sm" style="width:13px;height:13px" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+            <span>En attente</span>
+          </button>
+          <button class="btn ghost sm" id="clear">Vider</button>
+        </div>
+      </div>
+      <div id="standbyBanner" style="display:none;align-items:center;justify-content:space-between;padding:7px 10px;margin-bottom:8px;background:rgba(230, 167, 60, 0.15);border:1px solid rgba(230, 167, 60, 0.4);border-radius:10px;font-size:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg class="ico sm" style="width:16px;height:16px;color:var(--warn)" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          <div>
+            <b style="color:var(--text-title)">Panier en attente</b>
+            <div id="standbyBannerInfo" class="muted" style="font-size:11px">0 livre · 0 €</div>
+          </div>
+        </div>
+        <div class="row" style="gap:4px">
+          <button type="button" class="btn good sm" id="btnResumeStandby" style="padding:3px 8px;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px">
+            <svg class="ico sm" style="width:12px;height:12px" viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+            <span>Reprendre</span>
+          </button>
+          <button type="button" class="btn ghost sm" id="btnDiscardStandby" style="padding:3px 6px;font-size:11.5px;color:var(--bad);display:inline-flex;align-items:center;justify-content:center" title="Supprimer définitivement ce panier en attente">
+            <svg class="ico sm" style="width:12px;height:12px" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="cart-items" id="items"></div>
     <div class="total"><span>Total</span><b id="tot">0 €</b></div>
     <div class="row" style="margin-bottom:8px"><select id="pay" style="flex:1">${(S.options.payment || []).map(p => `<option>${esc(p.label)}</option>`).join('') || '<option>Espèces</option><option>CB</option>'}</select><input type="date" id="sdate" value="${today()}"></div>
 
     <!-- Profil démographique client (Complet / Replié automatiquement une fois renseigné) -->
     <div id="demoCardCollapsed" style="display:none;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:10px;background:linear-gradient(135deg, rgba(143,22,173,0.18), rgba(94,11,117,0.14));border:1px solid var(--icc-purple);border-radius:10px;cursor:pointer;transition:all .2s ease">
       <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-title);font-weight:600">
-        <span style="font-size:14px">👤</span>
+        <svg class="ico sm" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span id="demoSummaryText">Profil client</span>
       </div>
       <span style="font-size:11px;color:var(--icc-light);font-weight:600;display:flex;align-items:center;gap:3px">
@@ -1984,7 +2012,129 @@ VIEWS.pos = async () => {
       '<div class="empty"><svg class="ico" style="width:28px;height:28px;margin-bottom:8px" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg><br>Glissez un livre ici<br>ou cliquez sur une carte</div>';
     $('#tot').textContent = eur(S.cart.reduce((s, l) => s + l.qty * l.price, 0));
     updatePayDropdown();
+    updateStandbyUI();
   };
+
+  const updateStandbyUI = () => {
+    const raw = localStorage.getItem('librairie_standby_cart');
+    const banner = $('#standbyBanner');
+    const info = $('#standbyBannerInfo');
+    const btnStby = $('#btnStandby');
+    if (!banner || !btnStby) return;
+
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        banner.style.display = 'flex';
+        if (info) info.textContent = `${data.qty || 0} livre${(data.qty || 0) > 1 ? 's' : ''} · ${data.total || '0 €'}`;
+        btnStby.style.display = 'none';
+      } catch (err) {
+        localStorage.removeItem('librairie_standby_cart');
+        banner.style.display = 'none';
+        btnStby.style.display = S.cart.length > 0 ? 'inline-flex' : 'none';
+      }
+    } else {
+      banner.style.display = 'none';
+      btnStby.style.display = S.cart.length > 0 ? 'inline-flex' : 'none';
+    }
+  };
+
+  const btnStandby = $('#btnStandby');
+  if (btnStandby) {
+    btnStandby.onclick = () => {
+      if (!S.cart.length) return;
+      const standbyData = {
+        cart: JSON.parse(JSON.stringify(S.cart)),
+        gender: curGender,
+        age: curAge,
+        star: curStar,
+        pay: $('#pay')?.value || 'Espèces',
+        sdate: $('#sdate')?.value || today(),
+        total: $('#tot')?.textContent || '0 €',
+        qty: S.cart.reduce((s, l) => s + l.qty, 0),
+        timestamp: Date.now()
+      };
+      localStorage.setItem('librairie_standby_cart', JSON.stringify(standbyData));
+
+      S.cart = [];
+      curGender = '';
+      curAge = '';
+      curStar = 0;
+      hideDeskPackUpsell();
+
+      if (btnStar) {
+        btnStar.classList.remove('on');
+        btnStar.style.background = '';
+        btnStar.style.borderColor = '';
+        btnStar.style.color = '';
+      }
+      const cplBadge = $('#demoGenderCoupleBadge');
+      if (cplBadge) cplBadge.style.display = 'none';
+      $('#demoGender')?.classList.remove('is-couple');
+      $('#demoGender')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+      $('#demoAge')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+      isDemoManuallyExpanded = false;
+      updateDemoCollapse();
+
+      cart();
+      toast("Panier mis en attente. Caisse libre pour le client suivant !");
+    };
+  }
+
+  const btnResumeStandby = $('#btnResumeStandby');
+  if (btnResumeStandby) {
+    btnResumeStandby.onclick = () => {
+      const raw = localStorage.getItem('librairie_standby_cart');
+      if (!raw) return;
+      if (S.cart.length > 0) {
+        if (!confirm("Un panier est déjà en cours dans la caisse. Voulez-vous le remplacer par le panier en attente ?")) return;
+      }
+      try {
+        const data = JSON.parse(raw);
+        S.cart = data.cart || [];
+        curGender = data.gender || '';
+        curAge = data.age || '';
+        curStar = data.star || 0;
+
+        if (data.pay && $('#pay')) $('#pay').value = data.pay;
+        if (data.sdate && $('#sdate')) $('#sdate').value = data.sdate;
+
+        if (btnStar) {
+          btnStar.classList.toggle('on', !!curStar);
+          btnStar.style.background = curStar ? '#e6a73c' : '';
+          btnStar.style.borderColor = curStar ? '#e6a73c' : '';
+          btnStar.style.color = curStar ? '#000' : '';
+        }
+        $('#demoGender button[data-g="Femme"]')?.classList.toggle('on', curGender === 'Femme' || curGender === 'Couple');
+        $('#demoGender button[data-g="Homme"]')?.classList.toggle('on', curGender === 'Homme' || curGender === 'Couple');
+        const cBadge = $('#demoGenderCoupleBadge');
+        if (cBadge) cBadge.style.display = curGender === 'Couple' ? 'inline-block' : 'none';
+        $('#demoGender')?.classList.toggle('is-couple', curGender === 'Couple');
+        $('#demoAge button')?.forEach(b => b.classList.toggle('on', b.dataset.a === curAge));
+
+        isDemoManuallyExpanded = false;
+        updateDemoCollapse();
+
+        localStorage.removeItem('librairie_standby_cart');
+        cart();
+        toast("Panier précédent repris avec succès !");
+      } catch (err) {
+        toast("Erreur lors de la reprise du panier : " + err.message, "err");
+      }
+    };
+  }
+
+  const btnDiscardStandby = $('#btnDiscardStandby');
+  if (btnDiscardStandby) {
+    btnDiscardStandby.onclick = () => {
+      if (confirm("Supprimer définitivement ce panier en attente ?")) {
+        localStorage.removeItem('librairie_standby_cart');
+        updateStandbyUI();
+        toast("Panier en attente supprimé.");
+      }
+    };
+  }
+
   $('#q').oninput = $('#fOwner').onchange = $('#inStock').onchange = draw;
   $('#q').onkeydown = e => { if (e.key === 'Enter') { const q = $('#q').value.trim(); const b = S.books.find(x => x.code === q); if (b) { add(b.id); $('#q').value = ''; draw() } } };
   $('#books').onclick = e => { const c = e.target.closest('.bk'); if (c) add(+c.dataset.id) };
@@ -2002,6 +2152,7 @@ VIEWS.pos = async () => {
     if (t.dataset.p != null) { S.cart[+t.dataset.p].price = +t.value; cart() }
     else if (t.dataset.a != null) { const mx = t.dataset.max ? +t.dataset.max : Infinity; S.cart[+t.dataset.a].alloc[t.dataset.k] = Math.max(0, Math.min(mx, parseInt(t.value) || 0)); cart() }
   };
+
   $('#clear').onclick = () => { S.cart = []; hideDeskPackUpsell(); cart() };
   $('#valid').onclick = safe(async () => {
     if (!S.cart.length) return toast('Panier vide', 'warn');

@@ -360,6 +360,7 @@ function renderCart() {
   const total = cart.reduce((s, i) => s + i.qty * i.book.price, 0);
   $('#cartCount').textContent = count;
   $('#totalVal').textContent = eur(total);
+  updateMobileStandbyUI();
 
   const list = $('#cartItems');
   if (!cart.length) {
@@ -574,6 +575,118 @@ function renderCart() {
   $('#validHint').textContent = !cart.length ? '' : missingLot ? 'Choisissez l\'origine de chaque livre' : missingPay ? 'Choisissez le mode de paiement' : '';
 }
 $('#clearCart').addEventListener('click', () => { cart = []; originPayments = {}; hidePackUpsell(); renderCart(); });
+
+function updateMobileStandbyUI() {
+  const raw = localStorage.getItem('librairie_mobile_standby_cart');
+  const banner = $('#mStandbyBanner');
+  const info = $('#mStandbyBannerInfo');
+  const btnStby = $('#mBtnStandby');
+  if (!banner || !btnStby) return;
+
+  if (raw) {
+    try {
+      const data = JSON.parse(raw);
+      banner.style.display = 'flex';
+      if (info) info.textContent = `${data.qty || 0} livre${(data.qty || 0) > 1 ? 's' : ''} · ${data.total || '0,00 €'}`;
+      btnStby.style.display = 'none';
+    } catch (err) {
+      localStorage.removeItem('librairie_mobile_standby_cart');
+      banner.style.display = 'none';
+      btnStby.style.display = cart.length > 0 ? 'inline-flex' : 'none';
+    }
+  } else {
+    banner.style.display = 'none';
+    btnStby.style.display = cart.length > 0 ? 'inline-flex' : 'none';
+  }
+}
+
+const mBtnStandby = $('#mBtnStandby');
+if (mBtnStandby) {
+  mBtnStandby.addEventListener('click', () => {
+    if (!cart.length) return;
+    const count = cart.reduce((s, i) => s + i.qty, 0);
+    const total = cart.reduce((s, i) => s + i.qty * i.book.price, 0);
+    const standbyData = {
+      cart: JSON.parse(JSON.stringify(cart)),
+      originPayments: JSON.parse(JSON.stringify(originPayments)),
+      gender: mGender,
+      age: mAge,
+      star: mStar,
+      total: eur(total),
+      qty: count,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('librairie_mobile_standby_cart', JSON.stringify(standbyData));
+
+    cart = [];
+    originPayments = {};
+    hidePackUpsell();
+    mGender = ''; mAge = ''; mStar = 0;
+    if (mStarBtn) mStarBtn.classList.remove('on');
+    if (mGenEl) {
+      mGenEl.classList.remove('is-couple');
+      mGenEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+      const cb = $('#mCoupleBadge');
+      if (cb) cb.style.display = 'none';
+    }
+    if (mAgeEl) mAgeEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    isMDemoManuallyExpanded = false;
+    updateProfileSummary();
+
+    renderCart();
+    toast("Panier mis en attente. Caisse mobile libre pour le client suivant !");
+  });
+}
+
+const mBtnResumeStandby = $('#mBtnResumeStandby');
+if (mBtnResumeStandby) {
+  mBtnResumeStandby.addEventListener('click', () => {
+    const raw = localStorage.getItem('librairie_mobile_standby_cart');
+    if (!raw) return;
+    if (cart.length > 0) {
+      if (!confirm("Un panier est déjà en cours. Voulez-vous le remplacer par le panier en attente ?")) return;
+    }
+    try {
+      const data = JSON.parse(raw);
+      cart = data.cart || [];
+      originPayments = data.originPayments || {};
+      mGender = data.gender || '';
+      mAge = data.age || '';
+      mStar = data.star || 0;
+
+      if (mStarBtn) mStarBtn.classList.toggle('on', !!mStar);
+      if (mGenEl) {
+        mGenEl.classList.toggle('is-couple', mGender === 'Couple');
+        mGenEl.querySelector('button[data-g="Femme"]')?.classList.toggle('on', mGender === 'Femme' || mGender === 'Couple');
+        mGenEl.querySelector('button[data-g="Homme"]')?.classList.toggle('on', mGender === 'Homme' || mGender === 'Couple');
+        const cb = $('#mCoupleBadge');
+        if (cb) cb.style.display = mGender === 'Couple' ? 'block' : 'none';
+      }
+      if (mAgeEl) {
+        mAgeEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.a === mAge));
+      }
+      isMDemoManuallyExpanded = false;
+      updateProfileSummary();
+
+      localStorage.removeItem('librairie_mobile_standby_cart');
+      renderCart();
+      toast("Panier précédent repris avec succès !");
+    } catch (err) {
+      toast("Erreur lors de la reprise du panier : " + err.message, "err");
+    }
+  });
+}
+
+const mBtnDiscardStandby = $('#mBtnDiscardStandby');
+if (mBtnDiscardStandby) {
+  mBtnDiscardStandby.addEventListener('click', () => {
+    if (confirm("Supprimer définitivement ce panier en attente ?")) {
+      localStorage.removeItem('librairie_mobile_standby_cart');
+      updateMobileStandbyUI();
+      toast("Panier en attente supprimé.");
+    }
+  });
+}
 
 const btnConvert = $('#btnConvertPack');
 if (btnConvert) {
