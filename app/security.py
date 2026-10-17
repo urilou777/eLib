@@ -209,6 +209,7 @@ PUBLIC = [
     ("GET", re.compile(r"^/api/ping$")),
     ("GET", re.compile(r"^/api/live/stream$")),
     ("GET", re.compile(r"^/api/live/baskets$")),
+    ("POST", re.compile(r"^/api/live/activity$")),
     ("POST", re.compile(r"^/api/mobile/pair$")),
 ]
 # Accessible depuis le réseau local AVEC jeton d'appareil valide (privilège minimal : scanner, vendre, réceptionner)
@@ -222,6 +223,7 @@ MOBILE = [
     ("GET", re.compile(r"^/api/books/search$")),
     ("GET", re.compile(r"^/api/live/stream$")),
     ("GET", re.compile(r"^/api/live/baskets$")),
+    ("POST", re.compile(r"^/api/live/activity$")),
     ("POST", re.compile(r"^/api/mobile/active-cart$")),
     ("DELETE", re.compile(r"^/api/mobile/active-cart$")),
     ("POST", re.compile(r"^/api/books$")),

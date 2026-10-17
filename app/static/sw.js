@@ -1,5 +1,5 @@
 // Service Worker Librairi-E – Anti-écran blanc & App Shell hors-ligne
-const CACHE_NAME = 'librairie-shell-v1';
+const CACHE_NAME = 'librairie-shell-v3';
 const SHELL_ASSETS = [
   '/mobile',
   '/static/mobile.js',
@@ -36,23 +36,30 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Pour les pages et ressources statiques : Cache First avec mise à jour en tâche de fond (Stale-While-Revalidate)
-  event.respondWith(
-    caches.match(event.request).then(cachedResp => {
-      const fetchPromise = fetch(event.request).then(networkResp => {
+  // Pour les scripts JS et CSS : Network First (chargement immédiat de la dernière version, repli cache si hors-ligne)
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname === '/mobile') {
+    event.respondWith(
+      fetch(event.request).then(networkResp => {
         if (networkResp && networkResp.status === 200 && networkResp.type === 'basic') {
           const respToCache = networkResp.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, respToCache));
         }
         return networkResp;
-      }).catch(() => {
-        // En cas d'échec réseau, si c'est une navigation html, renvoyer /mobile depuis le cache
-        if (event.request.mode === 'navigate') {
-          return caches.match('/mobile');
-        }
-      });
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
-      return cachedResp || fetchPromise;
+  // Pour les autres ressources statiques (icônes, polices) : Cache First
+  event.respondWith(
+    caches.match(event.request).then(cachedResp => {
+      return cachedResp || fetch(event.request).then(networkResp => {
+        if (networkResp && networkResp.status === 200 && networkResp.type === 'basic') {
+          const respToCache = networkResp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, respToCache));
+        }
+        return networkResp;
+      });
     })
   );
 });

@@ -50,7 +50,7 @@ class LiveHub:
             for d in dead:
                 self.listeners.discard(d)
 
-    def update_basket(self, device_id: str, basket_data: dict):
+    def update_basket(self, device_id: str, basket_data: dict, action: dict = None):
         now = time.time()
         basket_data["updated_at"] = now
         with self.lock:
@@ -60,15 +60,25 @@ class LiveHub:
                 self.active_baskets[device_id] = basket_data
             self._cleanup_expired()
             active_list = list(self.active_baskets.values())
-        self.broadcast("baskets_updated", {"baskets": active_list})
+        self.broadcast("baskets_updated", {
+            "baskets": active_list,
+            "action": action,
+            "device_id": device_id,
+            "user_name": basket_data.get("user_name")
+        })
 
-    def remove_basket(self, device_id: str):
+    def remove_basket(self, device_id: str, action: dict = None):
         with self.lock:
             removed = self.active_baskets.pop(device_id, None)
             self._cleanup_expired()
             active_list = list(self.active_baskets.values())
         if removed:
-            self.broadcast("baskets_updated", {"baskets": active_list})
+            self.broadcast("baskets_updated", {
+                "baskets": active_list,
+                "action": action or {"type": "cart_cleared"},
+                "device_id": device_id,
+                "user_name": removed.get("user_name")
+            })
 
     def get_active_baskets(self):
         with self.lock:
@@ -882,29 +892,47 @@ def book_stats(bid: int):
 
 @app.post("/api/lots")
 def lot_add(l: LotIn, request: Request):
+    user = get_current_user(request)
     with db.tx() as c:
         cur = c.execute("INSERT INTO lots(book_id,owner_id,date,qty_in,unit_cost,reverse_pct,note) VALUES(?,?,?,?,?,?,?)",
                         (l.book_id, l.owner_id, l.date or date.today().isoformat(), l.qty_in, l.unit_cost, l.reverse_pct, l.note))
         lid = cur.lastrowid
         bk = c.execute("SELECT title FROM books WHERE id=?", (l.book_id,)).fetchone()
         ow = c.execute("SELECT name FROM owners WHERE id=?", (l.owner_id,)).fetchone()
-        db.log_audit(c, get_current_user(request), "INSERT", "lot", lid,
+        db.log_audit(c, user, "INSERT", "lot", lid,
                      f"Entrée stock : {l.qty_in}× « {bk['title'] if bk else l.book_id} » ({ow['name'] if ow else l.owner_id})",
                      snapshot_after=l.dict() | {"id": lid})
+    live_hub.broadcast("activity_logged", {
+        "type": "stock_added",
+        "user_name": user,
+        "title": bk["title"] if bk else f"Livre #{l.book_id}",
+        "detail": f"+{l.qty_in} ex. ({ow['name'] if ow else 'Rayon'})",
+        "data": {"book_id": l.book_id, "qty": l.qty_in}
+    })
+    live_hub.broadcast("metrics_invalidated", {"reason": "stock_updated"})
     return {"ok": True}
 
 
 @app.post("/api/lots/{lid}/adjust")
 def lot_adjust(lid: int, a: AdjIn, request: Request):
+    user = get_current_user(request)
     with db.tx() as c:
         lot = c.execute("SELECT * FROM lots WHERE id=?", (lid,)).fetchone()
         bk = c.execute("SELECT title FROM books WHERE id=?", (lot['book_id'],)).fetchone() if lot else None
         cur = c.execute("INSERT INTO adjustments(lot_id,date,delta,reason) VALUES(?,?,?,?)",
                         (lid, a.date or date.today().isoformat(), a.delta, a.reason))
         jid = cur.lastrowid
-        db.log_audit(c, get_current_user(request), "INSERT", "adjustment", jid,
+        db.log_audit(c, user, "INSERT", "adjustment", jid,
                      f"Ajustement stock ({'+' if a.delta > 0 else ''}{a.delta}) « {bk['title'] if bk else ''} » : {a.reason}",
                      snapshot_after={"id": jid, "lot_id": lid, "delta": a.delta, "reason": a.reason})
+    live_hub.broadcast("activity_logged", {
+        "type": "stock_adjusted",
+        "user_name": user,
+        "title": bk["title"] if bk else "Livre",
+        "detail": f"Ajustement {'+' if a.delta > 0 else ''}{a.delta} ({a.reason})",
+        "data": {"lot_id": lid, "delta": a.delta}
+    })
+    live_hub.broadcast("metrics_invalidated", {"reason": "stock_updated"})
     return {"ok": True}
 
 
@@ -944,7 +972,7 @@ def sale_add(s: SaleIn, request: Request):
     # Nettoyer l'éventuel panier actif du terminal ayant validé
     dev = security.device_from_request(request)
     dev_id = str(dev["id"]) if dev else (request.client.host if request.client else "local")
-    live_hub.remove_basket(dev_id)
+    live_hub.remove_basket(dev_id, action={"type": "sale_cleared"})
 
     # Diffuser l'événement en direct pour la régie CCTV et l'invalidation des métriques
     live_hub.broadcast("sale_registered", {
@@ -2012,6 +2040,7 @@ class ActiveBasketIn(BaseModel):
     gender: Optional[str] = None
     age: Optional[str] = None
     star: Optional[int] = 0
+    action: Optional[dict] = None
 
 
 @app.post("/api/mobile/active-cart")
@@ -2031,15 +2060,38 @@ def update_active_basket(b: ActiveBasketIn, request: Request):
         "age": b.age,
         "star": b.star or 0
     }
-    live_hub.update_basket(dev_id, data)
+    live_hub.update_basket(dev_id, data, action=b.action)
     return {"ok": True}
 
 
 @app.delete("/api/mobile/active-cart")
-def delete_active_basket(request: Request):
+def delete_active_basket(request: Request, reason: Optional[str] = "cart_cleared"):
     dev = security.device_from_request(request)
     dev_id = str(dev["id"]) if dev else (request.client.host if request.client else "local")
-    live_hub.remove_basket(dev_id)
+    dev_name = dev["name"] if dev else "Mobile"
+    live_hub.remove_basket(dev_id, action={"type": reason, "user_name": dev_name})
+    return {"ok": True}
+
+
+class ActivityEventIn(BaseModel):
+    type: str
+    user_name: Optional[str] = "Libraire"
+    title: Optional[str] = None
+    detail: Optional[str] = None
+    data: Optional[dict] = None
+
+
+@app.post("/api/live/activity")
+def post_live_activity(ev: ActivityEventIn, request: Request):
+    dev = security.device_from_request(request)
+    dev_name = dev["name"] if dev else (ev.user_name or "Poste")
+    live_hub.broadcast("activity_logged", {
+        "type": ev.type,
+        "user_name": ev.user_name or dev_name,
+        "title": ev.title,
+        "detail": ev.detail,
+        "data": ev.data or {}
+    })
     return {"ok": True}
 
 

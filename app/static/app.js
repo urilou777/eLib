@@ -325,7 +325,8 @@ function updateFocusUI() {
   const label = $('#focusBtnLabel');
   const drawer = $('#cctvDrawer');
 
-  const countActiveBaskets = (liveBaskets || []).filter(b => b.qty > 0).length;
+  const activeBaskets = (liveBaskets || []).filter(b => b.qty > 0 || (b.items && b.items.length > 0));
+  const countActiveBaskets = activeBaskets.length;
 
   if (btn) {
     btn.classList.toggle('focus-active', active);
@@ -2144,6 +2145,7 @@ VIEWS.pos = async () => {
     }
     cart();
     checkDeskPackUpsell(b);
+    logLiveActivity(b.is_pack ? 'pack_added' : 'book_added', b.title, eur(b.price), { price: b.price });
   };
   window.posAddToCart = add;
 
@@ -2284,6 +2286,7 @@ VIEWS.pos = async () => {
       };
       localStorage.setItem('librairie_standby_cart', JSON.stringify(standbyData));
       localStorage.removeItem('librairie_desk_active_cart');
+      logLiveActivity('standby_saved', 'Panier mis en attente', `${standbyData.qty} articles · ${standbyData.total}`, { count: standbyData.qty });
 
       S.cart = [];
       curGender = '';
@@ -2344,6 +2347,7 @@ VIEWS.pos = async () => {
         if (curGender || curAge || curStar) collapseProfile(); else expandProfile();
 
         localStorage.removeItem('librairie_standby_cart');
+        logLiveActivity('standby_resumed', 'Panier réactivé', `${S.cart.length} articles`);
         cart();
         toast("Panier précédent repris avec succès !");
       } catch (err) {
@@ -3336,6 +3340,16 @@ let liveEventSource = null;
 let liveBaskets = [];
 let liveFeedLogs = [];
 
+function logLiveActivity(type, title, detail, data = {}) {
+  api('/api/live/activity', 'POST', {
+    type,
+    user_name: S.user || 'Caisse Principale',
+    title,
+    detail,
+    data
+  }).catch(() => {});
+}
+
 function playLiveSaleChime() {
   if (localStorage.getItem('librairie_cctv_mute') === 'true') return;
   try {
@@ -3401,10 +3415,11 @@ function showLiveSaleAlert(sale) {
   }, 6500);
 }
 
-function addLiveFeedRow(kind, data) {
-  const now = new Date();
-  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-  
+function formatLiveEvent(kind, data) {
+  const payload = Object.assign({}, data.data || {}, data);
+  const user = esc(payload.user_name || 'Libraire');
+  let pillClass = 'scan';
+  let pillLabel = 'LIVE';
   let icon = '📱';
   let text = '';
   let isSale = false;
@@ -3412,17 +3427,137 @@ function addLiveFeedRow(kind, data) {
   if (kind === 'sale') {
     icon = '💰';
     isSale = true;
-    text = `<b>${esc(data.user_name || 'Libraire')}</b> a encaissé <b>${eur(data.total)}</b> (${data.qty} ex. · ${esc(data.payment || '')})`;
+    pillClass = 'sale';
+    pillLabel = 'VENTE ENCAISSÉE';
+    text = `<b>${user}</b> a encaissé <b>${eur(payload.total)}</b> (${payload.qty} ex. · <span style="color:#fbd38d">${esc(payload.payment || 'Paiement')}</span>)`;
+  } else if (kind === 'activity') {
+    const actType = payload.type || '';
+    if (actType === 'book_added') {
+      icon = '🔍';
+      pillClass = 'scan';
+      pillLabel = 'SCAN +1';
+      const prStr = payload.price ? ` (${eur(payload.price)})` : (payload.detail ? ` (${esc(payload.detail)})` : '');
+      text = `<b>${user}</b> a scanné « <b>${esc(payload.title || 'Livre')}</b> »${prStr}`;
+    } else if (actType === 'pack_added') {
+      icon = '🎁';
+      pillClass = 'pack';
+      pillLabel = 'PACK CONSEIL';
+      const prStr = payload.price ? ` (${eur(payload.price)})` : (payload.detail ? ` (${esc(payload.detail)})` : '');
+      text = `<b>${user}</b> a ajouté le pack « <b>${esc(payload.title || 'Pack')}</b> »${prStr}`;
+    } else if (actType === 'book_qty') {
+      icon = '🔢';
+      pillClass = 'qty';
+      pillLabel = `QTÉ ×${payload.qty || 1}`;
+      text = `<b>${user}</b> : « <b>${esc(payload.title || 'Livre')}</b> » passé à <b>×${payload.qty || 1}</b>`;
+    } else if (actType === 'book_removed') {
+      icon = '🗑️';
+      pillClass = 'remove';
+      pillLabel = 'RETRAIT';
+      text = `<b>${user}</b> a retiré « <b>${esc(payload.title || 'Livre')}</b> »`;
+    } else if (actType === 'profile_gender') {
+      const g = payload.gender || payload.detail || '';
+      icon = g.includes('Couple') ? '💜' : '👤';
+      pillClass = 'profile';
+      pillLabel = 'PROFIL';
+      const gLabel = g === 'Couple' ? 'Couple 💜' : (g || 'Non renseigné');
+      text = `<b>${user}</b> a qualifié le profil : <b>${esc(gLabel)}</b>`;
+    } else if (actType === 'profile_age') {
+      const a = payload.age || payload.detail || '';
+      icon = '🎂';
+      pillClass = 'age';
+      pillLabel = 'ÂGE';
+      text = `<b>${user}</b> a sélectionné la tranche d'âge : <b>${esc(a)}</b>`;
+    } else if (actType === 'profile_star') {
+      const isSt = payload.star === true || payload.star === 1 || payload.star === '1' || String(payload.detail).includes('Star');
+      icon = '⭐';
+      pillClass = 'star';
+      pillLabel = '⭐ CLIENT STAR';
+      text = `<b>${user}</b> a ${isSt ? 'marqué le client comme <b>Client Star ⭐</b>' : 'décoché le profil Star'}`;
+    } else if (actType === 'payment_selected') {
+      const m = payload.method || payload.detail || 'CB';
+      icon = m === 'Espèces' ? '💵' : (m === 'CB' ? '💳' : '📱');
+      pillClass = 'pay';
+      pillLabel = 'PAIEMENT';
+      const owStr = payload.owner ? ` (<span style="color:var(--mut)">${esc(payload.owner)}</span>)` : '';
+      text = `<b>${user}</b> a sélectionné le mode <b>${esc(m)}</b>${owStr}`;
+    } else if (actType === 'smart_split') {
+      icon = '⚖️';
+      pillClass = 'split';
+      pillLabel = 'SMART SPLIT';
+      text = `<b>${user}</b> scission : <b>${esc(payload.detail || '')}</b>`;
+    } else if (actType === 'standby_saved') {
+      icon = '⏸️';
+      pillClass = 'standby';
+      pillLabel = 'ATTENTE ⏸️';
+      text = `<b>${user}</b> a mis un panier en attente (${payload.count || 1} articles)`;
+    } else if (actType === 'standby_resumed') {
+      icon = '▶️';
+      pillClass = 'resume';
+      pillLabel = 'REPRISE ▶️';
+      text = `<b>${user}</b> a réactivé le panier en attente (${payload.count || 1} articles)`;
+    } else if (actType === 'recv_item') {
+      icon = '📦';
+      pillClass = 'recv';
+      pillLabel = 'RÉCEPTION 📦';
+      text = `<b>${user}</b> réceptionne « <b>${esc(payload.title || 'Livre')}</b> » ${esc(payload.detail || '')}`;
+    } else if (actType === 'recv_validated' || actType === 'stock_added') {
+      icon = '📥';
+      pillClass = 'stock';
+      pillLabel = 'STOCK ENTRÉ';
+      text = `<b>${user}</b> : entrée en stock « <b>${esc(payload.title || '')}</b> » ${payload.detail ? `(${esc(payload.detail)})` : ''}`;
+    } else if (actType === 'stock_adjusted') {
+      icon = '🔄';
+      pillClass = 'stock';
+      pillLabel = 'AJUSTEMENT';
+      text = `<b>${user}</b> : ajustement stock « <b>${esc(payload.title || '')}</b> » ${payload.detail ? `(${esc(payload.detail)})` : ''}`;
+    } else if (actType === 'cart_cleared') {
+      icon = '⚪';
+      pillClass = 'remove';
+      pillLabel = 'PANIER LIBÉRÉ';
+      text = `<b>${user}</b> a libéré son panier`;
+    } else {
+      icon = '📱';
+      pillClass = 'scan';
+      pillLabel = 'ACTIVITÉ';
+      text = `<b>${user}</b> : ${esc(payload.detail || payload.title || 'Action effectuée')}`;
+    }
   } else if (kind === 'basket_scan') {
     icon = '🔍';
-    text = `<b>${esc(data.user_name || 'Poste')}</b> : panier à <b>${eur(data.total)}</b> (${data.qty} ex.)`;
-  } else if (kind === 'basket_clear') {
-    icon = '⚪';
-    text = `<b>${esc(data.user_name || 'Poste')}</b> a libéré son panier`;
+    pillClass = 'scan';
+    pillLabel = 'PANIER EN COURS';
+    text = `<b>${user}</b> : panier total <b>${eur(payload.total)}</b> (${payload.qty} ex.)`;
   }
 
-  liveFeedLogs.unshift({ timeStr, icon, text, isSale });
-  if (liveFeedLogs.length > 25) liveFeedLogs.pop();
+  return { icon, pillClass, pillLabel, text, isSale };
+}
+
+let lastFeedKey = '';
+let lastFeedTime = 0;
+
+function addLiveFeedRow(kind, data) {
+  const formatted = formatLiveEvent(kind, data);
+  if (!formatted.text) return;
+
+  const dedupKey = `${formatted.pillLabel}:${formatted.text}`;
+  const nowTs = Date.now();
+  if (dedupKey === lastFeedKey && nowTs - lastFeedTime < 700) {
+    return;
+  }
+  lastFeedKey = dedupKey;
+  lastFeedTime = nowTs;
+
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+  liveFeedLogs.unshift({
+    timeStr,
+    icon: formatted.icon,
+    pillClass: formatted.pillClass,
+    pillLabel: formatted.pillLabel,
+    text: formatted.text,
+    isSale: formatted.isSale
+  });
+  if (liveFeedLogs.length > 35) liveFeedLogs.pop();
   renderLiveFeed();
 }
 
@@ -3431,7 +3566,7 @@ function renderLiveFeed() {
   if (!list) return;
 
   if (!liveFeedLogs.length) {
-    list.innerHTML = `<div class="cctv-feed-row empty">En attente d'événements… Bips caméra et ventes apparaîtront ici.</div>`;
+    list.innerHTML = `<div class="cctv-feed-row empty">En attente d'événements… Scans, profils, paiements et encaissements défileront ici en direct.</div>`;
     return;
   }
 
@@ -3439,6 +3574,7 @@ function renderLiveFeed() {
     <div class="cctv-feed-row ${item.isSale ? 'sale' : ''}">
       <span class="cctv-feed-time">${item.timeStr}</span>
       <span class="cctv-feed-icon">${item.icon}</span>
+      <span class="feed-pill ${item.pillClass}">${item.pillLabel}</span>
       <span class="cctv-feed-text">${item.text}</span>
     </div>
   `).join('');
@@ -3448,12 +3584,16 @@ function renderCctvTiles() {
   const grid = $('#cctvTilesGrid');
   const badgeCount = $('#cctvCountBadge');
   const summary = $('#cctvActiveSummary');
+  const topBadge = $('#cctvTopBadge');
   if (!grid) return;
 
-  const activeBaskets = liveBaskets.filter(b => b.qty > 0 || (b.items && b.items.length > 0));
+  const activeBaskets = (liveBaskets || []).filter(b => b.qty > 0 || (b.items && b.items.length > 0));
+  const count = activeBaskets.length;
+  const label = `${count} poste${count > 1 ? 's' : ''} mobile${count > 1 ? 's' : ''} actif${count > 1 ? 's' : ''}`;
 
-  if (badgeCount) badgeCount.textContent = activeBaskets.length;
-  if (summary) summary.textContent = `${activeBaskets.length} poste${activeBaskets.length > 1 ? 's' : ''} mobile${activeBaskets.length > 1 ? 's' : ''} actif${activeBaskets.length > 1 ? 's' : ''}`;
+  if (badgeCount) badgeCount.textContent = count;
+  if (summary) summary.textContent = label;
+  if (topBadge) topBadge.textContent = `${count} mobile${count > 1 ? 's' : ''}`;
 
   if (!activeBaskets.length) {
     grid.innerHTML = `
@@ -3553,11 +3693,19 @@ function handleLiveMessage(msg) {
   } else if (type === 'baskets_updated') {
     liveBaskets = data.baskets || [];
     renderCctvTiles();
-    const active = liveBaskets.filter(b => b.qty > 0);
-    if (active.length > 0) {
-      const top = active[0];
-      addLiveFeedRow('basket_scan', top);
+    if (data.action) {
+      if (data.action.type !== 'sale_cleared') {
+        const actData = Object.assign({}, data.action, { user_name: data.user_name || data.action.user_name });
+        addLiveFeedRow('activity', actData);
+      }
+    } else {
+      const active = liveBaskets.filter(b => b.qty > 0);
+      if (active.length > 0) {
+        addLiveFeedRow('basket_scan', active[0]);
+      }
     }
+  } else if (type === 'activity_logged') {
+    addLiveFeedRow('activity', data);
   } else if (type === 'sale_registered') {
     playLiveSaleChime();
     showLiveSaleAlert(data);

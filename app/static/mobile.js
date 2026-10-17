@@ -176,9 +176,27 @@ function startNetworkMonitor() {
 }
 
 let liveCartSyncTimer = null;
-function syncLiveCart() {
+let pendingLiveAction = null;
+
+function logMobileLiveActivity(type, title, detail, data = {}) {
+  api('/api/live/activity', {
+    method: 'POST',
+    body: {
+      type,
+      user_name: currentUser || 'Libraire Mobile',
+      title,
+      detail,
+      data
+    }
+  }).catch(() => {});
+}
+
+function syncLiveCart(action = null) {
+  if (action) pendingLiveAction = action;
   if (liveCartSyncTimer) clearTimeout(liveCartSyncTimer);
   liveCartSyncTimer = setTimeout(async () => {
+    const act = pendingLiveAction;
+    pendingLiveAction = null;
     try {
       if (cart && cart.length > 0) {
         const total = cart.reduce((s, i) => s + i.qty * (i.book ? i.book.price : 0), 0);
@@ -198,24 +216,29 @@ function syncLiveCart() {
             moment: mMoment || getAutoMobileMoment(),
             gender: mGender || null,
             age: mAge || null,
-            star: mStar ? 1 : 0
+            star: mStar ? 1 : 0,
+            action: act
           }
         });
       } else {
-        await api('/api/mobile/active-cart', { method: 'DELETE' });
+        const q = act ? `?reason=${encodeURIComponent(act.type || 'cart_cleared')}` : '';
+        await api('/api/mobile/active-cart' + q, { method: 'DELETE' });
       }
     } catch (e) {
       // Ignorer silencieusement si déconnecté
     }
-  }, 200);
+  }, 120);
 }
 
-function clearLiveCartSync() {
+function clearLiveCartSync(reason = 'cart_cleared') {
   if (liveCartSyncTimer) { clearTimeout(liveCartSyncTimer); liveCartSyncTimer = null; }
-  api('/api/mobile/active-cart', { method: 'DELETE' }).catch(() => {});
+  api(`/api/mobile/active-cart?reason=${encodeURIComponent(reason)}`, { method: 'DELETE' }).catch(() => {});
 }
 
-function saveActiveCart() {
+function saveActiveCart(action = null) {
+  if (action && action.type && action.type !== 'cart_cleared' && action.type !== 'sale_cleared') {
+    logMobileLiveActivity(action.type, action.title || '', action.detail || '', action);
+  }
   if (cart && cart.length > 0) {
     const data = {
       cart,
@@ -226,10 +249,10 @@ function saveActiveCart() {
       timestamp: Date.now()
     };
     localStorage.setItem('librairie_mobile_active_cart', JSON.stringify(data));
-    syncLiveCart();
+    syncLiveCart(action);
   } else {
     localStorage.removeItem('librairie_mobile_active_cart');
-    clearLiveCartSync();
+    clearLiveCartSync(action ? action.type : 'cart_cleared');
   }
 }
 
@@ -258,11 +281,19 @@ function restoreActiveCart() {
         aEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.a === mAge));
       }
       if (mGender || mAge || mStar) collapseMobileProfile();
+      syncLiveCart();
     }
   } catch (e) {
     localStorage.removeItem('librairie_mobile_active_cart');
   }
 }
+
+// Heartbeat toutes les 25s pour garder la session mobile active et éviter tout décrochage
+setInterval(() => {
+  if (cart && cart.length > 0) {
+    syncLiveCart();
+  }
+}, 25000);
 
 /* ---------- appairage ---------- */
 function deviceLabel() {
@@ -390,6 +421,7 @@ function addPackToCart(pack) {
     cart.push({ book: pack, qty: 1, lot: 'pack' });
   }
   toast('Pack ajouté : ' + pack.title);
+  saveActiveCart({ type: 'pack_added', title: pack.title, price: pack.price });
   renderCart();
 }
 
@@ -406,6 +438,7 @@ function addToCart(book) {
     if (ex.qty + 1 > lotRemaining(ex)) toast('Stock du lot choisi atteint', 'warn'); else ex.qty++;
   } else cart.push({ book, qty: 1, lot: defLot });
   toast('Ajouté : ' + book.title);
+  saveActiveCart({ type: 'book_added', title: book.title, price: book.price });
   renderCart();
   checkAndShowPackUpsell(book);
 }
@@ -542,6 +575,7 @@ if (bApplyMp) bApplyMp.addEventListener('click', () => {
       { payment: mpMode2, amount: a2 }
     ]
   };
+  saveActiveCart({ type: 'smart_split', owner: activeMpOwner, detail: `${a1.toFixed(2)} € ${mpMode1} + ${a2.toFixed(2)} € ${mpMode2}` });
   closeMultiPayModal();
   renderCart();
   toast('Cumul défini pour ' + activeMpOwner);
@@ -573,9 +607,22 @@ function renderCart() {
               )
             ),
             el('div', { class: 'qty' },
-              el('button', { type: 'button', text: '−', onclick: () => { item.qty--; if (item.qty <= 0) cart.splice(idx, 1); renderCart(); } }),
+              el('button', { type: 'button', text: '−', onclick: () => {
+                item.qty--;
+                const isRemoved = item.qty <= 0;
+                if (isRemoved) cart.splice(idx, 1);
+                saveActiveCart(isRemoved ? { type: 'book_removed', title: b.title } : { type: 'book_qty', title: b.title, qty: item.qty });
+                renderCart();
+              } }),
               el('b', { text: item.qty }),
-              el('button', { type: 'button', text: '+', onclick: () => { if (item.qty + 1 > (b.stock || 999)) toast('Stock pack atteint', 'warn'); else { item.qty++; renderCart(); } } })
+              el('button', { type: 'button', text: '+', onclick: () => {
+                if (item.qty + 1 > (b.stock || 999)) toast('Stock pack atteint', 'warn');
+                else {
+                  item.qty++;
+                  saveActiveCart({ type: 'book_qty', title: b.title, qty: item.qty });
+                  renderCart();
+                }
+              } })
             )
           ),
           el('div', { class: 'lots', style: 'display:flex;align-items:center;justify-content:space-between;padding:3px 0' },
@@ -615,9 +662,22 @@ function renderCart() {
           el('div', {}, el('div', { class: 'ci-title', text: b.title + (b.volume ? ' · Vol. ' + b.volume : '') }),
             el('div', { class: 'muted', text: eur(b.price) + ' / unité' })),
           el('div', { class: 'qty' },
-            el('button', { type: 'button', text: '−', onclick: () => { item.qty--; if (item.qty <= 0) cart.splice(idx, 1); renderCart(); } }),
+            el('button', { type: 'button', text: '−', onclick: () => {
+              item.qty--;
+              const isRemoved = item.qty <= 0;
+              if (isRemoved) cart.splice(idx, 1);
+              saveActiveCart(isRemoved ? { type: 'book_removed', title: b.title } : { type: 'book_qty', title: b.title, qty: item.qty });
+              renderCart();
+            } }),
             el('b', { text: item.qty }),
-            el('button', { type: 'button', text: '+', onclick: () => { if (item.qty + 1 > lotRemaining(item)) toast('Stock du lot choisi atteint', 'warn'); else { item.qty++; renderCart(); } } }))),
+            el('button', { type: 'button', text: '+', onclick: () => {
+              if (item.qty + 1 > lotRemaining(item)) toast('Stock du lot choisi atteint', 'warn');
+              else {
+                item.qty++;
+                saveActiveCart({ type: 'book_qty', title: b.title, qty: item.qty });
+                renderCart();
+              }
+            } }))),
         el('div', { class: 'lots' }, lots),
         item.lot === undefined ? el('div', { class: 'hint', text: 'Touchez l\'origine de cet exemplaire' }) : null);
     }));
@@ -666,6 +726,7 @@ function renderCart() {
         style: 'flex:1;justify-content:center;padding:7px 2px;font-size:12px;white-space:nowrap',
         onclick: () => {
           originPayments[currentOwner] = { method: p, parts: null };
+          saveActiveCart({ type: 'payment_selected', method: p, owner: currentOwner });
           renderCart();
         }
       }, p));
@@ -735,6 +796,7 @@ function renderCart() {
           style: 'flex:1;justify-content:center;padding:5px 2px;font-size:11.5px;white-space:nowrap',
           onclick: () => {
             originPayments[g.owner] = { method: p, parts: null };
+            saveActiveCart({ type: 'payment_selected', method: p, owner: g.owner });
             renderCart();
           }
         }, p));
@@ -847,6 +909,8 @@ if (mBtnStandby) {
     };
     localStorage.setItem('librairie_mobile_standby_cart', JSON.stringify(standbyData));
     localStorage.removeItem('librairie_mobile_active_cart');
+    clearLiveCartSync('standby_saved');
+    logMobileLiveActivity('standby_saved', 'Panier mis en attente', `${count} articles · ${eur(total)}`, { count, total });
 
     cart = [];
     originPayments = {};
@@ -898,6 +962,7 @@ if (mBtnResumeStandby) {
       if (mGender || mAge || mStar) collapseMobileProfile(); else expandMobileProfile();
 
       localStorage.removeItem('librairie_mobile_standby_cart');
+      saveActiveCart({ type: 'standby_resumed', count: cart.length });
       renderCart();
       toast("Panier précédent repris avec succès !");
     } catch (err) {
@@ -1238,6 +1303,7 @@ if (mStarBtn) {
     mStar = mStar ? 0 : 1;
     mStarBtn.classList.toggle('on', !!mStar);
     scheduleMobileProfileCollapse();
+    saveActiveCart({ type: 'profile_star', star: !!mStar });
   });
 }
 
@@ -1268,6 +1334,7 @@ if (mGenEl) {
         if (cBadge) cBadge.style.display = 'none';
       }
       scheduleMobileProfileCollapse();
+      saveActiveCart({ type: 'profile_gender', gender: mGender });
     }
   });
 }
@@ -1286,6 +1353,7 @@ if (mAgeEl) {
         mAge = b.dataset.a;
       }
       scheduleMobileProfileCollapse();
+      saveActiveCart({ type: 'profile_age', age: mAge });
     }
   });
 }
@@ -1458,6 +1526,7 @@ function addToRecv(book) {
     recvList.push({ book, qty: 1 });
   }
   toast(`+1 ${book.title}`, 'ok');
+  logMobileLiveActivity('recv_item', book.title, `+1 ex. (total ${ex ? ex.qty : 1})`, { book_id: book.id });
   renderRecv();
 }
 
@@ -1499,6 +1568,8 @@ $('#btnValidateRecv').addEventListener('click', async () => {
   const btn = $('#btnValidateRecv');
   btn.disabled = true;
   try {
+    const totalCount = recvList.reduce((s, i) => s + i.qty, 0);
+    const ownerLabel = $('#recvOwner option:checked')?.textContent || 'Rayon';
     for (const item of recvList) {
       await api('/api/lots', {
         method: 'POST',
@@ -1510,7 +1581,8 @@ $('#btnValidateRecv').addEventListener('click', async () => {
         }
       });
     }
-    toast(`${recvList.reduce((s, i) => s + i.qty, 0)} exemplaire(s) entrés en stock`, 'ok');
+    toast(`${totalCount} exemplaire(s) entrés en stock`, 'ok');
+    logMobileLiveActivity('recv_validated', `${totalCount} ex. entrés en stock`, `Propriétaire : ${ownerLabel}`, { count: totalCount });
     if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     recvList = [];
     localStorage.removeItem('librairie_mobile_recv_list');

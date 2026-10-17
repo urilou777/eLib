@@ -2225,7 +2225,7 @@ body.focus-mode-on #userBadge { opacity: 0.6; }
   border: 1px solid rgba(226, 192, 242, 0.12);
   border-radius: 10px;
   padding: 8px;
-  max-height: 180px;
+  max-height: 220px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -2252,6 +2252,35 @@ body.focus-mode-on #userBadge { opacity: 0.6; }
 .cctv-feed-time { color: var(--mut); font-size: 10px; font-variant-numeric: tabular-nums; }
 .cctv-feed-icon { font-size: 14px; }
 .cctv-feed-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Badges Granulaires du Téléscripteur Live */
+.feed-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.feed-pill.scan { background: rgba(56, 178, 172, 0.2); color: #4fd1c5; border: 1px solid rgba(79, 209, 197, 0.35); }
+.feed-pill.qty { background: rgba(66, 153, 225, 0.2); color: #63b3ed; border: 1px solid rgba(99, 179, 237, 0.35); }
+.feed-pill.pack { background: rgba(159, 122, 234, 0.25); color: #d6bcfa; border: 1px solid rgba(183, 148, 244, 0.4); }
+.feed-pill.remove { background: rgba(229, 62, 62, 0.2); color: #fc8181; border: 1px solid rgba(252, 129, 129, 0.35); }
+.feed-pill.profile { background: rgba(237, 100, 166, 0.2); color: #f687b3; border: 1px solid rgba(246, 135, 179, 0.35); }
+.feed-pill.age { background: rgba(102, 126, 234, 0.2); color: #a3bffa; border: 1px solid rgba(163, 191, 250, 0.35); }
+.feed-pill.star { background: rgba(246, 224, 94, 0.25); color: #faf089; border: 1px solid rgba(250, 240, 137, 0.5); text-shadow: 0 0 6px rgba(250, 240, 137, 0.6); }
+.feed-pill.pay { background: rgba(72, 187, 120, 0.2); color: #68d391; border: 1px solid rgba(104, 211, 145, 0.35); }
+.feed-pill.split { background: rgba(49, 151, 149, 0.25); color: #81e6d9; border: 1px solid rgba(129, 230, 217, 0.4); }
+.feed-pill.standby { background: rgba(237, 137, 54, 0.2); color: #fbd38d; border: 1px solid rgba(251, 211, 141, 0.35); }
+.feed-pill.resume { background: rgba(66, 153, 225, 0.2); color: #90cdf4; border: 1px solid rgba(144, 205, 244, 0.35); }
+.feed-pill.recv { background: rgba(40, 116, 166, 0.25); color: #7fb3d5; border: 1px solid rgba(127, 179, 213, 0.4); }
+.feed-pill.stock { background: rgba(46, 133, 64, 0.25); color: #82e0aa; border: 1px solid rgba(130, 224, 170, 0.4); }
+.feed-pill.sale { background: rgba(230, 167, 60, 0.25); color: #f6e05e; border: 1px solid rgba(230, 167, 60, 0.5); font-weight: 900; }
 
 /* Bannière Alerte Vente Festive Flottante (« Superchat / Alerte Stream ») */
 .live-sale-alert-container {
