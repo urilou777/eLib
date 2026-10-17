@@ -32,5 +32,11 @@ class TestBookStats(unittest.TestCase):
             book_stats(999999)
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_mobile_security_allows_stats(self):
+        from app.security import _match, MOBILE
+        self.assertTrue(_match(MOBILE, "GET", "/api/books/4/stats"))
+        self.assertTrue(_match(MOBILE, "GET", "/api/books/57/stats"))
+        self.assertFalse(_match(MOBILE, "POST", "/api/books/4/stats"))
+
 if __name__ == "__main__":
     unittest.main()

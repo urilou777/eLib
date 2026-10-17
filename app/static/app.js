@@ -1896,22 +1896,9 @@ VIEWS.pos = async () => {
   let curGender = '';
   let curAge = '';
   let curStar = 0;
-  let isDemoManuallyExpanded = false;
+  let demoTimer = null;
 
-  const updateDemoCollapse = (triggerTimer = false) => {
-    const cardExp = $('#demoCardExpanded');
-    const cardCol = $('#demoCardCollapsed');
-    const sumTxt = $('#demoSummaryText');
-    if (!cardExp || !cardCol) return;
-
-    const isFilled = !!(curGender && curAge);
-    if (!isFilled) {
-      isDemoManuallyExpanded = false;
-      cardExp.style.display = 'block';
-      cardCol.style.display = 'none';
-      return;
-    }
-
+  const getProfileSummary = () => {
     const parts = [];
     if (curGender === 'Couple') parts.push('Couple 💜');
     else if (curGender) parts.push(curGender);
@@ -1924,33 +1911,52 @@ VIEWS.pos = async () => {
     };
     if (curAge) parts.push(ageMap[curAge] || curAge);
     if (curStar) parts.push('⭐ STAR');
+    return parts.join(' · ');
+  };
 
-    if (sumTxt) sumTxt.textContent = parts.join(' · ');
+  const collapseProfile = () => {
+    const cardExp = $('#demoCardExpanded');
+    const cardCol = $('#demoCardCollapsed');
+    const sumTxt = $('#demoSummaryText');
+    if (!cardExp || !cardCol) return;
+    const summary = getProfileSummary();
+    if (!summary) return;
+    if (sumTxt) sumTxt.textContent = summary;
+    cardExp.style.display = 'none';
+    cardCol.style.display = 'flex';
+  };
 
-    if (isDemoManuallyExpanded) {
-      cardExp.style.display = 'block';
-      cardCol.style.display = 'none';
+  const expandProfile = () => {
+    if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    const cardExp = $('#demoCardExpanded');
+    const cardCol = $('#demoCardCollapsed');
+    if (cardExp) cardExp.style.display = 'block';
+    if (cardCol) cardCol.style.display = 'none';
+  };
+
+  const scheduleProfileCollapse = () => {
+    if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    if (!curGender && !curAge && !curStar) {
+      expandProfile();
       return;
     }
+    demoTimer = setTimeout(() => {
+      collapseProfile();
+    }, 5000);
+  };
 
-    if (triggerTimer) {
-      setTimeout(() => {
-        if (curGender && curAge && !isDemoManuallyExpanded) {
-          cardExp.style.display = 'none';
-          cardCol.style.display = 'flex';
-        }
-      }, 260);
+  const updateDemoCollapse = () => {
+    if (!curGender && !curAge && !curStar) {
+      expandProfile();
     } else {
-      cardExp.style.display = 'none';
-      cardCol.style.display = 'flex';
+      collapseProfile();
     }
   };
 
   const cardCol = $('#demoCardCollapsed');
   if (cardCol) {
     cardCol.onclick = () => {
-      isDemoManuallyExpanded = true;
-      updateDemoCollapse();
+      expandProfile();
     };
   }
 
@@ -1962,7 +1968,7 @@ VIEWS.pos = async () => {
       btnStar.style.background = curStar ? '#e6a73c' : '';
       btnStar.style.borderColor = curStar ? '#e6a73c' : '';
       btnStar.style.color = curStar ? '#000' : '';
-      if (curGender && curAge) updateDemoCollapse();
+      scheduleProfileCollapse();
     };
   }
   $('#demoGender').onclick = e => {
@@ -1989,8 +1995,7 @@ VIEWS.pos = async () => {
         $('#demoGender').classList.remove('is-couple');
         if (cplBadge) cplBadge.style.display = 'none';
       }
-      isDemoManuallyExpanded = false;
-      updateDemoCollapse(true);
+      scheduleProfileCollapse();
     }
   };
   $('#demoAge').onclick = e => {
@@ -2004,8 +2009,7 @@ VIEWS.pos = async () => {
         b.classList.add('on');
         curAge = b.dataset.a;
       }
-      isDemoManuallyExpanded = false;
-      updateDemoCollapse(true);
+      scheduleProfileCollapse();
     }
   };
   const draw = () => {
@@ -2216,8 +2220,8 @@ VIEWS.pos = async () => {
       $('#demoGender')?.classList.remove('is-couple');
       $('#demoGender')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
       $('#demoAge')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
-      isDemoManuallyExpanded = false;
-      updateDemoCollapse();
+      if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+      expandProfile();
 
       cart();
       toast("Panier mis en attente. Caisse libre pour le client suivant !");
@@ -2255,8 +2259,7 @@ VIEWS.pos = async () => {
         $('#demoGender')?.classList.toggle('is-couple', curGender === 'Couple');
         $('#demoAge button')?.forEach(b => b.classList.toggle('on', b.dataset.a === curAge));
 
-        isDemoManuallyExpanded = false;
-        updateDemoCollapse();
+        if (curGender || curAge || curStar) collapseProfile(); else expandProfile();
 
         localStorage.removeItem('librairie_standby_cart');
         cart();
@@ -2327,6 +2330,8 @@ VIEWS.pos = async () => {
     $('#demoGender')?.classList.remove('is-couple');
     $('#demoGender')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
     $('#demoAge')?.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+    if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    expandProfile();
     await loadRef(); draw(); cart();
   });
   draw(); cart();

@@ -216,6 +216,7 @@ MOBILE = [
     ("GET", re.compile(r"^/api/options$")),
     ("GET", re.compile(r"^/api/owners$")),
     ("GET", re.compile(r"^/api/books/scan/[^/]+$")),
+    ("GET", re.compile(r"^/api/books/\d+/stats$")),
     ("GET", re.compile(r"^/api/books/search$")),
     ("POST", re.compile(r"^/api/books$")),
     ("POST", re.compile(r"^/api/lots$")),

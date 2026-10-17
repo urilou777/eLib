@@ -405,6 +405,153 @@ button, select, input { font:inherit; color:inherit; }
   font-weight: 700 !important;
   box-shadow: 0 0 8px rgba(99,102,241,0.4) !important;
 }
+
+/* Modale Statistiques Livre Mobile & Bouton Stats Caisse */
+.btn-m-stats {
+  background: rgba(143, 22, 173, 0.18) !important;
+  border: 1px solid rgba(143, 22, 173, 0.45) !important;
+  color: #d8b4fe !important;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  border-radius: 999px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+}
+.btn-m-stats:active {
+  background: var(--a1) !important;
+  color: #fff !important;
+}
+.m-stats-sheet {
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 18px !important;
+  padding: 14px 16px !important;
+  width: min(100%, 390px) !important;
+  max-height: 90vh !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+.m-stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.m-stats-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.25;
+}
+.m-stats-sub {
+  font-size: 11.5px;
+  color: var(--mut);
+  margin-top: 2px;
+}
+.m-stats-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.m-stats-kpi-card {
+  background: var(--card2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 6px;
+  text-align: center;
+}
+.m-stats-kpi-lbl {
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--mut);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.m-stats-kpi-val {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  margin-top: 1px;
+}
+.m-stats-box {
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 9px;
+}
+.m-stats-box-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--mut);
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.m-stats-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  margin-bottom: 4px;
+}
+.m-stats-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+.m-stats-ages {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin-bottom: 5px;
+}
+.m-stats-age-pill {
+  background: var(--card2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 3px;
+  font-size: 9.5px;
+  text-align: center;
+}
+.m-stats-star {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 10px;
+  color: #fbbf24;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.m-stats-sales {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.m-stats-sale-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--card2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 10px;
+}
 </style>
 </head>
 <body>
@@ -758,6 +905,11 @@ button, select, input { font:inherit; color:inherit; }
       <button class="btn primary" id="btnApplyMultiPay" type="button" style="flex:1">Appliquer</button>
     </div>
   </div>
+</section>
+
+<!-- Modale Statistiques Livre Caisse & Réassurance Mobile -->
+<section class="overlay" id="bookStatsModal" hidden>
+  <div class="sheet m-stats-sheet" id="mBookStatsContent"></div>
 </section>
 
 <div id="toasts" aria-live="polite"></div>
