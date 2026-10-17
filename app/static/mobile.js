@@ -251,10 +251,6 @@ function toggleCamMinimize(forceMin, reason = 'manual') {
   if (btnToggleCamSize) {
     btnToggleCamSize.textContent = isMin ? '▼ Scanner' : '▲ Masquer';
   }
-  const fullCartBtn = $('#btnViewFullCart');
-  if (fullCartBtn) {
-    fullCartBtn.textContent = isMin ? '📷 Scanner' : 'Plein écran';
-  }
   if (camMinibarText && isMin) {
     camMinibarText.textContent = (reason === 'auto')
       ? 'Scanner en veille · Toucher pour réactiver'
@@ -269,16 +265,6 @@ function toggleCamMinimize(forceMin, reason = 'manual') {
 }
 if (btnToggleCamSize) btnToggleCamSize.addEventListener('click', () => toggleCamMinimize());
 if (camMinibar) camMinibar.addEventListener('click', () => toggleCamMinimize(false));
-const btnViewFullCart = $('#btnViewFullCart');
-if (btnViewFullCart) {
-  btnViewFullCart.addEventListener('click', () => {
-    const isMin = camCont && camCont.classList.contains('minimized');
-    toggleCamMinimize(!isMin);
-    if (!isMin) {
-      setTimeout(() => $('#cartCard')?.scrollIntoView({ behavior: 'smooth' }), 100);
-    }
-  });
-}
 
 const mStarBtn = $('#mBtnStar');
 if (mStarBtn) {
@@ -763,8 +749,6 @@ function pauseCamera(reason = 'minimized') {
   if (camCont && !camCont.classList.contains('minimized')) {
     camCont.classList.add('minimized');
     if (btnToggleCamSize) btnToggleCamSize.textContent = '▼ Scanner';
-    const fullCartBtn = $('#btnViewFullCart');
-    if (fullCartBtn) fullCartBtn.textContent = '📷 Scanner';
   }
   if (camMinibarText) {
     camMinibarText.textContent = (reason === 'auto')
@@ -904,8 +888,6 @@ async function startCamera(specificDeviceId = null) {
   if (camCont && camCont.classList.contains('minimized')) {
     camCont.classList.remove('minimized');
     if (btnToggleCamSize) btnToggleCamSize.textContent = '▲ Masquer';
-    const fullCartBtn = $('#btnViewFullCart');
-    if (fullCartBtn) fullCartBtn.textContent = 'Plein écran';
   }
   isAutoPaused = false;
 
