@@ -47,7 +47,7 @@ const closeModal = () => $('#modalRoot').innerHTML = '';
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 /* ---------- état ---------- */
-const S = { books: [], owners: [], options: { category: [], type: [], payment: [], publisher: [] }, cart: [], view: 'dashboard', range: 'all', from: '', to: '' };
+const S = { books: [], owners: [], options: { category: [], type: [], payment: [], publisher: [] }, cart: [], view: 'dashboard', range: 'all', from: '', to: '', moment: '' };
 const stockBadge = b => b.stock <= 0 ? '<span class="badge b-out">Rupture</span>' :
   b.stock <= b.min_stock ? `<span class="badge b-low">${b.stock} · bas</span>` : `<span class="badge b-ok">${b.stock}</span>`;
 const ownerChips = b => (b.by_owner || []).map(o => `<span class="chip"><i style="background:${o.color}"></i>${esc(o.owner)} ${o.qty}</span>`).join('');
@@ -290,51 +290,384 @@ VIEWS.dashboard = async () => {
     custom: [S.from, S.to]
   };
   const [from, to] = ranges[S.range] || ['', ''];
-  const st = await api(`/api/stats?start=${from}&end=${to}`);
+  const momentParam = S.moment ? `&moment=${encodeURIComponent(S.moment)}` : '';
+  const st = await api(`/api/stats?start=${from}&end=${to}${momentParam}`);
   const k = st.kpi;
-  $('#topActions').innerHTML = `<div class="row"><div class="seg" id="seg">${[
-    ['all', 'Tout'],
-    ['year', 'Année'],
-    ['month', 'Ce mois'],
-    ['30', '30 jours'],
-    ['week', 'Semaine'],
-    ['today', 'Aujourd\'hui']
-  ].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <input type="date" id="dFrom" value="${S.from}"><input type="date" id="dTo" value="${S.to}"></div>`;
-  $('#seg').onclick = e => { if (e.target.dataset.r) { S.range = e.target.dataset.r; VIEWS.dashboard() } };
-  $('#dFrom').onchange = $('#dTo').onchange = () => { S.from = $('#dFrom').value; S.to = $('#dTo').value; S.range = 'custom'; VIEWS.dashboard() };
-  const kp = [
-    ['Chiffre d\'affaires', eur(k.revenue), `${nf(k.qty)} exemplaires`, '#7c5cff'],
-    ['Marge conservée', eur(k.margin), k.revenue ? Math.round(k.margin / k.revenue * 100) + ' % du CA' : '', '#27d3c3'],
-    ['Prix moyen / livre', eur(k.avg_book_price), k.pos_sales ? `Panier caisse ${eur(k.pos_avg_basket)} (${k.pos_sales} ticket${k.pos_sales > 1 ? 's' : ''})` : `${nf(k.qty)} livres vendus`, '#5a9bff'],
-    ['À reverser', eur(k.due_open), 'reste à régler (global)', '#ffb454'],
-    ['Valeur du stock', eur(k.stock_value), `${nf(k.stock_units)} exemplaires`, '#c77dff']
+
+  // Liste des cultes disponibles pour le filtre
+  const allMoments = [
+    '1er Culte (Principal)',
+    '2e Culte (Jeunes EJP)',
+    'Occasion spéciale',
+    'En semaine / Autre'
   ];
-  $('#view').innerHTML = `<div class="grid g-kpi">${kp.map((x, i) => `<div class="card kpi" style="--c:${x[3]};animation-delay:${i * 60}ms"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}</div>
-  <div class="grid g2" style="margin-bottom:16px"><div class="card card-fill"><h3>Évolution mensuelle du CA par origine · tendance & prévision</h3><div id="cTrend"></div></div>
-    <div class="card card-fill"><h3>Répartition par origine du stock</h3><div id="cOwner"></div></div></div>
-  <div class="grid g3" style="margin-bottom:16px"><div class="card"><h3>Top 10 des ventes</h3><div id="cTop"></div></div>
-    <div class="card"><h3>Par catégorie</h3><div id="cCat"></div><h3 style="margin-top:22px">Par éditeur</h3><div id="cPub"></div></div>
-    <div class="card"><h3>Jours de la semaine</h3><div id="cWd"></div><h3 style="margin-top:22px">Moyens de paiement</h3><div id="cPay"></div></div></div>
-  <div class="grid g4" style="margin-bottom:16px">
-    <div class="card"><h3>Temps de culte / Événement</h3><div id="cMoment"></div></div>
-    <div class="card"><h3>Profil acheteurs · Âge</h3><div id="cAge"></div></div>
-    <div class="card"><h3>Profil acheteurs · Genre</h3><div id="cGen"></div></div>
-    <div class="card"><h3>Engagement · STAR ⭐</h3><div id="cStar"></div></div>
-  </div>
-  <div class="card"><h3>Alertes de stock bas (${st.low_stock.length})</h3><div class="table-wrap" style="max-height:clamp(200px, 34vh, 420px)"><table><thead><tr><th>Titre</th><th>Origine</th><th class="num">Stock</th><th class="num">Seuil</th><th class="num">Autonomie estimée</th></tr></thead><tbody>
-  ${st.low_stock.map(b => `<tr><td>${esc(b.title)} ${b.volume ? `<span class="muted">Vol. ${esc(b.volume)}</span>` : ''}</td><td>${ownerChips(b)}</td><td class="num">${stockBadge(b)}</td><td class="num">${b.min_stock}</td><td class="num">${b.days_left == null ? '<span class="muted">pas de ventes récentes</span>' : b.days_left + ' j'}</td></tr>`).join('') || '<tr><td colspan=5 class="muted">Stock optimal sur l\'ensemble des titres.</td></tr>'}</tbody></table></div></div>`;
+  (st.by_moment || []).forEach(m => {
+    if (m.label && !allMoments.includes(m.label) && m.label !== 'Non précisé') {
+      allMoments.push(m.label);
+    }
+  });
+
+  // Remplir S.from et S.to avec les dates effectives si une période prédéfinie est active
+  const effectiveFrom = from || S.from;
+  const effectiveTo = to || (S.range === 'today' ? dToday : S.to);
+
+  $('#topActions').innerHTML = `
+    <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:center">
+      <!-- Filtres rapides en 1 clic direct -->
+      <div class="seg" id="seg">${[
+        ['all', 'Tout'],
+        ['year', 'Année'],
+        ['month', 'Ce mois'],
+        ['week', 'Semaine'],
+        ['today', 'Aujourd\'hui']
+      ].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+
+      <!-- Plage de dates De / À (taille fixe, compacte, cliquable pour réactiver directement les dates choisies) -->
+      <div id="dateBox" title="Cliquer pour appliquer cette plage de dates sur mesure" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2);padding:2px 8px;border-radius:8px;border:1px solid ${S.range === 'custom' ? 'var(--icc-purple)' : 'var(--line)'};height:32px;box-sizing:border-box;cursor:pointer">
+        <input type="date" id="dFrom" value="${effectiveFrom}" title="Date de début" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
+        <span style="color:var(--mut);font-size:10px;user-select:none">→</span>
+        <input type="date" id="dTo" value="${effectiveTo}" title="Date de fin" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
+      </div>
+
+      <!-- Sélecteur de culte avec flèche ICC stylisée -->
+      <div style="position:relative;display:inline-flex;align-items:center">
+        <select id="fMoment" style="font-size:11.5px;height:32px;padding:4px 28px 4px 10px;border-radius:8px;max-width:175px">
+          <option value="">Tous les cultes</option>
+          ${allMoments.map(m => `<option value="${esc(m)}" ${S.moment === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+        </select>
+      </div>
+      ${S.moment ? `<button class="btn ghost sm" id="btnClearMoment" title="Retirer le filtre de culte" style="font-size:11px;padding:2px 8px;height:32px;border-color:var(--icc-light);color:var(--icc-light);display:inline-flex;align-items:center;gap:3px">✕ (${esc(S.moment)})</button>` : ''}
+    </div>
+  `;
+
+  $('#seg').onclick = e => { 
+    const r = e.target.closest('button')?.dataset.r;
+    if (r) { 
+      S.range = r;
+      VIEWS.dashboard(); 
+    } 
+  };
+
+  // Clic direct sur le bloc de dates pour réactiver la période sur-mesure sans avoir à re-choisir une date
+  $('#dateBox').onclick = e => {
+    if (e.target.tagName !== 'INPUT' || S.range !== 'custom') {
+      const fVal = $('#dFrom').value;
+      const tVal = $('#dTo').value;
+      if (fVal || tVal) {
+        S.from = fVal;
+        S.to = tVal;
+        S.range = 'custom';
+        VIEWS.dashboard();
+      }
+    }
+  };
+
+  $('#dFrom').onchange = $('#dTo').onchange = () => { 
+    S.from = $('#dFrom').value; 
+    S.to = $('#dTo').value; 
+    S.range = 'custom'; 
+    VIEWS.dashboard(); 
+  };
+  $('#fMoment').onchange = () => { S.moment = $('#fMoment').value; VIEWS.dashboard(); };
+  if ($('#btnClearMoment')) $('#btnClearMoment').onclick = () => { S.moment = ''; VIEWS.dashboard(); };
+
+  // Cartes KPI principales
+  const kp = [
+    ['Chiffre d\'affaires', eur(k.revenue), `${nf(k.qty)} livres vendus`, '#7c5cff'],
+    ['Marge conservée', eur(k.margin), k.revenue ? Math.round(k.margin / k.revenue * 100) + ' % du CA' : '', '#27d3c3'],
+    ['Panier moyen caisse', eur(k.pos_avg_basket), k.pos_sales ? `${k.pos_sales} ticket${k.pos_sales > 1 ? 's' : ''} (moy. ${eur(k.avg_book_price)} / livre)` : `${nf(k.qty)} livres vendus`, '#5a9bff'],
+    ['À reverser', eur(k.due_open), 'reste à régler aux dépôts', '#ffb454'],
+    ['Valeur du stock', eur(k.stock_value), `${nf(k.stock_units)} exemplaires en rayon`, '#c77dff']
+  ];
+
+  // Cultes et moments de vente dominicaux
+  const momentConfigs = [
+    { id: '1er Culte (Principal)', name: '1er Culte (Principal)', sub: 'Rush matin', icon: '☀️', color: '#ffb454' },
+    { id: '2e Culte (Jeunes EJP)', name: '2e Culte (Jeunes EJP)', sub: 'Rush jeunesse', icon: '⚡', color: '#a020c4' },
+    { id: 'Occasion spéciale', name: 'Occasion spéciale', sub: 'Événements & veillées', icon: '✨', color: '#27d3c3' },
+    { id: 'En semaine / Autre', name: 'En semaine / Autre', sub: 'Permanences librairie', icon: '📅', color: '#5a9bff' }
+  ];
+  const momMap = {};
+  (st.by_moment || []).forEach(m => { momMap[m.label] = m; });
+  const totalMomRev = (st.by_moment || []).reduce((acc, m) => acc + m.revenue, 0) || 1;
+
+  const renderMomentCard = (cfg) => {
+    const m = momMap[cfg.id] || { label: cfg.id, n: 0, revenue: 0, qty: 0, avg_basket: 0, top_book: null, top_book_qty: 0 };
+    const pct = Math.round((m.revenue / totalMomRev) * 100);
+    const isAct = S.moment === cfg.id;
+    return `
+      <div class="moment-card ${isAct ? 'active' : ''}" data-moment="${esc(cfg.id)}" title="Cliquer pour filtrer la vue sur ce culte">
+        <div>
+          <div class="moment-badge" style="color:${cfg.color}">
+            <span>${cfg.icon}</span>
+            <span>${esc(cfg.name)}</span>
+            <span class="muted" style="font-weight:400;text-transform:none">· ${esc(cfg.sub)}</span>
+          </div>
+          <div class="moment-rev">${eur(m.revenue)}</div>
+          <div class="moment-meta">
+            <span>${pct}% du CA caisse · ${m.n} ticket${m.n > 1 ? 's' : ''}</span>
+            <span><b>Panier ${eur(m.avg_basket)}</b></span>
+          </div>
+          <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-bottom:10px">
+            <div class="fl" style="width:${pct}%;height:100%;background:${cfg.color}"></div>
+          </div>
+        </div>
+        <div class="moment-top" title="${m.top_book ? esc(m.top_book) : 'Aucun titre'}">
+          ${m.top_book ? `🏆 <b>Top :</b> ${esc(m.top_book)} <span class="muted">(${m.top_book_qty} ex)</span>` : '<span class="muted">Aucune vente enregistrée</span>'}
+        </div>
+      </div>
+    `;
+  };
+
+  // Démographie : Genre avec pictogrammes
+  const f = (st.by_gender || []).find(x => x.label === 'Femme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
+  const h = (st.by_gender || []).find(x => x.label === 'Homme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
+  const unkGen = (st.by_gender || []).find(x => x.label !== 'Femme' && x.label !== 'Homme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
+  const totQualGen = (f.revenue + h.revenue) || 1;
+  const fPct = Math.round((f.revenue / totQualGen) * 100);
+  const hPct = Math.round((h.revenue / totQualGen) * 100);
+
+  // Démographie : Tranches d'âge
+  const ageLabels = {
+    'Enfant / Ado': 'Ados (< 18 ans)',
+    'Jeune adulte': 'Jeunes (18-29 ans)',
+    'Adulte': 'Adultes (30-59 ans)',
+    'Senior': 'Séniors (60+ ans)'
+  };
+  const totAgeRev = (st.by_age || []).filter(a => a.label !== 'Non renseigné').reduce((acc, a) => acc + a.revenue, 0) || 1;
+
+  // Démographie : Engagement STAR
+  const star = (st.by_star || []).find(x => x.is_star === 1 || (x.label && x.label.includes('STAR'))) || { revenue: 0, n: 0, avg_basket: 0 };
+  const other = (st.by_star || []).find(x => x.is_star === 0 || (x.label && !x.label.includes('STAR'))) || { revenue: 0, n: 0, avg_basket: 0 };
+  const totStarRev = (star.revenue + other.revenue) || 1;
+  const starPct = Math.round((star.revenue / totStarRev) * 100);
+  const diffPct = other.avg_basket > 0 ? Math.round(((star.avg_basket - other.avg_basket) / other.avg_basket) * 100) : 0;
+
+  // Moyens de paiement
+  const payIcons = {
+    'CB': '💳',
+    'Espèces': '💵',
+    'Wero': '📱',
+    'Don / Offert': '🎁',
+    'Don': '🎁',
+    'Virement': '🏦'
+  };
+  const totPayRev = (st.payments || []).reduce((acc, p) => acc + p.revenue, 0) || 1;
+
+  $('#view').innerHTML = `
+    <div class="grid g-kpi" style="margin-bottom:18px">
+      ${kp.map((x, i) => `<div class="card kpi" style="--c:${x[3]};animation-delay:${i * 60}ms"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}
+    </div>
+
+    <!-- Section Cultes & Rushes Dominicaux -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px;align-items:center">
+        <h3 style="margin:0">Temps de culte & Rushes dominicaux <span class="muted" style="font-weight:400;text-transform:none;font-size:12px">· Cliquez sur un culte pour filtrer toute la page</span></h3>
+        ${S.moment ? `<span class="badge" style="background:var(--icc-purple);color:#fff">Filtre actif : ${esc(S.moment)}</span>` : ''}
+      </div>
+      <div class="grid g-moment">
+        ${momentConfigs.map(renderMomentCard).join('')}
+      </div>
+    </div>
+
+    <!-- Section Profils Fidèles & Démographie -->
+    <div class="grid g-demo" style="margin-bottom:18px">
+      <!-- Genre avec pictogrammes -->
+      <div class="card">
+        <h3>Profil acheteurs · Genre (avec pictogrammes)</h3>
+        <div class="gender-grid" style="margin-top:12px">
+          <div class="gender-card">
+            <div class="gender-header">
+              <div class="gender-icon-box gender-icon-f" title="Femme">
+                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+              </div>
+              <div>
+                <div>Femmes</div>
+                <div class="muted" style="font-size:11px;font-weight:400">${fPct}% qualifié</div>
+              </div>
+            </div>
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(f.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut)">${f.n} ticket${f.n > 1 ? 's' : ''} · Panier <b>${eur(f.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+              <div class="fl" style="width:${fPct}%;height:100%;background:linear-gradient(90deg, #b452d3, #ca88e3)"></div>
+            </div>
+          </div>
+
+          <div class="gender-card">
+            <div class="gender-header">
+              <div class="gender-icon-box gender-icon-m" title="Homme">
+                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
+              </div>
+              <div>
+                <div>Hommes</div>
+                <div class="muted" style="font-size:11px;font-weight:400">${hPct}% qualifié</div>
+              </div>
+            </div>
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(h.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut)">${h.n} ticket${h.n > 1 ? 's' : ''} · Panier <b>${eur(h.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+              <div class="fl" style="width:${hPct}%;height:100%;background:linear-gradient(90deg, #5a9bff, #7cb3ff)"></div>
+            </div>
+          </div>
+        </div>
+        ${unkGen.n ? `<div style="font-size:11px;color:var(--mut);margin-top:10px">Anonyme / non renseigné : ${eur(unkGen.revenue)} (${unkGen.n} ticket${unkGen.n > 1 ? 's' : ''})</div>` : ''}
+      </div>
+
+      <!-- Tranches d'âge -->
+      <div class="card">
+        <h3>Profil acheteurs · Tranches d'Âge</h3>
+        <div style="margin-top:12px">
+          ${(st.by_age || []).filter(a => a.label !== 'Non renseigné').map(a => {
+            const title = ageLabels[a.label] || a.label;
+            const pct = Math.round((a.revenue / totAgeRev) * 100);
+            return `
+              <div style="margin:8px 0">
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px">
+                  <span><b>${esc(title)}</b> <span class="muted">(${a.n} ticket${a.n > 1 ? 's' : ''})</span></span>
+                  <span><b>${eur(a.revenue)}</b> <span class="muted">(${eur(a.avg_basket)}/t.)</span></span>
+                </div>
+                <div class="tr" style="height:7px;border-radius:7px;background:var(--panel2);overflow:hidden">
+                  <div class="fl" style="width:${pct}%;height:100%;background:linear-gradient(90deg, var(--icc-purple), var(--icc-light))"></div>
+                </div>
+              </div>
+            `;
+          }).join('') || '<div class="empty">Aucune tranche d\'âge qualifiée</div>'}
+        </div>
+      </div>
+
+      <!-- Engagement STAR -->
+      <div class="card">
+        <h3>Engagement · Fidélité STAR ⭐</h3>
+        <div class="star-highlight" style="margin-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-weight:700;font-size:13px;color:#ffb454;display:flex;align-items:center;gap:6px">
+              ⭐ Serviteurs STAR
+            </span>
+            <span class="chip" style="background:rgba(230,167,60,0.25);color:#ffb454;font-size:11px;font-weight:700">${starPct}% du CA caisse</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <div class="muted" style="font-size:11px">CA Serviteurs</div>
+              <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title)">${eur(star.revenue)}</div>
+              <div class="muted" style="font-size:11px">${star.n} ticket${star.n > 1 ? 's' : ''}</div>
+            </div>
+            <div>
+              <div class="muted" style="font-size:11px">Panier moyen STAR</div>
+              <div style="font-family:var(--font-heading);font-size:22px;color:#ffb454">${eur(star.avg_basket)}</div>
+              <div class="muted" style="font-size:11px">vs ${eur(other.avg_basket)} (autres)</div>
+            </div>
+          </div>
+          ${diffPct !== 0 ? `
+            <div style="font-size:11.5px;color:var(--text);background:rgba(0,0,0,0.2);padding:6px 10px;border-radius:8px">
+              💡 <b>Impact fidélité :</b> Le panier STAR est <b>${diffPct > 0 ? '+' + diffPct : diffPct} %</b> ${diffPct > 0 ? 'plus élevé' : 'comparé'} aux autres acheteurs.
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+
+    <!-- Section Moyens de Paiement & Fréquentation hebdomadaire -->
+    <div class="grid g2" style="margin-bottom:18px">
+      <div class="card">
+        <h3>Moyens de Paiement & Encaissements</h3>
+        <div style="margin-top:12px">
+          ${(st.payments || []).map(p => {
+            const ico = payIcons[p.label] || '🪙';
+            const pct = Math.round((p.revenue / totPayRev) * 100);
+            return `
+              <div class="pay-pill">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:18px">${ico}</span>
+                  <div>
+                    <div style="font-weight:700">${esc(p.label)}</div>
+                    <div class="muted" style="font-size:11px">${p.n} ticket${p.n > 1 ? 's' : ''} · Panier ${eur(p.avg_basket)}</div>
+                  </div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-weight:700;font-size:14px">${eur(p.revenue)}</div>
+                  <div class="muted" style="font-size:11px">${pct}%</div>
+                </div>
+              </div>
+            `;
+          }).join('') || '<div class="empty">Aucun encaissement sur la période</div>'}
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Fréquentation par jour de la semaine (Dimanche en 1er)</h3>
+        <div id="cWd" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- Section Évolution & Origines de Stock -->
+    <div class="grid g2" style="margin-bottom:18px">
+      <div class="card card-fill">
+        <h3>Évolution mensuelle du CA par origine · tendance & prévision</h3>
+        <div id="cTrend"></div>
+      </div>
+      <div class="card card-fill">
+        <h3>Répartition par origine du stock</h3>
+        <div id="cOwner"></div>
+      </div>
+    </div>
+
+    <!-- Section Top Ventes & Rayons -->
+    <div class="grid g2" style="margin-bottom:18px">
+      <div class="card">
+        <h3>Top 10 des ventes</h3>
+        <div id="cTop"></div>
+      </div>
+      <div class="card">
+        <h3>Par catégorie & Éditeur</h3>
+        <div id="cCat"></div>
+        <h4 style="margin:16px 0 8px 0;font-size:12px;color:var(--icc-light);text-transform:uppercase">Par éditeur</h4>
+        <div id="cPub"></div>
+      </div>
+    </div>
+
+    <!-- Section Alertes Stock -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px;align-items:center">
+        <h3 style="margin:0">Alertes de stock bas (${st.low_stock.length})</h3>
+        <span class="muted" style="font-size:12px">${st.low_stock.length ? 'Articles atteignant ou sous leur seuil d\'alerte' : 'Tous les stocks sont au vert'}</span>
+      </div>
+      <div class="table-wrap" style="min-height:220px;max-height:480px;overflow-y:auto">
+        <table>
+          <thead>
+            <tr><th>Titre</th><th>Origine</th><th class="num">Stock</th><th class="num">Seuil</th><th class="num">Autonomie estimée</th></tr>
+          </thead>
+          <tbody>
+            ${(st.low_stock && st.low_stock.length > 0) ? st.low_stock.map(b => `<tr><td><b>${esc(b.title)}</b> ${b.volume ? `<span class="muted" style="margin-left:4px">Vol. ${esc(b.volume)}</span>` : ''}</td><td>${ownerChips(b)}</td><td class="num">${stockBadge(b)}</td><td class="num">${b.min_stock}</td><td class="num">${b.days_left == null ? '<span class="muted">pas de ventes récentes</span>' : b.days_left + ' j'}</td></tr>`).join('') : '<tr><td colspan=5 class="muted" style="text-align:center;padding:24px">Stock optimal sur l\'ensemble des titres.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  // Dessin des graphiques
   trendChart($('#cTrend'), st.monthly, st.forecast, st.by_owner_month);
-  donut($('#cOwner'), st.by_owner.map((o, i) => ({ label: o.label, value: o.revenue, color: o.color })));
+  donut($('#cOwner'), st.by_owner.map(o => ({ label: o.label, value: o.revenue, color: o.color })));
   hbars($('#cTop'), st.top, 'qty', nf, r => eur(r.revenue));
-  hbars($('#cCat'), st.by_category); hbars($('#cPub'), st.by_publisher.slice(0, 6));
-  const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']; const wd = {}; st.weekday.forEach(w => wd[w.d] = w.revenue);
+  hbars($('#cCat'), st.by_category);
+  hbars($('#cPub'), st.by_publisher.slice(0, 6));
+
+  const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  const wd = {};
+  st.weekday.forEach(w => { wd[w.d] = w.revenue; });
   hbars($('#cWd'), [0, 1, 2, 3, 4, 5, 6].map(d => ({ label: days[d], revenue: wd[d] || 0 })));
-  hbars($('#cPay'), st.payments.map(p => ({ label: p.label, n: p.n })), 'n', nf);
-  hbars($('#cMoment'), (st.by_moment || []).map(m => ({ label: m.label, revenue: m.revenue, n: m.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
-  hbars($('#cAge'), (st.by_age || []).map(a => ({ label: a.label, revenue: a.revenue, n: a.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
-  hbars($('#cGen'), (st.by_gender || []).map(g => ({ label: g.label, revenue: g.revenue, n: g.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
-  hbars($('#cStar'), (st.by_star || []).map(s => ({ label: s.label, revenue: s.revenue, n: s.n })), 'revenue', eur, r => `${r.n} ticket${r.n > 1 ? 's' : ''}`);
+
+  // Clic interactif sur les cartes de culte pour filtrer directement
+  $$('.moment-card').forEach(c => {
+    c.onclick = () => {
+      const m = c.dataset.moment;
+      if (S.moment === m) {
+        S.moment = '';
+      } else {
+        S.moment = m;
+      }
+      VIEWS.dashboard();
+    };
+  });
 };
 
 /* ---- Caisse ---- */

@@ -749,7 +749,11 @@ function stopCamera() {
   clearTimeout(inactivityTimer); inactivityTimer = null;
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   videoTrack = null;
-  $('#video').srcObject = null;
+  const video = $('#video');
+  if (video) {
+    video.style.opacity = '0';
+    video.srcObject = null;
+  }
   $('#btnTorch').hidden = true;
 }
 
@@ -766,6 +770,8 @@ function camStatus(show, title, msg, btnText = null, onBtn = null) {
 
 // Élection automatique du meilleur capteur photo via les API matérielles WebRTC (focusDistance, macro, résolution)
 let bestCameraDeviceId = null;
+let isStartingCamera = false;
+try { localStorage.removeItem('librairie_best_cam'); } catch (e) { }
 
 async function findOptimalCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return null;
@@ -774,9 +780,11 @@ async function findOptimalCamera() {
     const videoDevices = devices.filter(d => d.kind === 'videoinput');
     if (!videoDevices.length) return null;
 
-    // Filtrer les caméras arrière
+    // Filtrer les caméras arrière (exclusion stricte des caméras avant / selfie)
     const rear = videoDevices.filter(d => {
       const l = (d.label || '').toLowerCase();
+      const isFront = l.includes('front') || l.includes('avant') || l.includes('selfie') || l.includes('user');
+      if (isFront) return false;
       return l.includes('back') || l.includes('rear') || l.includes('environment') || l.includes('arrière') || l.includes('0');
     });
 
@@ -807,21 +815,28 @@ async function findOptimalCamera() {
           audio: false
         });
         const track = testStream.getVideoTracks()[0];
-        if (track && track.getCapabilities) {
-          const caps = track.getCapabilities();
-
-          // Capacité d'autofocus continu (essentiel pour codes-barres)
-          if (caps.focusMode && caps.focusMode.includes('continuous')) score += 40;
-
-          // Capacité de distance de focus (macro de près)
-          if (caps.focusDistance) {
-            // Plus la distance minimale de focus est petite (ex: 0.05m = 5cm), meilleur est le capteur macro
-            score += 30;
-            if (caps.focusDistance.min !== undefined && caps.focusDistance.min < 0.15) score += 20;
+        if (track) {
+          const settings = track.getSettings ? track.getSettings() : {};
+          if (settings.facingMode === 'user') {
+            testStream.getTracks().forEach(t => t.stop());
+            continue; // Écarter définitivement tout capteur selfie
           }
+          if (track.getCapabilities) {
+            const caps = track.getCapabilities();
 
-          // Capacité de zoom matériel optique/numérique
-          if (caps.zoom) score += 10;
+            // Capacité d'autofocus continu (essentiel pour codes-barres)
+            if (caps.focusMode && caps.focusMode.includes('continuous')) score += 40;
+
+            // Capacité de distance de focus (macro de près)
+            if (caps.focusDistance) {
+              // Plus la distance minimale de focus est petite (ex: 0.05m = 5cm), meilleur est le capteur macro
+              score += 30;
+              if (caps.focusDistance.min !== undefined && caps.focusDistance.min < 0.15) score += 20;
+            }
+
+            // Capacité de zoom matériel optique/numérique
+            if (caps.zoom) score += 10;
+          }
         }
         testStream.getTracks().forEach(t => t.stop());
       } catch (err) {
@@ -841,10 +856,18 @@ async function findOptimalCamera() {
 }
 
 async function startCamera(specificDeviceId = null) {
+  if (isStartingCamera) return;
+  isStartingCamera = true;
+
   stopCamera();
   if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    isStartingCamera = false;
     return camStatus(true, 'Caméra indisponible', 'Cette page nécessite une connexion HTTPS pour accéder à l\'appareil photo.');
   }
+
+  const video = $('#video');
+  if (video) video.style.opacity = '0';
+
   try {
     let targetDeviceId = specificDeviceId;
 
@@ -893,9 +916,11 @@ async function startCamera(specificDeviceId = null) {
       }
     }
 
-    const video = $('#video');
     video.srcObject = stream;
     await video.play();
+
+    // Révélation visuelle UNIQUEMENT de la caméra sélectionnée finale
+    video.style.opacity = '1';
     camStatus(false);
 
     videoTrack = stream ? stream.getVideoTracks()[0] : null;
@@ -1020,6 +1045,8 @@ async function startCamera(specificDeviceId = null) {
     camStatus(true, denied ? 'Autorisation caméra refusée' : 'Caméra indisponible',
       denied ? 'Android : touchez le cadenas dans la barre d\'adresse → Autorisations → Appareil photo → Autoriser, puis réessayez.'
              : (e && e.message ? `Erreur caméra : ${e.message}. Touchez "Activer la caméra" pour réessayer.` : 'Aucune caméra utilisable. Utilisez le bouton photo ou la saisie manuelle.'));
+  } finally {
+    isStartingCamera = false;
   }
 }
 $('#btnCam').addEventListener('click', startCamera);

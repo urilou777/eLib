@@ -991,13 +991,26 @@ def _forecast(vals, n=3):
 
 
 @app.get("/api/stats")
-def stats(start: Optional[str] = None, end: Optional[str] = None):
+def stats(start: Optional[str] = None, end: Optional[str] = None, moment: Optional[str] = None):
     start = start or "0000-00-00"
     end = end or "9999-12-31"
     with db.tx() as c:
-        W, A = "a.date BETWEEN ? AND ?", (start, end)
+        W = "a.date BETWEEN ? AND ?"
+        A = [start, end]
+        Ws = "s.date BETWEEN ? AND ?"
+        As = [start, end]
+
+        if moment:
+            W += " AND EXISTS (SELECT 1 FROM sale_lines sl JOIN sales s ON s.id = sl.sale_id WHERE sl.id = a.line_id AND s.service_moment = ?)"
+            A.append(moment)
+            Ws += " AND s.service_moment = ?"
+            As.append(moment)
+
+        A = tuple(A)
+        As = tuple(As)
+
         k = c.execute(f"SELECT COALESCE(SUM(revenue),0) rev,COALESCE(SUM(due),0) due,COALESCE(SUM(qty),0) qty FROM allocations a WHERE {W}", A).fetchone()
-        nb = c.execute("SELECT COUNT(*) n FROM sales WHERE date BETWEEN ? AND ?", A).fetchone()["n"]
+        nb = c.execute(f"SELECT COUNT(*) n FROM sales s WHERE {Ws}", As).fetchone()["n"]
         sv = c.execute(f"""SELECT COALESCE(SUM(({db.LOT_REMAINING})*b.price),0) v, COALESCE(SUM({db.LOT_REMAINING}),0) u
             FROM lots l JOIN books b ON b.id=l.book_id""").fetchone()
         due_open = 0
@@ -1021,7 +1034,20 @@ def stats(start: Optional[str] = None, end: Optional[str] = None):
         by_owner = db.rows(c, f"""SELECT COALESCE(o.name,'Sans stock') label, COALESCE(o.color,'#8892b0') color,
             SUM(a.revenue) revenue, SUM(a.due) due, SUM(a.qty) qty FROM allocations a
             LEFT JOIN owners o ON o.id=a.owner_id WHERE {W} GROUP BY label ORDER BY revenue DESC""", A)
-        pay = db.rows(c, "SELECT payment label, COUNT(*) n FROM sales WHERE date BETWEEN ? AND ? GROUP BY payment", A)
+        
+        # Moyens de paiement avec chiffre d'affaires et volume
+        pay = db.rows(c, f"""
+            SELECT COALESCE(s.payment, 'Non renseigné') label,
+                   COUNT(DISTINCT s.id) n,
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+            FROM sales s
+            LEFT JOIN sale_lines l ON l.sale_id = s.id
+            WHERE {Ws}
+            GROUP BY label ORDER BY revenue DESC
+        """, As)
+        for p in pay:
+            p["avg_basket"] = (p["revenue"] / p["n"]) if p["n"] else 0
+
         wd = db.rows(c, f"""SELECT CAST(strftime('%w',a.date) AS INT) d, SUM(revenue) revenue FROM allocations a WHERE {W} GROUP BY d""", A)
         low = [b for b in _books(c, "is_pack=0") if b["stock"] <= b["min_stock"]]
         low.sort(key=lambda b: b["stock"])
@@ -1030,13 +1056,14 @@ def stats(start: Optional[str] = None, end: Optional[str] = None):
         rate = {r["book_id"]: r["q"] / 30 for r in db.rows(c, "SELECT book_id, SUM(qty) q FROM allocations WHERE date>=? GROUP BY book_id", (since,))}
         for b in low:
             b["days_left"] = round(b["stock"] / rate[b["id"]]) if rate.get(b["id"]) else None
+        
         # Ventes réelles de caisse (hors regroupement journalier Import Excel)
         pos_sales = c.execute(f"""
             SELECT COUNT(DISTINCT s.id) n, COALESCE(SUM(l.qty * l.unit_price), 0) rev
             FROM sales s
             JOIN sale_lines l ON l.sale_id = s.id
-            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
-        """, A).fetchone()
+            WHERE {Ws} AND (s.note IS NULL OR s.note != 'Import Excel')
+        """, As).fetchone()
         pos_nb = pos_sales["n"]
         pos_rev = pos_sales["rev"]
         pos_avg_basket = (pos_rev / pos_nb) if pos_nb else 0
@@ -1046,42 +1073,66 @@ def stats(start: Optional[str] = None, end: Optional[str] = None):
         by_gender = db.rows(c, f"""
             SELECT COALESCE(customer_gender, 'Non renseigné') label,
                    COUNT(DISTINCT s.id) n,
-                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue,
+                   COALESCE(SUM(l.qty), 0) qty
             FROM sales s
             JOIN sale_lines l ON l.sale_id = s.id
-            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+            WHERE {Ws} AND (s.note IS NULL OR s.note != 'Import Excel')
             GROUP BY label ORDER BY revenue DESC
-        """, A)
+        """, As)
+        for g in by_gender:
+            g["avg_basket"] = (g["revenue"] / g["n"]) if g["n"] else 0
 
         by_age = db.rows(c, f"""
             SELECT COALESCE(customer_age_group, 'Non renseigné') label,
                    COUNT(DISTINCT s.id) n,
-                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue,
+                   COALESCE(SUM(l.qty), 0) qty
             FROM sales s
             JOIN sale_lines l ON l.sale_id = s.id
-            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+            WHERE {Ws} AND (s.note IS NULL OR s.note != 'Import Excel')
             GROUP BY label ORDER BY revenue DESC
-        """, A)
+        """, As)
+        for a in by_age:
+            a["avg_basket"] = (a["revenue"] / a["n"]) if a["n"] else 0
 
         by_star = db.rows(c, f"""
-            SELECT CASE WHEN s.is_star = 1 THEN 'Serviteur STAR ⭐' ELSE 'Autre fidèle / Visiteur' END label,
+            SELECT CASE WHEN s.is_star = 1 THEN 'Serviteurs STAR ⭐' ELSE 'Autres fidèles & Visiteurs' END label,
+                   s.is_star,
                    COUNT(DISTINCT s.id) n,
-                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue,
+                   COALESCE(SUM(l.qty), 0) qty
             FROM sales s
             JOIN sale_lines l ON l.sale_id = s.id
-            WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
+            WHERE {Ws} AND (s.note IS NULL OR s.note != 'Import Excel')
             GROUP BY (s.is_star = 1) ORDER BY (s.is_star = 1) DESC
-        """, A)
+        """, As)
+        for st_row in by_star:
+            st_row["avg_basket"] = (st_row["revenue"] / st_row["n"]) if st_row["n"] else 0
 
+        # Cultes & Temps de vente (enrichis avec panier moyen et best-seller)
         by_moment = db.rows(c, f"""
             SELECT COALESCE(s.service_moment, 'Non précisé') label,
                    COUNT(DISTINCT s.id) n,
-                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
+                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue,
+                   COALESCE(SUM(l.qty), 0) qty
             FROM sales s
             JOIN sale_lines l ON l.sale_id = s.id
             WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel')
             GROUP BY label ORDER BY revenue DESC
-        """, A)
+        """, (start, end))
+        for m in by_moment:
+            m["avg_basket"] = (m["revenue"] / m["n"]) if m["n"] else 0
+            top_bk = c.execute("""
+                SELECT b.title, SUM(l.qty) q
+                FROM sales s
+                JOIN sale_lines l ON l.sale_id = s.id
+                JOIN books b ON b.id = l.book_id
+                WHERE s.date BETWEEN ? AND ? AND (s.note IS NULL OR s.note != 'Import Excel') AND COALESCE(s.service_moment, 'Non précisé') = ?
+                GROUP BY b.id ORDER BY q DESC LIMIT 1
+            """, (start, end, m["label"])).fetchone()
+            m["top_book"] = top_bk["title"] if top_bk else None
+            m["top_book_qty"] = top_bk["q"] if top_bk else 0
 
         return {"kpi": {"revenue": k["rev"], "due": k["due"], "margin": k["rev"] - k["due"], "qty": k["qty"],
                         "sales": nb, "pos_sales": pos_nb, "pos_avg_basket": pos_avg_basket,
