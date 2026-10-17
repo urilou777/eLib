@@ -1173,6 +1173,72 @@ $('#fileSnap').addEventListener('change', async e => {
   finally { URL.revokeObjectURL(url); }
 });
 
+/* ---------- Mode Plein Écran Hybride (PWA Standalone + Fullscreen API) ---------- */
+function isStandaloneMode() {
+  return window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches;
+}
+
+function updateFullscreenUI() {
+  const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const btn = $('#btnFullscreen');
+  if (!btn) return;
+  if (isStandaloneMode()) {
+    // En mode PWA installé sur l'écran d'accueil, l'application est DÉJÀ en plein écran natif autonome
+    btn.style.display = 'none';
+  } else {
+    btn.style.display = 'inline-flex';
+    btn.title = isFull ? 'Quitter le plein écran' : 'Passer en plein écran';
+    btn.style.color = isFull ? 'var(--good)' : 'var(--mut)';
+    btn.style.borderColor = isFull ? 'var(--good)' : 'var(--line)';
+    const ico = $('#icoFullscreen');
+    if (ico) {
+      ico.innerHTML = isFull
+        ? '<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>'
+        : '<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>';
+    }
+  }
+}
+
+async function toggleFullscreen() {
+  try {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      const docEl = document.documentElement;
+      const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+      if (req) await req.call(docEl);
+    } else {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+      if (exit) await exit.call(document);
+    }
+  } catch (e) { }
+  updateFullscreenUI();
+}
+
+const btnFullscreen = $('#btnFullscreen');
+if (btnFullscreen) {
+  btnFullscreen.addEventListener('click', toggleFullscreen);
+}
+
+// Essai de bascule automatique en plein écran au premier tap utilisateur (navigateurs Android)
+let autoFullscreenTried = false;
+function attemptAutoFullscreen() {
+  if (autoFullscreenTried || isStandaloneMode()) return;
+  autoFullscreenTried = true;
+  const docEl = document.documentElement;
+  const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+  if (req) {
+    req.call(docEl).catch(() => {});
+  }
+}
+window.addEventListener('touchstart', attemptAutoFullscreen, { once: true, passive: true });
+window.addEventListener('click', attemptAutoFullscreen, { once: true, passive: true });
+
+['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
+  document.addEventListener(evt, updateFullscreenUI);
+});
+updateFullscreenUI();
+
 /* ---------- démarrage ---------- */
 (async function init() {
   await pairFromHash();
