@@ -1220,11 +1220,20 @@ VIEWS.dashboard = async () => {
   const f = (st.by_gender || []).find(x => x.label === 'Femme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
   const h = (st.by_gender || []).find(x => x.label === 'Homme') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
   const cpl = (st.by_gender || []).find(x => x.label === 'Couple') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
-  const unkGen = (st.by_gender || []).find(x => x.label !== 'Femme' && x.label !== 'Homme' && x.label !== 'Couple') || { revenue: 0, n: 0, qty: 0, avg_basket: 0 };
-  const totQualGen = (f.revenue + h.revenue + cpl.revenue) || 1;
-  const fPct = Math.round((f.revenue / totQualGen) * 100);
-  const hPct = Math.round((h.revenue / totQualGen) * 100);
-  const cplPct = Math.round((cpl.revenue / totQualGen) * 100);
+  const unkList = (st.by_gender || []).filter(x => x.label !== 'Femme' && x.label !== 'Homme' && x.label !== 'Couple');
+  const unkGen = unkList.reduce((acc, x) => ({
+    revenue: acc.revenue + (x.revenue || 0),
+    n: acc.n + (x.n || 0),
+    qty: acc.qty + (x.qty || 0),
+    avg_basket: 0
+  }), { revenue: 0, n: 0, qty: 0 });
+  unkGen.avg_basket = unkGen.n > 0 ? (unkGen.revenue / unkGen.n) : 0;
+
+  const totAllGen = (f.revenue + h.revenue + cpl.revenue + unkGen.revenue) || 1;
+  const fPct = Math.round((f.revenue / totAllGen) * 100);
+  const hPct = Math.round((h.revenue / totAllGen) * 100);
+  const cplPct = Math.round((cpl.revenue / totAllGen) * 100);
+  const unkPct = Math.round((unkGen.revenue / totAllGen) * 100);
 
   // Démographie : Tranches d'âge
   const ageLabels = {
@@ -1308,7 +1317,7 @@ VIEWS.dashboard = async () => {
               </div>
               <div>
                 <div>Femmes</div>
-                <div class="muted" style="font-size:11px;font-weight:400">${fPct}% qualifié</div>
+                <div class="muted" style="font-size:11px;font-weight:400">${fPct}% du total</div>
               </div>
             </div>
             <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(f.revenue)}</div>
@@ -1325,7 +1334,7 @@ VIEWS.dashboard = async () => {
               </div>
               <div>
                 <div>Hommes</div>
-                <div class="muted" style="font-size:11px;font-weight:400">${hPct}% qualifié</div>
+                <div class="muted" style="font-size:11px;font-weight:400">${hPct}% du total</div>
               </div>
             </div>
             <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(h.revenue)}</div>
@@ -1342,7 +1351,7 @@ VIEWS.dashboard = async () => {
               </div>
               <div>
                 <div>Couples &amp; Foyers</div>
-                <div class="muted" style="font-size:11px;font-weight:400">${cplPct}% qualifié</div>
+                <div class="muted" style="font-size:11px;font-weight:400">${cplPct}% du total</div>
               </div>
             </div>
             <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(cpl.revenue)}</div>
@@ -1351,8 +1360,24 @@ VIEWS.dashboard = async () => {
               <div class="fl" style="width:${cplPct}%;height:100%;background:linear-gradient(90deg, #a855f7, #ec4899)"></div>
             </div>
           </div>
+
+          <div class="gender-card">
+            <div class="gender-header">
+              <div class="gender-icon-box gender-icon-u" title="Autre / Indéfini">
+                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M15 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><path d="M18 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3"/><line x1="19.5" y1="17" x2="19.5" y2="17.01"/></svg>
+              </div>
+              <div>
+                <div>Autre / Indéfini</div>
+                <div class="muted" style="font-size:11px;font-weight:400">${unkPct}% du total</div>
+              </div>
+            </div>
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(unkGen.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut)">${unkGen.n} ticket${unkGen.n > 1 ? 's' : ''} · Panier <b>${eur(unkGen.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+              <div class="fl" style="width:${unkPct}%;height:100%;background:linear-gradient(90deg, #64748b, #94a3b8)"></div>
+            </div>
+          </div>
         </div>
-        ${unkGen.n ? `<div style="font-size:11px;color:var(--mut);margin-top:10px">Anonyme / non renseigné : ${eur(unkGen.revenue)} (${unkGen.n} ticket${unkGen.n > 1 ? 's' : ''})</div>` : ''}
       </div>
 
       <!-- Tranches d'âge -->

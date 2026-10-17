@@ -1089,6 +1089,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
 .gender-icon-f { background: rgba(180, 82, 211, 0.2); color: #d37cf0; }
 .gender-icon-m { background: rgba(90, 155, 255, 0.2); color: #7cb3ff; }
 .gender-icon-c { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+.gender-icon-u { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
 
 .star-highlight {
   background: radial-gradient(circle at 100% 0%, rgba(230, 167, 60, 0.15) 0%, transparent 70%), var(--panel2);
