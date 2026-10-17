@@ -204,8 +204,9 @@ def revoke_device(did):
 # Accessible depuis le réseau local SANS jeton (ressources publiques, aucune donnée métier)
 PUBLIC = [
     ("GET", re.compile(r"^/mobile$")),
-    ("GET", re.compile(r"^/static/(mobile\.js|manifest\.webmanifest|icon\.svg|fonts\.css|favicon.*|fonts/.*|img/.*|vendor/zxing\.min\.js)$")),
+    ("GET", re.compile(r"^/static/(mobile\.js|sw\.js|manifest\.webmanifest|icon\.svg|fonts\.css|favicon.*|fonts/.*|img/.*|vendor/zxing\.min\.js)$")),
     ("GET", re.compile(r"^/api/ca\.crt$")),
+    ("GET", re.compile(r"^/api/ping$")),
     ("POST", re.compile(r"^/api/mobile/pair$")),
 ]
 # Accessible depuis le réseau local AVEC jeton d'appareil valide (privilège minimal : scanner, vendre, réceptionner)

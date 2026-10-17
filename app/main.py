@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import shutil
+import socket
 import zipfile
 from datetime import date, datetime, timedelta
 from urllib.parse import unquote
@@ -1847,10 +1848,23 @@ def _mobile_base():
     return f"https://{ips[0]}:{port}" if (port and ips and certs) else None
 
 
+@app.get("/api/ping")
+def ping():
+    return {
+        "ok": True,
+        "time": time.time(),
+        "host": socket.gethostname(),
+        "mdns_host": f"{socket.gethostname().lower()}.local",
+        "ips": security.local_ips()
+    }
+
+
 @app.get("/api/mobile/info")
 def mobile_info():
     base = _mobile_base()
+    hname = socket.gethostname().lower()
     return {"enabled": bool(base), "base_url": base, "ips": security.local_ips(),
+            "mdns_host": f"{hname}.local",
             "ca_fingerprint": certs.ca_fingerprint() if base else None,
             "devices": security.list_devices()}
 

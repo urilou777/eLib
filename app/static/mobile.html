@@ -409,6 +409,31 @@ button, select, input { font:inherit; color:inherit; }
 </head>
 <body>
 
+<!-- Bandeau d'alerte réseau inmanquable (clignotant rouge pulsant en cas de perte de connexion Wi-Fi) -->
+<div id="netAlertBanner" style="display:none;position:sticky;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg, #b91c1c, #dc2626);color:#fff;padding:10px 14px;box-shadow:0 4px 20px rgba(220, 38, 38, 0.6);font-size:12px;border-bottom:2px solid #fca5a5;animation:pulseNetAlert 1.5s infinite">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <svg style="width:18px;height:18px;flex-shrink:0;color:#fef08a" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div>
+        <b style="font-size:12.5px;letter-spacing:0.3px;display:block">CONNEXION PERDUE AVEC LE POSTE</b>
+        <span style="font-size:11px;opacity:0.95">Vérifiez le Wi-Fi (désactivez la 4G/5G mobile).</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:4px">
+      <button type="button" id="btnNetRetry" class="btn sm" style="background:#fff;color:#b91c1c;font-weight:800;padding:4px 8px;font-size:11px;border-radius:6px;border:none;cursor:pointer">
+        Réessayer
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="netSuccessBanner" style="display:none;position:sticky;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg, #15803d, #16a34a);color:#fff;padding:8px 14px;box-shadow:0 4px 15px rgba(22, 163, 74, 0.4);font-size:12px;border-bottom:2px solid #86efac;text-align:center;font-weight:700">
+  <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+    <svg style="width:16px;height:16px;color:#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+    <span>Connexion rétablie avec le poste de caisse !</span>
+  </div>
+</div>
+
 <header class="m-head">
   <div style="display:flex;align-items:center;gap:8px">
     <picture>
@@ -738,6 +763,13 @@ button, select, input { font:inherit; color:inherit; }
 <div id="toasts" aria-live="polite"></div>
 
 <script src="/static/vendor/zxing.min.js"></script>
-<script src="/static/mobile.js?v=20261017b"></script>
+<script src="/static/mobile.js?v=20261017d"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+  });
+}
+</script>
 </body>
 </html>

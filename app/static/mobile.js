@@ -62,13 +62,111 @@ async function api(url, { method = 'GET', body, auth = true, timeoutMs = 4000 } 
       try { const j = await r.json(); d = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch (e) { }
       throw new Error(d);
     }
+    markNetworkOnline();
     return r.json();
   } catch (err) {
     clearTimeout(timer);
+    if (err.name === 'AbortError' || !navigator.onLine || (err.message && err.message.includes('fetch'))) {
+      markNetworkOffline();
+    }
     if (err.name === 'AbortError') {
       throw new Error('Poste central injoignable (délai dépassé). Vérifiez que l\'ordinateur est allumé.');
     }
     throw err;
+  }
+}
+
+/* ---------- Surveillance Réseau & Heartbeat (/api/ping) ---------- */
+let isNetworkOnline = true;
+let pingFailCount = 0;
+let pingIntervalTimer = null;
+
+function markNetworkOffline() {
+  if (!isNetworkOnline) return;
+  isNetworkOnline = false;
+  const alertEl = $('#netAlertBanner');
+  const successEl = $('#netSuccessBanner');
+  if (successEl) successEl.style.display = 'none';
+  if (alertEl) alertEl.style.display = 'block';
+  if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+}
+
+function markNetworkOnline() {
+  if (isNetworkOnline) return;
+  isNetworkOnline = true;
+  pingFailCount = 0;
+  const alertEl = $('#netAlertBanner');
+  const successEl = $('#netSuccessBanner');
+  if (alertEl) alertEl.style.display = 'none';
+  if (successEl) {
+    successEl.style.display = 'block';
+    setTimeout(() => { successEl.style.display = 'none'; }, 2600);
+  }
+}
+
+async function checkPing(manual = false) {
+  const retryBtn = $('#btnNetRetry');
+  if (manual && retryBtn) retryBtn.textContent = 'Test...';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2000);
+
+  try {
+    const res = await fetch('/api/ping', {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const data = await res.json();
+      markNetworkOnline();
+      if (data.ips && data.ips.length) {
+        localStorage.setItem('librairie_known_ips', JSON.stringify({ ips: data.ips, mdns: data.mdns_host }));
+      }
+    } else {
+      throw new Error('Ping ' + res.status);
+    }
+  } catch (err) {
+    clearTimeout(timer);
+    pingFailCount++;
+    if (pingFailCount >= 2 || !navigator.onLine) {
+      markNetworkOffline();
+    }
+  } finally {
+    if (manual && retryBtn) retryBtn.textContent = 'Réessayer';
+  }
+}
+
+function startNetworkMonitor() {
+  if (pingIntervalTimer) clearInterval(pingIntervalTimer);
+  pingIntervalTimer = setInterval(() => checkPing(false), 4000);
+
+  window.addEventListener('offline', () => markNetworkOffline());
+  window.addEventListener('online', () => checkPing(true));
+
+  const retryBtn = $('#btnNetRetry');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => checkPing(true));
+  }
+}
+
+function restoreActiveCart() {
+  const raw = localStorage.getItem('librairie_mobile_active_cart');
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    if (data && data.cart && data.cart.length > 0) {
+      cart = data.cart;
+      originPayments = data.originPayments || {};
+      mGender = data.gender || '';
+      mAge = data.age || '';
+      mStar = data.star || 0;
+      renderCart();
+    }
+  } catch (e) {
+    localStorage.removeItem('librairie_mobile_active_cart');
   }
 }
 
@@ -1863,6 +1961,8 @@ updateFullscreenUI();
 
 /* ---------- démarrage ---------- */
 (async function init() {
+  startNetworkMonitor();
+  restoreActiveCart();
   await pairFromHash();
   if (!localStorage.getItem(TOKEN_KEY)) { renderCart(); return showPairing(); }
   try {
