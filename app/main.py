@@ -149,9 +149,15 @@ class LineIn(BaseModel):
     allocations: List[AllocIn] = Field(default_factory=list, max_length=50)
 
 
+class PaymentPartIn(BaseModel):
+    payment: str = Field(max_length=60)
+    amount: float = Field(gt=0, le=100000)
+
+
 class SaleIn(BaseModel):
     date: Optional[str] = Field(None, pattern=DATE_PATTERN)
-    payment: Optional[str] = Field("Espèces", max_length=60)
+    payment: Optional[str] = Field("Espèces", max_length=200)
+    payments: Optional[List[PaymentPartIn]] = None
     note: Optional[str] = Field(None, max_length=300)
     customer_gender: Optional[str] = Field(None, max_length=20)
     customer_age_group: Optional[str] = Field(None, max_length=40)
@@ -680,17 +686,22 @@ def sale_add(s: SaleIn, request: Request):
     user = require_known_user(request)
     
     with db.tx() as c:
+        payments_list = [p.dict() for p in s.payments] if s.payments else None
         sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines],
                                     manual=True, user_name=user,
                                     customer_gender=s.customer_gender,
                                     customer_age_group=s.customer_age_group,
                                     is_star=s.is_star or 0,
-                                    service_moment=s.service_moment)
+                                    service_moment=s.service_moment,
+                                    payments=payments_list)
         total = sum((l.unit_price if l.unit_price is not None else
                      c.execute("SELECT price FROM books WHERE id=?", (l.book_id,)).fetchone()["price"]) * l.qty for l in s.lines)
+        sale_row = c.execute("SELECT payment FROM sales WHERE id=?", (sid,)).fetchone()
+        eff_payment = sale_row["payment"] if sale_row else s.payment
         db.log_audit(c, user, "INSERT", "sale", sid,
-                     f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {s.payment}) par {user}",
-                     snapshot_after={"id": sid, "date": s.date, "total": total, "payment": s.payment, "user_name": user,
+                     f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {eff_payment}) par {user}",
+                     snapshot_after={"id": sid, "date": s.date, "total": total, "payment": eff_payment,
+                                     "payments": payments_list, "user_name": user,
                                      "customer_gender": s.customer_gender, "customer_age_group": s.customer_age_group,
                                      "is_star": s.is_star, "service_moment": s.service_moment, "lines": [l.dict() for l in s.lines]})
     return {"id": sid, "total": total, "warnings": warns}
@@ -712,8 +723,11 @@ def sale_del(sid: int, request: Request):
     with db.tx() as c:
         sale = c.execute("SELECT * FROM sales WHERE id=?", (sid,)).fetchone()
         if sale:
+            sale_payments = db.rows(c, "SELECT payment, amount FROM sale_payments WHERE sale_id=?", (sid,))
             c.execute("DELETE FROM sales WHERE id=?", (sid,))
-            db.log_audit(c, get_current_user(request), "DELETE", "sale", sid, f"Suppression/annulation vente #{sid}", snapshot_before=dict(sale))
+            db.log_audit(c, get_current_user(request), "DELETE", "sale", sid,
+                         f"Suppression/annulation vente #{sid}",
+                         snapshot_before=dict(sale) | {"payments": sale_payments})
     return {"ok": True}
 
 
@@ -721,11 +735,10 @@ def sale_del(sid: int, request: Request):
 @app.get("/api/treasury")
 def treasury_summary():
     with db.tx() as c:
-        # 1. Total par mode de paiement dans les ventes
+        # 1. Total par mode de paiement dans les ventes (calcul fin basé sur sale_payments)
         sales_by_pay = db.rows(c, """
-            SELECT payment, COALESCE(SUM(l.qty * l.unit_price), 0) total, COUNT(DISTINCT s.id) count
-            FROM sales s
-            JOIN sale_lines l ON l.sale_id = s.id
+            SELECT payment, COALESCE(SUM(amount), 0) total, COUNT(DISTINCT sale_id) count
+            FROM sale_payments
             GROUP BY payment
         """)
         
@@ -736,12 +749,16 @@ def treasury_summary():
         # RÈGLE MÉTIER : 100% de Cité Royale revient à Cité Royale et ne va JAMAIS dans la trésorerie / caisse locale.
         # Seules les ventes en espèces provenant d'exemplaires NON Cité Royale (ex: ICC Rennes) alimentent la caisse physique.
         sales_cash = c.execute("""
-            SELECT COALESCE(SUM(a.revenue), 0) s
-            FROM sales s
-            JOIN sale_lines l ON l.sale_id = s.id
-            JOIN allocations a ON a.line_id = l.id
-            JOIN owners o ON o.id = a.owner_id
-            WHERE s.payment LIKE '%Espèce%' AND LOWER(TRIM(o.name)) != 'cité royale'
+            SELECT COALESCE(SUM(sp.amount), 0) s
+            FROM sale_payments sp
+            JOIN sales s ON s.id = sp.sale_id
+            WHERE sp.payment LIKE '%Espèce%'
+              AND s.id IN (
+                  SELECT l.sale_id FROM sale_lines l
+                  JOIN allocations a ON a.line_id = l.id
+                  JOIN owners o ON o.id = a.owner_id
+                  WHERE LOWER(TRIM(o.name)) != 'cité royale'
+              )
         """).fetchone()["s"]
         
         # Dépôts d'espèces régularisés en caisse par les libraires (pour la part ICC Rennes)
@@ -756,25 +773,32 @@ def treasury_summary():
         
         cash_in_drawer = sales_cash + deposits_cash - withdrawals_cash
 
-        # Total Cité Royale payé directement sur PayPal POS
         # Total Cité Royale payé directement sur CB / PayPal POS
         cr_paypal_total = c.execute("""
-            SELECT COALESCE(SUM(a.revenue), 0) s
-            FROM sales s
-            JOIN sale_lines l ON l.sale_id = s.id
-            JOIN allocations a ON a.line_id = l.id
-            JOIN owners o ON o.id = a.owner_id
-            WHERE (s.payment = 'CB' OR s.payment LIKE '%CB%' OR s.payment LIKE '%PayPal%') AND LOWER(TRIM(o.name)) = 'cité royale'
+            SELECT COALESCE(SUM(sp.amount), 0) s
+            FROM sale_payments sp
+            JOIN sales s ON s.id = sp.sale_id
+            WHERE (sp.payment = 'CB' OR sp.payment LIKE '%CB%' OR sp.payment LIKE '%PayPal%')
+              AND s.id IN (
+                  SELECT l.sale_id FROM sale_lines l
+                  JOIN allocations a ON a.line_id = l.id
+                  JOIN owners o ON o.id = a.owner_id
+                  WHERE LOWER(TRIM(o.name)) = 'cité royale'
+              )
         """).fetchone()["s"]
 
         # Total Cité Royale encaissé hors CB (que les libraires doivent passer sur CB / PayPal POS)
         cr_non_paypal_total = c.execute("""
-            SELECT COALESCE(SUM(a.revenue), 0) s
-            FROM sales s
-            JOIN sale_lines l ON l.sale_id = s.id
-            JOIN allocations a ON a.line_id = l.id
-            JOIN owners o ON o.id = a.owner_id
-            WHERE (s.payment != 'CB' AND s.payment NOT LIKE '%CB%' AND s.payment NOT LIKE '%PayPal%') AND LOWER(TRIM(o.name)) = 'cité royale'
+            SELECT COALESCE(SUM(sp.amount), 0) s
+            FROM sale_payments sp
+            JOIN sales s ON s.id = sp.sale_id
+            WHERE (sp.payment != 'CB' AND sp.payment NOT LIKE '%CB%' AND sp.payment NOT LIKE '%PayPal%')
+              AND s.id IN (
+                  SELECT l.sale_id FROM sale_lines l
+                  JOIN allocations a ON a.line_id = l.id
+                  JOIN owners o ON o.id = a.owner_id
+                  WHERE LOWER(TRIM(o.name)) = 'cité royale'
+              )
         """).fetchone()["s"]
         
         # 4. Solde & Dettes par utilisateur / libraire
@@ -787,44 +811,57 @@ def treasury_summary():
             # Ventes totales encaissées par ce libraire pour Cité Royale hors CB / PayPal POS
             # (Le libraire doit payer lui-même ce montant sur la borne CB / PayPal POS pour régulariser Cité Royale)
             cr_due_to_paypal = c.execute("""
-                SELECT COALESCE(SUM(a.revenue), 0) s
-                FROM sales s
-                JOIN sale_lines l ON l.sale_id = s.id
-                JOIN allocations a ON a.line_id = l.id
-                JOIN owners o ON o.id = a.owner_id
-                WHERE s.user_name = ? AND (s.payment != 'CB' AND s.payment NOT LIKE '%CB%' AND s.payment NOT LIKE '%PayPal%') AND LOWER(TRIM(o.name)) = 'cité royale'
+                SELECT COALESCE(SUM(sp.amount), 0) s
+                FROM sale_payments sp
+                JOIN sales s ON s.id = sp.sale_id
+                WHERE s.user_name = ?
+                  AND (sp.payment != 'CB' AND sp.payment NOT LIKE '%CB%' AND sp.payment NOT LIKE '%PayPal%')
+                  AND s.id IN (
+                      SELECT l.sale_id FROM sale_lines l
+                      JOIN allocations a ON a.line_id = l.id
+                      JOIN owners o ON o.id = a.owner_id
+                      WHERE LOWER(TRIM(o.name)) = 'cité royale'
+                  )
             """, (uname,)).fetchone()["s"]
 
             # Ventes ICC Rennes encaissées sur compte personnel (Wero / virement perso)
             # (Le libraire doit régulariser et déposer ce montant dans la caisse physique)
             icc_wero_received = c.execute("""
-                SELECT COALESCE(SUM(a.revenue), 0) s
-                FROM sales s
-                JOIN sale_lines l ON l.sale_id = s.id
-                JOIN allocations a ON a.line_id = l.id
-                JOIN owners o ON o.id = a.owner_id
-                WHERE s.user_name = ? AND (s.payment LIKE '%Wero%' OR s.payment LIKE '%perso%') AND LOWER(TRIM(o.name)) != 'cité royale'
+                SELECT COALESCE(SUM(sp.amount), 0) s
+                FROM sale_payments sp
+                JOIN sales s ON s.id = sp.sale_id
+                WHERE s.user_name = ?
+                  AND (sp.payment LIKE '%Wero%' OR sp.payment LIKE '%perso%')
+                  AND s.id IN (
+                      SELECT l.sale_id FROM sale_lines l
+                      JOIN allocations a ON a.line_id = l.id
+                      JOIN owners o ON o.id = a.owner_id
+                      WHERE LOWER(TRIM(o.name)) != 'cité royale'
+                  )
             """, (uname,)).fetchone()["s"]
 
             # Ventes totales tous canaux Wero (pour information)
             wero_received = c.execute("""
-                SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
-                FROM sales s JOIN sale_lines l ON l.sale_id = s.id
-                WHERE s.user_name = ? AND (s.payment LIKE '%Wero%' OR s.payment LIKE '%perso%')
+                SELECT COALESCE(SUM(sp.amount), 0) s
+                FROM sale_payments sp
+                JOIN sales s ON s.id = sp.sale_id
+                WHERE s.user_name = ? AND (sp.payment LIKE '%Wero%' OR sp.payment LIKE '%perso%')
             """, (uname,)).fetchone()["s"]
             
             # Ventes où le libraire a encaissé des espèces (toutes origines)
             cash_received = c.execute("""
-                SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
-                FROM sales s JOIN sale_lines l ON l.sale_id = s.id
-                WHERE s.user_name = ? AND s.payment LIKE '%Espèce%'
+                SELECT COALESCE(SUM(sp.amount), 0) s
+                FROM sale_payments sp
+                JOIN sales s ON s.id = sp.sale_id
+                WHERE s.user_name = ? AND sp.payment LIKE '%Espèce%'
             """, (uname,)).fetchone()["s"]
             
             # Ventes payées directement via CB / PayPal POS
             paypal_sales = c.execute("""
-                SELECT COALESCE(SUM(l.qty * l.unit_price), 0) s
-                FROM sales s JOIN sale_lines l ON l.sale_id = s.id
-                WHERE s.user_name = ? AND (s.payment = 'CB' OR s.payment LIKE '%CB%' OR s.payment LIKE '%PayPal%')
+                SELECT COALESCE(SUM(sp.amount), 0) s
+                FROM sale_payments sp
+                JOIN sales s ON s.id = sp.sale_id
+                WHERE s.user_name = ? AND (sp.payment = 'CB' OR sp.payment LIKE '%CB%' OR sp.payment LIKE '%PayPal%')
             """, (uname,)).fetchone()["s"]
             
             # Montant déjà déposé dans la caisse physique par ce libraire
@@ -1037,11 +1074,11 @@ def stats(start: Optional[str] = None, end: Optional[str] = None, moment: Option
         
         # Moyens de paiement avec chiffre d'affaires et volume
         pay = db.rows(c, f"""
-            SELECT COALESCE(s.payment, 'Non renseigné') label,
-                   COUNT(DISTINCT s.id) n,
-                   COALESCE(SUM(l.qty * l.unit_price), 0) revenue
-            FROM sales s
-            LEFT JOIN sale_lines l ON l.sale_id = s.id
+            SELECT COALESCE(sp.payment, 'Non renseigné') label,
+                   COUNT(DISTINCT sp.sale_id) n,
+                   COALESCE(SUM(sp.amount), 0) revenue
+            FROM sale_payments sp
+            JOIN sales s ON s.id = sp.sale_id
             WHERE {Ws}
             GROUP BY label ORDER BY revenue DESC
         """, As)

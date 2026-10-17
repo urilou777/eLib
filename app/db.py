@@ -89,10 +89,16 @@ CREATE TABLE IF NOT EXISTS audit_logs(
   undone INTEGER NOT NULL DEFAULT 0,
   undone_at TEXT,
   undone_by TEXT);
+CREATE TABLE IF NOT EXISTS sale_payments(
+  id INTEGER PRIMARY KEY,
+  sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  payment TEXT NOT NULL,
+  amount REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_alloc_date ON allocations(date);
 CREATE INDEX IF NOT EXISTS ix_alloc_book ON allocations(book_id);
 CREATE INDEX IF NOT EXISTS ix_lots_book ON lots(book_id);
 CREATE INDEX IF NOT EXISTS ix_audit_timestamp ON audit_logs(timestamp);
+CREATE INDEX IF NOT EXISTS ix_sale_payments_sale ON sale_payments(sale_id);
 """
 
 
@@ -144,6 +150,23 @@ def init():
     with tx() as c:
         c.executescript(SCHEMA)
         # Migration dynamique pour tables existantes
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS sale_payments(
+              id INTEGER PRIMARY KEY,
+              sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+              payment TEXT NOT NULL,
+              amount REAL NOT NULL);
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS ix_sale_payments_sale ON sale_payments(sale_id);")
+        # Rétrocompatibilité : initialiser sale_payments pour les ventes existantes
+        c.execute("""
+            INSERT INTO sale_payments(sale_id, payment, amount)
+            SELECT s.id, COALESCE(s.payment, 'Espèces'), COALESCE(SUM(l.qty * l.unit_price), 0)
+            FROM sales s
+            JOIN sale_lines l ON l.sale_id = s.id
+            WHERE s.id NOT IN (SELECT sale_id FROM sale_payments)
+            GROUP BY s.id, s.payment
+        """)
         cols_sales = [r["name"] for r in rows(c, "PRAGMA table_info(sales)")]
         if "user_name" not in cols_sales:
             c.execute("ALTER TABLE sales ADD COLUMN user_name TEXT DEFAULT 'Anonyme'")
@@ -269,20 +292,31 @@ def _insert_alloc(c, line_id, book_id, lot_id, qty, unit_rev, day):
               (line_id, book_id, lot_id, lot["owner_id"], qty, unit_rev * qty, due, day))
 
 
-def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme", customer_gender=None, customer_age_group=None, is_star=0, service_moment=None):
+def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme", customer_gender=None, customer_age_group=None, is_star=0, service_moment=None, payments=None):
     """lines: [{book_id, qty, unit_price, allocations:[{book_id, lot_id, qty}]}] -> (sale_id, warnings).
     manual=True : le libraire désigne explicitement les lots (aucun choix automatique).
-    manual=False : réservé à l'import de l'historique Excel (répartition auto, priorité des origines)."""
+    manual=False : réservé à l'import de l'historique Excel (répartition auto, priorité des origines).
+    payments: facultatif, liste de dicts [{payment: str, amount: float}] pour multi-paiements."""
     day = day or date.today().isoformat()
     if not lines:
         raise ValueError("Panier vide")
     warnings = []
+
+    if payments and len(payments) > 0:
+        pay_summary = " + ".join([f"{float(p['amount']):.2f} € {p['payment']}" for p in payments])
+        eff_payment = payment if (payment and payment != "Espèces" and payment != pay_summary) else pay_summary
+    else:
+        eff_payment = payment or "Espèces"
+
     sale_id = c.execute("INSERT INTO sales(date,payment,note,user_name,customer_gender,customer_age_group,is_star,service_moment) VALUES(?,?,?,?,?,?,?,?)",
-                        (day, payment or "Espèces", note, user_name or "Anonyme", customer_gender, customer_age_group, int(bool(is_star)), service_moment)).lastrowid
+                        (day, eff_payment, note, user_name or "Anonyme", customer_gender, customer_age_group, int(bool(is_star)), service_moment)).lastrowid
+
+    tot_sale = 0.0
     for ln in lines:
         b = c.execute("SELECT * FROM books WHERE id=?", (ln["book_id"],)).fetchone()
         qty = int(ln["qty"])
         price = float(ln["unit_price"] if ln.get("unit_price") is not None else b["price"])
+        tot_sale += qty * price
         lid = c.execute("INSERT INTO sale_lines(sale_id,book_id,qty,unit_price) VALUES(?,?,?,?)",
                         (sale_id, b["id"], qty, price)).lastrowid
         if b["is_pack"]:
@@ -307,4 +341,14 @@ def create_sale(c, day, payment, note, lines, manual=True, user_name="Anonyme", 
                 raise ValueError(f"Choisissez le lot de chaque exemplaire : « {title} » ({need} à répartir)")
             for a in al:
                 _insert_alloc(c, lid, book_id, a.get("lot_id"), int(a["qty"]), unit_rev, day)
+
+    # Enregistrement des paiements (détaillés ou unique)
+    if payments and len(payments) > 0:
+        for p in payments:
+            c.execute("INSERT INTO sale_payments(sale_id,payment,amount) VALUES(?,?,?)",
+                      (sale_id, p["payment"], float(p["amount"])))
+    else:
+        c.execute("INSERT INTO sale_payments(sale_id,payment,amount) VALUES(?,?,?)",
+                  (sale_id, eff_payment, tot_sale))
+
     return sale_id, warnings

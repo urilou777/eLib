@@ -104,15 +104,53 @@ function openUserModal() {
 }
 $('#userBtn').addEventListener('click', openUserModal);
 
-/* ---------- panier (choix de l'origine TOUJOURS manuel, comme à la caisse du poste) ---------- */
+/* ---------- Panier & Origines (Smart Split) & Multi-paiement ---------- */
 let cart = [];            // { book, qty, lot }  lot: undefined = pas encore choisi | 'none' = hors stock | id de lot
 let payOptions = [];
+let originPayments = {};  // { [ownerName]: { method: 'CB'|'Espèces'|'Wero'|'Multi', parts: [{payment, amount}]|null } }
+
+function getItemOwner(item) {
+  if (item.lot === 'none') return 'Hors stock';
+  if (item.lot === undefined) return 'À préciser';
+  const l = (item.book.lots || []).find(x => x.id === item.lot);
+  return (l && l.owner) ? l.owner.trim() : 'Autre';
+}
+
+function getCartByOrigin() {
+  const groups = {};
+  for (const item of cart) {
+    const owner = getItemOwner(item);
+    if (!groups[owner]) {
+      groups[owner] = { owner, items: [], total: 0, count: 0 };
+    }
+    groups[owner].items.push(item);
+    groups[owner].total += item.qty * item.book.price;
+    groups[owner].count += item.qty;
+  }
+  const list = Object.values(groups);
+  list.sort((a, b) => {
+    const aIsCR = a.owner.toLowerCase() === 'cité royale' ? 1 : 0;
+    const bIsCR = b.owner.toLowerCase() === 'cité royale' ? 1 : 0;
+    if (aIsCR !== bIsCR) return bIsCR - aIsCR;
+    const aIsICC = a.owner.toLowerCase().includes('icc') ? 1 : 0;
+    const bIsICC = b.owner.toLowerCase().includes('icc') ? 1 : 0;
+    return bIsICC - aIsICC;
+  });
+  return list;
+}
+
+function getDefaultPaymentForOwner(owner) {
+  const ow = (owner || '').toLowerCase();
+  if (ow === 'cité royale') return 'CB'; // Cité Royale va vers le TPE / PayPal POS
+  return 'Espèces'; // ICC Rennes et autres alimentent la caisse physique
+}
 
 function lotRemaining(item) {
   if (item.lot === undefined || item.lot === 'none') return Infinity;
   const l = item.book.lots.find(x => x.id === item.lot);
   return l ? l.remaining : 0;
 }
+
 function defaultLotForBook(book) {
   const lots = (book.lots || []).filter(l => l.remaining > 0);
   if (!lots.length) return undefined;
@@ -133,6 +171,143 @@ function addToCart(book) {
   toast('Ajouté : ' + book.title);
   renderCart();
 }
+
+/* ---------- Modale Paiement Fractionné / Multi-modes ---------- */
+let activeMpOwner = null;
+let activeMpTotal = 0;
+let mpMode1 = 'Espèces';
+let mpMode2 = 'CB';
+
+function openMultiPayModal(owner, total) {
+  activeMpOwner = owner;
+  activeMpTotal = total;
+  const badge = $('#mpOriginBadge');
+  if (badge) badge.textContent = owner;
+  const tVal = $('#mpTotalVal');
+  if (tVal) tVal.textContent = eur(total);
+  
+  if ((owner || '').toLowerCase() === 'cité royale') {
+    mpMode1 = 'CB';
+    mpMode2 = 'Espèces';
+  } else {
+    mpMode1 = 'Espèces';
+    mpMode2 = 'CB';
+  }
+
+  const existing = originPayments[owner]?.parts;
+  if (existing && existing.length >= 2) {
+    mpMode1 = existing[0].payment;
+    mpMode2 = existing[1].payment;
+    $('#mpAmount1').value = existing[0].amount.toFixed(2);
+    $('#mpAmount2').value = existing[1].amount.toFixed(2);
+  } else {
+    const half = Math.round((total / 2) * 100) / 100;
+    $('#mpAmount1').value = half.toFixed(2);
+    $('#mpAmount2').value = (Math.round((total - half) * 100) / 100).toFixed(2);
+  }
+
+  renderMpModes();
+  updateMpCalculations();
+  $('#multiPayModal').hidden = false;
+}
+
+function closeMultiPayModal() {
+  $('#multiPayModal').hidden = true;
+  activeMpOwner = null;
+}
+
+function renderMpModes() {
+  const m1El = $('#mpModes1');
+  const m2El = $('#mpModes2');
+  if (!m1El || !m2El) return;
+  const available = payOptions.length ? payOptions : ['Espèces', 'CB', 'Wero'];
+  
+  m1El.replaceChildren(...available.map(p => el('button', {
+    type: 'button',
+    class: 'chip' + (mpMode1 === p ? ' on' : ''),
+    style: 'flex:1;justify-content:center;padding:5px 4px;font-size:11.5px',
+    onclick: () => {
+      mpMode1 = p;
+      if (mpMode2 === p) {
+        const other = available.find(x => x !== p);
+        if (other) mpMode2 = other;
+      }
+      renderMpModes();
+      updateMpCalculations();
+    }
+  }, p)));
+
+  m2El.replaceChildren(...available.map(p => el('button', {
+    type: 'button',
+    class: 'chip' + (mpMode2 === p ? ' on' : ''),
+    style: 'flex:1;justify-content:center;padding:5px 4px;font-size:11.5px',
+    onclick: () => {
+      mpMode2 = p;
+      if (mpMode1 === p) {
+        const other = available.find(x => x !== p);
+        if (other) mpMode1 = other;
+      }
+      renderMpModes();
+      updateMpCalculations();
+    }
+  }, p)));
+}
+
+function updateMpCalculations() {
+  const a1 = parseFloat($('#mpAmount1').value) || 0;
+  const rem = Math.max(0, Math.round((activeMpTotal - a1) * 100) / 100);
+  $('#mpAmount2').value = rem.toFixed(2);
+  $('#mpRemainderBadge').textContent = 'Complément : ' + eur(rem);
+
+  const btnApply = $('#btnApplyMultiPay');
+  const hint = $('#mpHint');
+  
+  if (a1 <= 0) {
+    btnApply.disabled = true;
+    hint.textContent = 'Le 1er montant doit être supérieur à 0 €';
+  } else if (rem <= 0) {
+    btnApply.disabled = true;
+    hint.textContent = 'Le 1er montant ne peut pas dépasser le total';
+  } else if (mpMode1 === mpMode2) {
+    btnApply.disabled = true;
+    hint.textContent = 'Choisissez deux modes différents';
+  } else {
+    btnApply.disabled = false;
+    hint.textContent = '';
+  }
+}
+
+const mpAmt1 = $('#mpAmount1');
+if (mpAmt1) mpAmt1.addEventListener('input', updateMpCalculations);
+document.querySelectorAll('[data-mpq]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const q = btn.dataset.mpq;
+    let val = 0;
+    if (q === 'half') val = Math.round((activeMpTotal / 2) * 100) / 100;
+    else val = parseFloat(q) || 0;
+    if (val >= activeMpTotal) val = Math.max(1, activeMpTotal - 1);
+    $('#mpAmount1').value = val.toFixed(2);
+    updateMpCalculations();
+  });
+});
+const bCancelMp = $('#btnCancelMultiPay');
+if (bCancelMp) bCancelMp.addEventListener('click', closeMultiPayModal);
+const bApplyMp = $('#btnApplyMultiPay');
+if (bApplyMp) bApplyMp.addEventListener('click', () => {
+  const a1 = parseFloat($('#mpAmount1').value) || 0;
+  const a2 = parseFloat($('#mpAmount2').value) || 0;
+  if (!activeMpOwner || a1 <= 0 || a2 <= 0) return;
+  originPayments[activeMpOwner] = {
+    method: 'Multi',
+    parts: [
+      { payment: mpMode1, amount: a1 },
+      { payment: mpMode2, amount: a2 }
+    ]
+  };
+  closeMultiPayModal();
+  renderCart();
+  toast('Cumul défini pour ' + activeMpOwner);
+});
 
 function renderCart() {
   const count = cart.reduce((s, i) => s + i.qty, 0);
@@ -168,29 +343,125 @@ function renderCart() {
     }));
   }
 
-  const missingLot = cart.some(i => i.lot === undefined);
-  
+  const origins = getCartByOrigin();
+  const singleRow = $('#singleOriginRow');
+  const splitCont = $('#splitOriginsContainer');
   const payChipsEl = $('#payChips');
-  const payInput = $('#payMethod');
-  if (payChipsEl && payInput) {
-    if (!payInput.value && payOptions.length) {
-      payInput.value = payOptions[0]; // sélection par défaut fluide
+  const availablePays = payOptions.length ? payOptions : ['Espèces', 'CB', 'Wero'];
+
+  // Nettoyer originPayments des origines qui ne sont plus dans le panier
+  const validOwners = new Set(origins.map(o => o.owner));
+  for (const k of Object.keys(originPayments)) {
+    if (k !== '_default' && !validOwners.has(k)) {
+      delete originPayments[k];
     }
-    payChipsEl.replaceChildren(...payOptions.map(p => el('button', {
-      type: 'button',
-      class: 'chip' + (payInput.value === p ? ' on' : ''),
-      onclick: () => {
-        payInput.value = p;
-        renderCart();
-      }
-    }, p)));
   }
 
-  const missingPay = !payInput || !payInput.value;
+  if (origins.length <= 1) {
+    // Cas 1 : Origine Unique (ou panier vide)
+    if (singleRow) singleRow.style.display = 'flex';
+    if (splitCont) splitCont.style.display = 'none';
+
+    const currentOwner = origins[0] ? origins[0].owner : '_default';
+    if (!originPayments[currentOwner]) {
+      originPayments[currentOwner] = { method: getDefaultPaymentForOwner(currentOwner), parts: null };
+    }
+    const currentPay = originPayments[currentOwner];
+
+    if (payChipsEl) {
+      const chips = availablePays.map(p => el('button', {
+        type: 'button',
+        class: 'chip' + (!currentPay.parts && currentPay.method === p ? ' on' : ''),
+        onclick: () => {
+          originPayments[currentOwner] = { method: p, parts: null };
+          renderCart();
+        }
+      }, p));
+
+      // Bouton Cumul / Multi
+      if (currentPay.parts && currentPay.parts.length >= 2) {
+        chips.push(el('button', {
+          type: 'button',
+          class: 'chip multi-on',
+          title: 'Modifier le paiement combiné',
+          onclick: () => openMultiPayModal(currentOwner, total)
+        }, `${currentPay.parts[0].amount.toFixed(0)}€ ${currentPay.parts[0].payment.slice(0,3)}. + ${currentPay.parts[1].amount.toFixed(0)}€ ${currentPay.parts[1].payment.slice(0,2)}. ✎`));
+      } else {
+        chips.push(el('button', {
+          type: 'button',
+          class: 'chip',
+          title: 'Combiner deux modes de paiement (ex: 10€ Espèces + reste CB)',
+          style: 'color:var(--mut)',
+          onclick: () => {
+            if (!total) return toast('Ajoutez d\'abord un livre au panier', 'warn');
+            openMultiPayModal(currentOwner, total);
+          }
+        }, '＋ Multi'));
+      }
+      payChipsEl.replaceChildren(...chips);
+    }
+    $('#btnValidate').textContent = total > 0 ? `Valider (${eur(total)})` : 'Valider';
+  } else {
+    // Cas 2 : Smart Split - Origines multiples (Cité Royale + ICC Rennes...)
+    if (singleRow) singleRow.style.display = 'none';
+    if (splitCont) splitCont.style.display = 'flex';
+
+    if (splitCont) {
+      splitCont.replaceChildren(...origins.map(g => {
+        if (!originPayments[g.owner]) {
+          originPayments[g.owner] = { method: getDefaultPaymentForOwner(g.owner), parts: null };
+        }
+        const payState = originPayments[g.owner];
+        const isCR = g.owner.toLowerCase() === 'cité royale';
+        const isICC = g.owner.toLowerCase().includes('icc');
+        const cardClass = isCR ? 'split-card cr' : isICC ? 'split-card icc' : 'split-card other';
+        const icon = isCR ? '🏰 ' : isICC ? '🕊️ ' : '📦 ';
+
+        const chips = availablePays.map(p => el('button', {
+          type: 'button',
+          class: 'chip' + (!payState.parts && payState.method === p ? ' on' : ''),
+          style: 'padding:4px 8px;font-size:11.5px',
+          onclick: () => {
+            originPayments[g.owner] = { method: p, parts: null };
+            renderCart();
+          }
+        }, p));
+
+        if (payState.parts && payState.parts.length >= 2) {
+          chips.push(el('button', {
+            type: 'button',
+            class: 'chip multi-on',
+            style: 'padding:4px 8px;font-size:11.5px',
+            title: 'Modifier le paiement combiné',
+            onclick: () => openMultiPayModal(g.owner, g.total)
+          }, `${payState.parts[0].amount.toFixed(0)}€ + ${payState.parts[1].amount.toFixed(0)}€ ✎`));
+        } else {
+          chips.push(el('button', {
+            type: 'button',
+            class: 'chip',
+            style: 'padding:4px 7px;font-size:11px;color:var(--mut)',
+            onclick: () => openMultiPayModal(g.owner, g.total)
+          }, '＋ Multi'));
+        }
+
+        return el('div', { class: cardClass },
+          el('div', { class: 'split-head' },
+            el('span', { style: 'display:flex;align-items:center;gap:4px' },
+              icon + g.owner,
+              el('span', { style: 'font-size:10px;color:var(--mut);font-weight:400' }, `(${g.count} ex.)`)),
+            el('span', { style: 'font-size:13px;font-weight:800;color:var(--good)' }, eur(g.total))),
+          el('div', { class: 'split-chips' }, chips));
+      }));
+    }
+    $('#btnValidate').textContent = `Valider les ${origins.length} ventes (${eur(total)})`;
+  }
+
+  const missingLot = cart.some(i => i.lot === undefined);
+  const missingPay = origins.some(g => !originPayments[g.owner] || (!originPayments[g.owner].method && !originPayments[g.owner].parts));
   $('#btnValidate').disabled = !cart.length || missingLot || missingPay;
   $('#validHint').textContent = !cart.length ? '' : missingLot ? 'Choisissez l\'origine de chaque livre' : missingPay ? 'Choisissez le mode de paiement' : '';
 }
-$('#clearCart').addEventListener('click', () => { cart = []; renderCart(); });
+$('#clearCart').addEventListener('click', () => { cart = []; originPayments = {}; renderCart(); });
 
 async function loadPayOptions() {
   try {
@@ -214,28 +485,8 @@ function getAutoMobileMoment() {
 
 let mMoment = localStorage.getItem('librairie_mobile_moment') || getAutoMobileMoment();
 
-/* ---------- Volet dépliable Profil acheteur ---------- */
 function updateProfileSummary() {
-  const el = $('#mProfileSummary');
-  if (!el) return;
-  const parts = [];
-  if (mStar) parts.push('⭐');
-  if (mGender) parts.push(mGender);
-  if (mAge) parts.push(mAge);
-  el.textContent = parts.length ? ` (${parts.join(' · ')})` : '';
-  const toggleBtn = $('#btnToggleProfile');
-  if (toggleBtn) toggleBtn.classList.toggle('on', parts.length > 0);
-}
-
-const btnToggleProf = $('#btnToggleProfile');
-const mProfDrawer = $('#mProfileDrawer');
-const mProfChev = $('#mProfileChevron');
-if (btnToggleProf && mProfDrawer) {
-  btnToggleProf.addEventListener('click', () => {
-    const isHidden = mProfDrawer.hidden;
-    mProfDrawer.hidden = !isHidden;
-    if (mProfChev) mProfChev.textContent = isHidden ? '▴' : '▾';
-  });
+  // Profil directement visible sans tiroir
 }
 
 /* ---------- Contrôle de la taille de la Caméra (Plein écran Panier) & Veille auto ---------- */
@@ -271,9 +522,6 @@ if (mStarBtn) {
   mStarBtn.addEventListener('click', () => {
     mStar = mStar ? 0 : 1;
     mStarBtn.classList.toggle('on', !!mStar);
-    mStarBtn.style.background = mStar ? '#e6a73c' : '';
-    mStarBtn.style.borderColor = mStar ? '#e6a73c' : '';
-    mStarBtn.style.color = mStar ? '#000' : '';
     updateProfileSummary();
   });
 }
@@ -316,42 +564,68 @@ if (mAgeEl) {
 
 $('#btnValidate').addEventListener('click', async () => {
   if (!currentUser) return openUserModal();
-  const btn = $('#btnValidate'); btn.disabled = true;           // anti double-envoi : un seul encaissement par appui
+  const btn = $('#btnValidate');
+  btn.disabled = true; // anti double-envoi : un seul encaissement par appui
+  
+  const origins = getCartByOrigin();
+  if (!origins.length) return;
+
   try {
-    const r = await api('/api/sales', {
-      method: 'POST',
-      body: {
-        payment: $('#payMethod').value,
-        note: 'Vente mobile',
+    const validatedSales = [];
+    for (let idx = 0; idx < origins.length; idx++) {
+      const g = origins[idx];
+      const payState = originPayments[g.owner] || { method: 'Espèces', parts: null };
+      const lines = g.items.map(i => ({
+        book_id: i.book.id,
+        qty: i.qty,
+        unit_price: i.book.price,
+        allocations: [{ book_id: i.book.id, lot_id: i.lot === 'none' ? null : i.lot, qty: i.qty }]
+      }));
+
+      const payload = {
+        payment: payState.parts ? payState.parts.map(p => `${p.amount.toFixed(2)} € ${p.payment}`).join(' + ') : payState.method,
+        payments: payState.parts || null,
+        note: origins.length > 1 ? `Vente mobile (${g.owner})` : 'Vente mobile',
         customer_gender: mGender || null,
         customer_age_group: mAge || null,
         is_star: mStar ? 1 : 0,
         service_moment: mMoment || null,
-        lines: cart.map(i => ({
-          book_id: i.book.id, qty: i.qty, unit_price: i.book.price,
-          allocations: [{ book_id: i.book.id, lot_id: i.lot === 'none' ? null : i.lot, qty: i.qty }]
-        }))
+        lines
+      };
+
+      try {
+        const res = await api('/api/sales', { method: 'POST', body: payload });
+        validatedSales.push({ id: res.id, owner: g.owner, total: res.total });
+        // Retirer les articles validés du panier au fur et à mesure
+        cart = cart.filter(item => getItemOwner(item) !== g.owner);
+      } catch (err) {
+        toast(`Erreur sur vente ${g.owner} : ${err.message}`, 'err');
+        renderCart();
+        btn.disabled = false;
+        return;
       }
-    });
-    toast('Vente enregistrée : ' + eur(r.total));
-    if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
-    cart = []; $('#payMethod').value = '';
-    mGender = ''; mAge = ''; mStar = 0;
-    if (mStarBtn) {
-      mStarBtn.classList.remove('on');
-      mStarBtn.style.background = '';
-      mStarBtn.style.borderColor = '';
-      mStarBtn.style.color = '';
     }
+
+    if (validatedSales.length === 1) {
+      toast('Vente enregistrée : ' + eur(validatedSales[0].total));
+    } else {
+      toast(`✓ ${validatedSales.length} ventes validées : ` + validatedSales.map(v => `${eur(v.total)} (${v.owner})`).join(' + '));
+    }
+
+    if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+
+    cart = [];
+    originPayments = {};
+    mGender = ''; mAge = ''; mStar = 0;
+    if (mStarBtn) mStarBtn.classList.remove('on');
     if (mGenEl) mGenEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
     if (mAgeEl) mAgeEl.querySelectorAll('button').forEach(b => b.classList.remove('on'));
     updateProfileSummary();
-    if (mProfDrawer) {
-      mProfDrawer.hidden = true;
-      if (mProfChev) mProfChev.textContent = '▾';
-    }
-  } catch (e) { toast(e.message, 'err'); }
-  renderCart();
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    renderCart();
+  }
 });
 
 /* ---------- Mode de travail Mobile : Vente vs Réception ---------- */

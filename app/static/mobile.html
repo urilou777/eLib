@@ -185,6 +185,114 @@ button, select, input { font:inherit; color:inherit; }
 #toasts { position:fixed; top:58px; left:12px; right:12px; display:flex; flex-direction:column; gap:8px; z-index:120; pointer-events:none; }
 .toast { padding:10px 14px; border-radius:10px; background:#1c2242; border:1px solid var(--line); font-size:13px; font-weight:600; box-shadow:0 8px 25px rgba(0,0,0,.6); }
 .toast.ok { border-color:var(--good); } .toast.warn { border-color:var(--warn); } .toast.err { border-color:var(--bad); }
+
+/* Styles distincts des catégories du profil client (zéro défilement) */
+.profile-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+.chip-femme {
+  border-color: rgba(244, 114, 182, 0.35) !important;
+  color: #f472b6 !important;
+}
+.chip-femme svg { stroke: #f472b6; }
+.chip-femme.on {
+  background: linear-gradient(135deg, #db2777, #f472b6) !important;
+  border-color: #fbcfe8 !important;
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(244, 114, 182, 0.45) !important;
+}
+.chip-femme.on svg { stroke: #fff !important; }
+
+.chip-homme {
+  border-color: rgba(96, 165, 250, 0.35) !important;
+  color: #60a5fa !important;
+}
+.chip-homme svg { stroke: #60a5fa; }
+.chip-homme.on {
+  background: linear-gradient(135deg, #2563eb, #60a5fa) !important;
+  border-color: #bfdbfe !important;
+  color: #fff !important;
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.45) !important;
+}
+.chip-homme.on svg { stroke: #fff !important; }
+
+.chip-star {
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  color: #fbbf24 !important;
+  padding: 5px 10px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chip-star svg { fill: #fbbf24; stroke: #fbbf24; }
+.chip-star.on {
+  background: linear-gradient(135deg, #d97706, #f59e0b) !important;
+  border-color: #fef08a !important;
+  color: #fff !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.6) !important;
+}
+.chip-star.on svg { fill: #fff !important; stroke: #fff !important; }
+
+.chip-age {
+  border-color: rgba(168, 85, 247, 0.28) !important;
+  color: var(--mut) !important;
+  transition: all .15s ease;
+}
+.chip-age.on {
+  background: linear-gradient(135deg, #7c3aed, #a855f7) !important;
+  border-color: #e9d5ff !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+/* Styles Smart Split Checkout (Cité Royale vs ICC Rennes & Multi-paiement) */
+.split-card {
+  background: var(--card2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.split-card.cr {
+  border-left: 3px solid #ffb454;
+  background: linear-gradient(90deg, rgba(255,180,84,0.07), var(--card2) 35%);
+}
+.split-card.icc {
+  border-left: 3px solid #5ee6b0;
+  background: linear-gradient(90deg, rgba(94,230,176,0.07), var(--card2) 35%);
+}
+.split-card.other {
+  border-left: 3px solid #a855f7;
+  background: linear-gradient(90deg, rgba(168,85,247,0.07), var(--card2) 35%);
+}
+.split-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+.split-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.split-chips::-webkit-scrollbar { display: none; }
+.chip.multi-on {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+  border-color: #c4b5fd !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 8px rgba(99,102,241,0.4) !important;
+}
 </style>
 </head>
 <body>
@@ -285,50 +393,53 @@ button, select, input { font:inherit; color:inherit; }
   </main>
 
   <footer class="bottom-bar" id="saleBottom">
-    <!-- Ligne 1 : Total et modes de paiement sur la même ligne ultra-compacte -->
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+    <!-- Ligne 1 (Origine Unique) : Total et modes de paiement sur la même ligne ultra-compacte -->
+    <div id="singleOriginRow" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
       <div>
         <div style="font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</div>
         <div class="val" id="totalVal" style="font-size:22px;font-weight:800;color:var(--good);line-height:1.1">0,00 €</div>
       </div>
-      <div class="pay-chips" id="payChips" style="display:flex;gap:5px;flex-wrap:nowrap"></div>
+      <div class="pay-chips" id="payChips" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
       <input type="hidden" id="payMethod" value="">
     </div>
 
-    <!-- Ligne 2 : Bouton Profil client dépliable & Bouton Valider la vente -->
-    <div style="display:flex;gap:8px;align-items:center">
-      <button type="button" class="chip" id="btnToggleProfile" style="padding:8px 10px;font-size:11.5px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
-        <span>Profil</span><span id="mProfileSummary" style="color:var(--a2);font-weight:700"></span><span id="mProfileChevron">▾</span>
-      </button>
-      <button class="btn good" id="btnValidate" type="button" disabled style="flex:1;padding:11px 14px;font-size:15px;margin-top:0">Valider</button>
-    </div>
-    <div class="hint" id="validHint" style="text-align:center;margin-top:4px"></div>
+    <!-- Ligne 1 bis (Smart Split Origines Multiples) : Mini-cartes par propriétaire avec sous-totaux et modes de paiement distincts -->
+    <div id="splitOriginsContainer" style="display:none;flex-direction:column;gap:5px;margin-bottom:8px"></div>
 
-    <!-- Volet dépliable Profil acheteur -->
-    <div id="mProfileDrawer" hidden style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-top:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Profil client (statistique)</span>
-        <button type="button" class="chip" id="mBtnStar" style="padding:3px 8px;font-size:11px">⭐ STAR</button>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-        <div style="display:flex;gap:4px" id="mDemoGender">
-          <button type="button" class="chip" data-g="Femme" title="Femme" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px">
-            <svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
+    <!-- Ligne 2 : Profil acheteur (Catégories visuelles distinctes, séparateurs, couleurs dédiées, 0 défilement) -->
+    <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:6px 8px;margin-bottom:8px">
+      <!-- Rangée 1 : Genre (Rose Femme / Bleu Homme) | Séparateur | Client Star (Étoile dorée) -->
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <div style="display:flex;gap:5px;flex:1" id="mDemoGender">
+          <button type="button" class="chip chip-femme" data-g="Femme" title="Femme" style="flex:1;justify-content:center;padding:5px 6px;font-size:12px">
+            <svg style="width:13px;height:13px;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
             <span>Femme</span>
           </button>
-          <button type="button" class="chip" data-g="Homme" title="Homme" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px">
-            <svg style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
+          <button type="button" class="chip chip-homme" data-g="Homme" title="Homme" style="flex:1;justify-content:center;padding:5px 6px;font-size:12px">
+            <svg style="width:13px;height:13px;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
             <span>Homme</span>
           </button>
         </div>
-        <div style="display:flex;gap:4px;overflow-x:auto;flex:1" id="mDemoAge">
-          <button type="button" class="chip" data-a="Enfant / Ado">&lt;18</button>
-          <button type="button" class="chip" data-a="Jeune adulte">18-29</button>
-          <button type="button" class="chip" data-a="Adulte">30-59</button>
-          <button type="button" class="chip" data-a="Senior">60+</button>
-        </div>
+
+        <div class="profile-divider"></div>
+
+        <button type="button" class="chip chip-star" id="mBtnStar" title="Client Star" aria-label="Client Star">
+          <svg style="width:16px;height:16px" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+      </div>
+
+      <!-- Rangée 2 : Tranches d'âge (Séparées, 4 colonnes 25% chacune, 0 défilement) -->
+      <div style="display:flex;gap:4px;width:100%" id="mDemoAge">
+        <button type="button" class="chip chip-age" data-a="Enfant / Ado" style="flex:1;justify-content:center;padding:5px 2px;font-size:11.5px">&lt;18</button>
+        <button type="button" class="chip chip-age" data-a="Jeune adulte" style="flex:1;justify-content:center;padding:5px 2px;font-size:11.5px">18-29</button>
+        <button type="button" class="chip chip-age" data-a="Adulte" style="flex:1;justify-content:center;padding:5px 2px;font-size:11.5px">30-59</button>
+        <button type="button" class="chip chip-age" data-a="Senior" style="flex:1;justify-content:center;padding:5px 2px;font-size:11.5px">60+</button>
       </div>
     </div>
+
+    <!-- Ligne 3 : Bouton Valider la vente (Pleine largeur, toujours sous le pouce sans scroll) -->
+    <button class="btn good" id="btnValidate" type="button" disabled style="width:100%;padding:12px 14px;font-size:16px;margin-top:0">Valider</button>
+    <div class="hint" id="validHint" style="text-align:center;margin-top:4px"></div>
   </footer>
 
   <footer class="bottom-bar" id="recvBottom" hidden>
@@ -387,6 +498,56 @@ button, select, input { font:inherit; color:inherit; }
     <div id="momentList" style="display:flex;flex-direction:column;gap:8px"></div>
     <div style="margin-top:14px">
       <button class="btn sm" id="btnCloseMomentModal" type="button" style="width:100%">Fermer</button>
+    </div>
+  </div>
+</section>
+
+<!-- Modale Paiement Fractionné / Multi-modes (Cumul sur un sous-total) -->
+<section class="overlay" id="multiPayModal" hidden>
+  <div class="sheet" style="max-width:380px;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h2 style="margin-bottom:0;font-size:17px">Paiement combiné</h2>
+      <span id="mpOriginBadge" class="cam-badge" style="background:rgba(99,102,241,0.2);color:#818cf8;border-color:rgba(99,102,241,0.4);font-size:10px"></span>
+    </div>
+    <p style="margin-bottom:10px;font-size:12px;color:var(--mut)">
+      Sous-total à payer : <b id="mpTotalVal" style="color:var(--good);font-size:15px">0,00 €</b>
+    </p>
+    
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <!-- Part 1 -->
+      <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px">
+        <div style="font-size:10.5px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">1er mode de règlement</div>
+        <div id="mpModes1" style="display:flex;gap:4px;margin-bottom:6px"></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" step="0.5" id="mpAmount1" class="field" placeholder="0.00" style="font-size:16px;font-weight:800;padding:7px 8px;width:95px;color:var(--good)">
+          <div style="display:flex;gap:3px;flex:1">
+            <button type="button" class="btn sm" data-mpq="5" style="flex:1;padding:6px 2px;font-size:11px">5 €</button>
+            <button type="button" class="btn sm" data-mpq="10" style="flex:1;padding:6px 2px;font-size:11px">10 €</button>
+            <button type="button" class="btn sm" data-mpq="20" style="flex:1;padding:6px 2px;font-size:11px">20 €</button>
+            <button type="button" class="btn sm" data-mpq="half" style="flex:1;padding:6px 2px;font-size:11px">50%</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Part 2 -->
+      <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+          <span style="font-size:10.5px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px">2e mode (complément)</span>
+          <span id="mpRemainderBadge" style="font-size:11px;font-weight:800;color:var(--good)">Reste : 0,00 €</span>
+        </div>
+        <div id="mpModes2" style="display:flex;gap:4px;margin-bottom:6px"></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="number" step="0.5" id="mpAmount2" class="field" readonly style="font-size:16px;font-weight:800;padding:7px 8px;width:95px;background:rgba(255,255,255,0.03);color:var(--good)">
+          <span style="font-size:11px;color:var(--mut)">Calculé automatiquement</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="mpHint" style="font-size:11px;color:var(--warn);min-height:16px;margin-top:6px;text-align:center"></div>
+
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="btnCancelMultiPay" type="button" style="flex:1">Annuler</button>
+      <button class="btn primary" id="btnApplyMultiPay" type="button" style="flex:1">Appliquer</button>
     </div>
   </div>
 </section>
