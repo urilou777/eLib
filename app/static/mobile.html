@@ -90,6 +90,11 @@ button, select, input { font:inherit; color:inherit; }
   cursor: pointer;
   z-index: 8;
   border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.cam-minibar:active {
+  background: rgba(255, 255, 255, 0.08);
 }
 .cam-container.minimized .cam-minibar {
   display: flex !important;
@@ -209,7 +214,7 @@ button, select, input { font:inherit; color:inherit; }
   <div class="cam-container" id="camContainer">
     <div class="cam-minibar" id="camMinibar" title="Agrandir le scanner caméra">
       <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-      <span>Scanner caméra réduit · Toucher pour agrandir</span>
+      <span id="camMinibarText">Scanner caméra réduit · Toucher pour agrandir</span>
     </div>
     <video id="video" playsinline autoplay muted></video>
     <div class="target-box" id="targetBox">
@@ -222,7 +227,6 @@ button, select, input { font:inherit; color:inherit; }
     </div>
     <div class="cam-controls" id="camControls">
       <span class="cam-badge" id="camEcoBadge" title="Mode Éco actif (3 FPS) : économie d'énergie">ÉCO</span>
-      <button class="btn-ctrl" id="btnPauseCam" type="button" title="Mettre la caméra en veille pour économiser la batterie">⏸ Veille</button>
       <button class="btn-ctrl" id="btnToggleCamSize" type="button" title="Réduire la caméra pour voir tout le panier">▲ Masquer</button>
       <button class="btn-ctrl" id="btnTorch" type="button" title="Éclairer" hidden>Torche</button>
     </div>

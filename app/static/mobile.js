@@ -238,13 +238,13 @@ if (btnToggleProf && mProfDrawer) {
   });
 }
 
-/* ---------- Contrôle de la taille de la Caméra (Plein écran Panier) & Veille ---------- */
+/* ---------- Contrôle de la taille de la Caméra (Plein écran Panier) & Veille auto ---------- */
 const camCont = $('#camContainer');
 const btnToggleCamSize = $('#btnToggleCamSize');
 const camMinibar = $('#camMinibar');
-const btnPauseCam = $('#btnPauseCam');
+const camMinibarText = $('#camMinibarText');
 
-function toggleCamMinimize(forceMin) {
+function toggleCamMinimize(forceMin, reason = 'manual') {
   if (!camCont) return;
   const isMin = forceMin !== undefined ? forceMin : !camCont.classList.contains('minimized');
   camCont.classList.toggle('minimized', isMin);
@@ -255,8 +255,13 @@ function toggleCamMinimize(forceMin) {
   if (fullCartBtn) {
     fullCartBtn.textContent = isMin ? '📷 Scanner' : 'Plein écran';
   }
+  if (camMinibarText && isMin) {
+    camMinibarText.textContent = (reason === 'auto')
+      ? 'Scanner en veille · Toucher pour réactiver'
+      : 'Scanner masqué · Toucher pour agrandir';
+  }
   if (isMin) {
-    pauseCamera('minimized');
+    pauseCamera(reason);
   } else {
     isAutoPaused = false;
     startCamera();
@@ -264,7 +269,6 @@ function toggleCamMinimize(forceMin) {
 }
 if (btnToggleCamSize) btnToggleCamSize.addEventListener('click', () => toggleCamMinimize());
 if (camMinibar) camMinibar.addEventListener('click', () => toggleCamMinimize(false));
-if (btnPauseCam) btnPauseCam.addEventListener('click', () => pauseCamera('manual'));
 const btnViewFullCart = $('#btnViewFullCart');
 if (btnViewFullCart) {
   btnViewFullCart.addEventListener('click', () => {
@@ -740,10 +744,9 @@ function updateEcoBadge(burst) {
 
 function resetInactivity() {
   clearTimeout(inactivityTimer);
-  // Si la caméra s'était mise en veille automatique et que l'utilisateur retouche l'écran : réveil automatique immédiat !
-  if (isAutoPaused) {
-    isAutoPaused = false;
-    startCamera();
+  // Si le scanner est masqué ou en veille automatique réduite,
+  // on ne réveille PAS au simple touch sur le panier (pour laisser le libraire manipuler le panier confortablement)
+  if (camCont && camCont.classList.contains('minimized')) {
     return;
   }
   if (stream) {
@@ -753,20 +756,24 @@ function resetInactivity() {
   }
 }
 
-function pauseCamera(reason = 'manual') {
+function pauseCamera(reason = 'minimized') {
   stopCamera();
-  if (reason === 'auto') {
-    isAutoPaused = true;
-    camStatus(true, 'Veille économie d\'énergie', 'Caméra en veille pour préserver la batterie (15s). Touchez l\'écran pour réactiver instantanément.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
-  } else if (reason === 'minimized') {
-    isAutoPaused = true;
-  } else {
-    isAutoPaused = true;
-    camStatus(true, 'Caméra en veille', 'Caméra suspendue pour préserver la batterie. Touchez l\'écran pour réactiver instantanément.', 'Reprendre le scan', () => { isAutoPaused = false; startCamera(); });
+  isAutoPaused = true;
+  // Veille automatique ou masquage : collapse / masque automatiquement la caméra pour libérer tout l'écran
+  if (camCont && !camCont.classList.contains('minimized')) {
+    camCont.classList.add('minimized');
+    if (btnToggleCamSize) btnToggleCamSize.textContent = '▼ Scanner';
+    const fullCartBtn = $('#btnViewFullCart');
+    if (fullCartBtn) fullCartBtn.textContent = '📷 Scanner';
+  }
+  if (camMinibarText) {
+    camMinibarText.textContent = (reason === 'auto')
+      ? 'Scanner en veille · Toucher pour réactiver'
+      : 'Scanner masqué · Toucher pour agrandir';
   }
 }
 
-// Réinitialiser le minuteur et réveiller automatiquement la caméra dès que le libraire touche l'écran
+// Réinitialiser le minuteur d'inactivité tant que la caméra est ouverte
 ['touchstart', 'mousedown', 'keydown'].forEach(evt => {
   window.addEventListener(evt, resetInactivity, { passive: true });
 });
@@ -892,6 +899,15 @@ async function findOptimalCamera() {
 async function startCamera(specificDeviceId = null) {
   if (isStartingCamera) return;
   isStartingCamera = true;
+
+  // Déplier automatiquement le scanner s'il était réduit/en veille
+  if (camCont && camCont.classList.contains('minimized')) {
+    camCont.classList.remove('minimized');
+    if (btnToggleCamSize) btnToggleCamSize.textContent = '▲ Masquer';
+    const fullCartBtn = $('#btnViewFullCart');
+    if (fullCartBtn) fullCartBtn.textContent = 'Plein écran';
+  }
+  isAutoPaused = false;
 
   stopCamera();
   if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1120,8 +1136,11 @@ async function startCamera(specificDeviceId = null) {
 }
 $('#btnCam').addEventListener('click', startCamera);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { stopCamera(); camStatus(true, 'Caméra en pause', 'Appuyez pour reprendre le scan.'); }
-  else if (localStorage.getItem(TOKEN_KEY)) startCamera();
+  if (document.hidden) {
+    pauseCamera('auto');
+  } else if (localStorage.getItem(TOKEN_KEY) && !isAutoPaused) {
+    startCamera();
+  }
 });
 
 /* Repli photo (fonctionne même sans flux vidéo avec pipeline tolérant) */
