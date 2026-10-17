@@ -47,6 +47,148 @@ function modal(html, onMount) {
 const closeModal = () => $('#modalRoot').innerHTML = '';
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
+window.openBookStatsModal = safe(async (bid) => {
+  const data = await api(`/api/books/${bid}/stats`);
+  const b = data.book;
+  const k = data.kpis;
+  const d = data.demographics;
+  const recent = data.recent_sales || [];
+  const packs = data.packs || [];
+
+  const totalGender = (d.gender.Femme || 0) + (d.gender.Homme || 0) + (d.gender.Couple || 0) + (d.gender.Autre || 0);
+  const pFemme = totalGender ? Math.round(((d.gender.Femme || 0) / totalGender) * 100) : 0;
+  const pHomme = totalGender ? Math.round(((d.gender.Homme || 0) / totalGender) * 100) : 0;
+  const pCouple = totalGender ? Math.round(((d.gender.Couple || 0) / totalGender) * 100) : 0;
+  const pAutre = totalGender ? Math.max(0, 100 - pFemme - pHomme - pCouple) : 0;
+
+  const totalAge = (d.age_groups || []).reduce((s, a) => s + a.count, 0);
+
+  modal(`
+    <div class="modal-book-stats">
+      <div class="mbs-header">
+        <div>
+          <div class="mbs-title">${b.is_pack ? '<span class="badge b-pack" style="font-size:11px">PACK</span> ' : ''}${esc(b.title)}</div>
+          <div class="mbs-sub">${esc(b.author || b.publisher || 'Éditions chrétiennes')} · <b style="color:var(--good);font-size:13px">${eur(b.price)}</b> · Code : <span style="font-family:monospace">${esc(b.code)}</span></div>
+        </div>
+        <button type="button" class="btn ghost sm" onclick="closeModal()" style="padding:4px 8px;font-size:14px;color:var(--mut)" title="Fermer">✕</button>
+      </div>
+
+      <div class="mbs-kpi-row">
+        <div class="mbs-kpi-card">
+          <div class="mbs-kpi-lbl">Total Ventes</div>
+          <div class="mbs-kpi-val" style="color:var(--good)">${k.total_sold} <span style="font-size:12px;font-weight:600;color:var(--mut)">ex. (${eur(k.total_revenue)})</span></div>
+          ${k.in_packs_count > 0 ? `<div class="muted" style="font-size:10.5px">dont ${k.in_packs_count} via packs</div>` : ''}
+        </div>
+        <div class="mbs-kpi-card">
+          <div class="mbs-kpi-lbl">Dernier Achat</div>
+          <div class="mbs-kpi-val" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${k.last_sale_date ? `${k.last_sale_date.split('-').reverse().slice(0, 2).join('/')} ${k.last_sale_moment ? '· ' + esc(k.last_sale_moment) : ''}` : '<span class="muted">Aucune vente</span>'}
+          </div>
+          <div class="muted" style="font-size:10.5px">${k.sold_last_30d} ex. ces 30 derniers jours</div>
+        </div>
+        <div class="mbs-kpi-card">
+          <div class="mbs-kpi-lbl">Stock Restant</div>
+          <div class="mbs-kpi-val" style="color:${b.stock > 0 ? 'var(--good)' : 'var(--bad)'}">${b.stock} <span style="font-size:12px;font-weight:600;color:var(--mut)">ex. dispo</span></div>
+          <div class="muted" style="font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${(b.owners || []).map(o => `${esc(o.name)}: ${o.remaining}`).join(' · ') || 'Calculé composants'}
+          </div>
+        </div>
+      </div>
+
+      <div class="mbs-body-grid">
+        <!-- Colonne Gauche : Profil Acheteurs -->
+        <div class="mbs-panel">
+          <div class="mbs-panel-title">
+            <svg class="ico sm" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>Profil des Acheteurs</span>
+          </div>
+
+          <!-- Barre de genre empilée -->
+          <div class="mbs-gender-bar">
+            ${pFemme ? `<div style="width:${pFemme}%;background:#f472b6" title="Femmes : ${pFemme}%"></div>` : ''}
+            ${pHomme ? `<div style="width:${pHomme}%;background:#60a5fa" title="Hommes : ${pHomme}%"></div>` : ''}
+            ${pCouple ? `<div style="width:${pCouple}%;background:#c084fc" title="Couples/Foyers : ${pCouple}%"></div>` : ''}
+            ${pAutre ? `<div style="width:${pAutre}%;background:rgba(255,255,255,0.2)" title="Non précisé : ${pAutre}%"></div>` : ''}
+          </div>
+          <div class="mbs-gender-legend">
+            <span style="color:#f472b6;font-weight:600">Femme ${pFemme}%</span>
+            <span style="color:#60a5fa;font-weight:600">Homme ${pHomme}%</span>
+            <span style="color:#c084fc;font-weight:600">Couple ${pCouple}%</span>
+            ${pAutre ? `<span class="muted">Autre ${pAutre}%</span>` : ''}
+          </div>
+
+          <!-- Tranches d'âge -->
+          <div class="mbs-age-pills">
+            ${(d.age_groups || []).map(ag => {
+              const pct = totalAge ? Math.round((ag.count / totalAge) * 100) : 0;
+              return `<div class="mbs-age-pill">
+                <span class="muted">${esc(ag.label)}</span>
+                <b>${pct}%</b>
+              </div>`;
+            }).join('')}
+          </div>
+
+          <!-- STAR -->
+          <div class="mbs-star-banner">
+            <svg style="width:14px;height:14px;fill:#fbbf24;stroke:#fbbf24;flex-shrink:0" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span><b>${d.star.pct}%</b> des acheteurs sont serviteurs STAR (${d.star.count} ex.)</span>
+          </div>
+        </div>
+
+        <!-- Colonne Droite : Achats Récents & Packs -->
+        <div class="mbs-panel">
+          <div class="mbs-panel-title">
+            <svg class="ico sm" style="width:13px;height:13px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Derniers Achats</span>
+          </div>
+
+          <div class="mbs-sales-list">
+            ${recent.length > 0 ? recent.map(r => `
+              <div class="mbs-sale-item">
+                <div>
+                  <b>${r.date.split('-').reverse().slice(0, 2).join('/')}</b>
+                  <span class="muted" style="margin-left:4px">${esc(r.service_moment || 'Culte')}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-weight:700">${r.qty} ex.</span>
+                  <span class="chip" style="font-size:10px;padding:1px 5px;background:rgba(255,255,255,0.06)">
+                    ${r.customer_gender ? (r.customer_gender === 'Femme' ? '♀' : r.customer_gender === 'Homme' ? '♂' : '👫') : '👤'}
+                    ${r.is_star ? '⭐' : ''}
+                  </span>
+                </div>
+              </div>
+            `).join('') : '<div class="muted" style="text-align:center;padding:12px;font-size:11.5px">Aucun achat enregistré.</div>'}
+          </div>
+
+          ${packs.length > 0 ? `
+            <div class="mbs-pack-mention">
+              <div style="font-size:10px;text-transform:uppercase;color:#d8b4fe;letter-spacing:0.5px">Inclus dans un Pack :</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+                <span style="font-weight:700;color:#fff">${esc(packs[0].title)}</span>
+                <span style="color:#86efac;font-weight:800">${eur(packs[0].price)}</span>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="mbs-footer">
+        <div class="muted" style="font-size:11px">Données réelles de la caisse</div>
+        <div style="display:flex;gap:6px">
+          ${b.stock > 0 ? `
+            <button type="button" class="btn good sm" onclick="closeModal(); if (window.posAddToCart) window.posAddToCart(${b.id});" style="font-weight:700;padding:5px 12px;font-size:12px">
+              + Ajouter au panier
+            </button>
+          ` : ''}
+          <button type="button" class="btn ghost sm" onclick="closeModal()" style="padding:5px 10px;font-size:12px">
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  `);
+});
+
 /* ---------- état ---------- */
 const S = { 
   books: [], 
@@ -1871,7 +2013,7 @@ VIEWS.pos = async () => {
     const list = S.books.filter(b => (!q || (b.title + ' ' + (b.series || '') + ' ' + b.code + ' ' + (b.author || '')).toLowerCase().includes(q))
       && (!ins || b.stock > 0) && (!ow || (b.by_owner || []).some(o => o.owner === ow)));
     $('#books').innerHTML = list.map(b => `<div class="bk ${b.stock <= 0 ? 'out' : ''}" draggable="true" data-id="${b.id}"><div class="t">${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}</div>
-      <div>${ownerChips(b)}</div><div class="m"><span class="p">${eur(b.price)}</span>${stockBadge(b)}</div></div>`).join('') || '<div class="empty"><svg class="ico" style="width:28px;height:28px;margin-bottom:8px" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><br>Aucun résultat</div>';
+      <div class="bk-owner-row"><div class="bk-chips">${ownerChips(b)}</div><button type="button" class="btn-bk-stats" data-bid="${b.id}" title="Statistiques & tendances de vente" onclick="event.stopPropagation(); openBookStatsModal(${b.id})"><svg class="ico sm" style="width:11px;height:11px" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Stats</span></button></div><div class="m"><span class="p">${eur(b.price)}</span>${stockBadge(b)}</div></div>`).join('') || '<div class="empty"><svg class="ico" style="width:28px;height:28px;margin-bottom:8px" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><br>Aucun résultat</div>';
   };
   // Le libraire choisit lui-même, pour chaque exemplaire, de quel lot (origine) il sort. Rien n'est automatique.
   const comps = l => { const b = S.books.find(x => x.id === l.id); return b.is_pack ? (b.items || []).map(i => ({ book_id: i.book_id, title: i.title, need: l.qty * i.qty, lots: i.lots })) : [{ book_id: b.id, title: b.title, need: l.qty, lots: b.lots }] };
@@ -1967,6 +2109,7 @@ VIEWS.pos = async () => {
     cart();
     checkDeskPackUpsell(b);
   };
+  window.posAddToCart = add;
 
   const btnDeskConvert = $('#btnDeskConvertPack');
   if (btnDeskConvert) {
@@ -2003,7 +2146,7 @@ VIEWS.pos = async () => {
 
   const cart = () => {
     const el = $('#items');
-    el.innerHTML = S.cart.map((l, i) => { const b = S.books.find(x => x.id === l.id); return `<div class="ci" style="grid-template-columns:1fr"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div class="t">${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}</div>
+    el.innerHTML = S.cart.map((l, i) => { const b = S.books.find(x => x.id === l.id); return `<div class="ci" style="grid-template-columns:1fr"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div class="t" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}<button type="button" class="btn-ci-stats" title="Voir les statistiques & réassurance client" onclick="event.stopPropagation(); openBookStatsModal(${b.id})"><svg class="ico sm" style="width:11px;height:11px" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Stats</span></button></div>
       <div class="qty"><button data-i="${i}" data-d="-1">−</button><b>${l.qty}</b><button data-i="${i}" data-d="1">+</button></div></div>
       <div class="row" style="justify-content:flex-end"><span class="muted">Prix</span><input class="pr" type="number" step="0.5" value="${l.price}" data-p="${i}"> €</div>
       ${comps(l).map(c => { const g = got(l, c.book_id), ok = g === c.need; return `<div style="padding:8px 10px;border-radius:10px;background:var(--panel2);border:1px solid ${ok ? 'var(--good)' : 'var(--warn)'}"><div class="row" style="justify-content:space-between;font-size:12px"><span>${b.is_pack ? esc(c.title) : 'Origine des exemplaires'}</span><b style="color:${ok ? 'var(--good)' : 'var(--warn)'}">${g}/${c.need} ${ok ? 'complet' : 'à répartir'}</b></div>

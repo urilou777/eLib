@@ -678,6 +678,145 @@ def lots(bid: int):
             FROM lots l JOIN owners o ON o.id=l.owner_id WHERE l.book_id=? ORDER BY l.date DESC""", (bid,))
 
 
+@app.get("/api/books/{bid}/stats")
+def book_stats(bid: int):
+    with db.tx() as c:
+        b = c.execute("SELECT * FROM books WHERE id=?", (bid,)).fetchone()
+        if not b:
+            raise HTTPException(404, "Livre introuvable")
+
+        is_pack = bool(b["is_pack"])
+
+        if is_pack:
+            stock_row = c.execute("""
+                SELECT MIN(sub.stock / pi.qty) AS pack_stock
+                FROM pack_items pi
+                JOIN (
+                    SELECT l.book_id,
+                           COALESCE(SUM(l.qty_in), 0) + COALESCE((SELECT SUM(delta) FROM adjustments WHERE lot_id = l.id), 0) - COALESCE((SELECT SUM(qty) FROM allocations WHERE lot_id = l.id), 0) AS stock
+                    FROM lots l
+                    GROUP BY l.book_id
+                ) sub ON sub.book_id = pi.book_id
+                WHERE pi.pack_id = ?
+            """, (bid,)).fetchone()
+            total_stock = max(0, int(stock_row["pack_stock"])) if stock_row and stock_row["pack_stock"] is not None else 0
+            owners = []
+        else:
+            all_lots = db.rows(c, f"""
+                SELECT l.id, l.date, o.name AS owner, o.color, ({db.LOT_REMAINING}) AS remaining
+                FROM lots l
+                JOIN owners o ON o.id = l.owner_id
+                WHERE l.book_id = ?
+                ORDER BY o.priority ASC, l.date ASC
+            """, (bid,))
+            lots = [l for l in all_lots if (l["remaining"] or 0) > 0]
+            total_stock = sum(l["remaining"] for l in lots)
+            owners = [{"name": l["owner"], "color": l["color"], "remaining": l["remaining"]} for l in lots]
+
+        if is_pack:
+            sales_rows = db.rows(c, """
+                SELECT l.qty, l.unit_price, s.date, s.service_moment,
+                       s.customer_gender, s.customer_age_group, COALESCE(s.is_star, 0) AS is_star,
+                       0 AS via_pack
+                FROM sale_lines l
+                JOIN sales s ON s.id = l.sale_id
+                WHERE l.book_id = ?
+                ORDER BY s.date DESC, s.id DESC
+            """, (bid,))
+        else:
+            direct_sales = db.rows(c, """
+                SELECT l.qty, l.unit_price, s.date, s.service_moment,
+                       s.customer_gender, s.customer_age_group, COALESCE(s.is_star, 0) AS is_star,
+                       0 AS via_pack
+                FROM sale_lines l
+                JOIN sales s ON s.id = l.sale_id
+                WHERE l.book_id = ?
+                ORDER BY s.date DESC, s.id DESC
+            """, (bid,))
+
+            pack_allocs = db.rows(c, """
+                SELECT a.qty, (a.revenue / a.qty) AS unit_price, a.date, s.service_moment,
+                       s.customer_gender, s.customer_age_group, COALESCE(s.is_star, 0) AS is_star,
+                       1 AS via_pack
+                FROM allocations a
+                JOIN sale_lines l ON l.id = a.line_id
+                JOIN sales s ON s.id = l.sale_id
+                WHERE a.book_id = ? AND l.book_id != ?
+                ORDER BY a.date DESC, a.id DESC
+            """, (bid, bid))
+
+            sales_rows = sorted(direct_sales + pack_allocs, key=lambda r: (r["date"], r.get("id", 0)), reverse=True)
+
+        total_sold = sum(r["qty"] for r in sales_rows)
+        total_revenue = sum(r["qty"] * (r["unit_price"] or 0) for r in sales_rows)
+        in_packs_sold = sum(r["qty"] for r in sales_rows if r.get("via_pack"))
+
+        since_30d = (date.today() - timedelta(days=30)).isoformat()
+        sold_last_30d = sum(r["qty"] for r in sales_rows if r["date"] >= since_30d)
+
+        gender_counts = {"Femme": 0, "Homme": 0, "Couple": 0, "Autre": 0}
+        age_counts = {"Enfant / Ado": 0, "18-29 ans": 0, "30-59 ans": 0, "60+ ans": 0}
+        star_count = 0
+
+        for r in sales_rows:
+            q = r["qty"]
+            g = (r["customer_gender"] or "").strip()
+            if g in gender_counts:
+                gender_counts[g] += q
+            else:
+                gender_counts["Autre"] += q
+
+            a = (r["customer_age_group"] or "").strip()
+            if a in age_counts:
+                age_counts[a] += q
+
+            if r["is_star"]:
+                star_count += q
+
+        recent_sales = sales_rows[:4]
+
+        related_packs = db.rows(c, """
+            SELECT p.id, p.title, p.price, pi.qty
+            FROM pack_items pi
+            JOIN books p ON p.id = pi.pack_id
+            WHERE pi.book_id = ?
+        """, (bid,)) if not is_pack else []
+
+        return {
+            "book": {
+                "id": b["id"],
+                "code": b["code"],
+                "title": b["title"],
+                "price": b["price"],
+                "author": b["author"],
+                "publisher": b["publisher"],
+                "category": b["category"],
+                "is_pack": is_pack,
+                "stock": total_stock,
+                "owners": owners
+            },
+            "kpis": {
+                "total_sold": total_sold,
+                "total_revenue": round(total_revenue, 2),
+                "in_packs_count": in_packs_sold,
+                "sold_last_30d": sold_last_30d,
+                "last_sale_date": sales_rows[0]["date"] if sales_rows else None,
+                "last_sale_moment": sales_rows[0]["service_moment"] if sales_rows else None
+            },
+            "demographics": {
+                "gender": gender_counts,
+                "age_groups": [{"label": k, "count": v} for k, v in age_counts.items()],
+                "star": {
+                    "count": star_count,
+                    "total": total_sold,
+                    "pct": round(star_count / total_sold * 100) if total_sold > 0 else 0
+                }
+            },
+            "recent_sales": recent_sales,
+            "packs": related_packs
+        }
+
+
 @app.post("/api/lots")
 def lot_add(l: LotIn, request: Request):
     with db.tx() as c:
