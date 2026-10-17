@@ -232,6 +232,7 @@ async function go(v) {
     return;
   }
   S.view = v; $('#title').textContent = TITLES[v]; $('#topActions').innerHTML = ''; $('#view').onclick = null;
+  const extra = $('#topTitleExtra'); if (extra) extra.innerHTML = '';
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
   $('#view').innerHTML = '<div class="empty">Chargement…</div>';
   try { await loadRef(); await VIEWS[v](); } catch (e) { toast(e.message, 'err'); }
@@ -1012,39 +1013,15 @@ VIEWS.dashboard = async () => {
   const effectiveFrom = from || S.from;
   const effectiveTo = to || S.to;
 
-  // SI MODE STUDIO ACTIF
-  if (S.dashTab === 'matrix') {
-    $('#title').textContent = "Studio d'Analyses Croisées & Métriques";
-    $('#topActions').innerHTML = `
-      <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:center">
-        <!-- Commutateur de Mode : Synthèse vs Studio -->
-        <div class="seg" id="dashTabSeg">
-          <button data-tab="summary" class="">📊 Synthèse</button>
-          <button data-tab="matrix" class="on">🔬 Studio d'Analyses</button>
-        </div>
-
-        <!-- Filtres rapides en 1 clic direct -->
-        <div class="seg" id="seg">${[
-          ['all', 'Tout'],
-          ['year', 'Année'],
-          ['month', 'Ce mois'],
-          ['week', 'Semaine'],
-          ['today', 'Aujourd\'hui']
-        ].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
-
-        <!-- Plage de dates De / À -->
-        <div id="dateBox" title="Cliquer pour appliquer cette plage de dates sur mesure" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2);padding:2px 8px;border-radius:8px;border:1px solid ${S.range === 'custom' ? 'var(--icc-purple)' : 'var(--line)'};height:32px;box-sizing:border-box;cursor:pointer">
-          <input type="date" id="dFrom" value="${effectiveFrom}" title="Date de début" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
-          <span style="color:var(--mut);font-size:10px;user-select:none">→</span>
-          <input type="date" id="dTo" value="${effectiveTo}" title="Date de fin" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
-        </div>
-
-        <button class="btn ghost sm" id="btnExportMatrix" title="Télécharger le tableau configuré en CSV pour Excel" style="font-size:11px;padding:2px 10px;height:32px;border-color:var(--icc-light);color:var(--text-title);display:inline-flex;align-items:center;gap:5px;font-weight:600">
-          <span style="font-size:14px">📥</span> Exporter en CSV
-        </button>
+  // Helper de bascule Synthèse vs Studio dans .topbar-left
+  const extra = $('#topTitleExtra');
+  if (extra) {
+    extra.innerHTML = `
+      <div class="seg" id="dashTabSeg">
+        <button data-tab="summary" class="${S.dashTab !== 'matrix' ? 'on' : ''}">Synthèse</button>
+        <button data-tab="matrix" class="${S.dashTab === 'matrix' ? 'on' : ''}">🔬 Studio</button>
       </div>
     `;
-
     $('#dashTabSeg').onclick = e => {
       const t = e.target.closest('button')?.dataset.tab;
       if (t && t !== S.dashTab) {
@@ -1052,6 +1029,34 @@ VIEWS.dashboard = async () => {
         VIEWS.dashboard();
       }
     };
+  }
+
+  // SI MODE STUDIO ACTIF
+  if (S.dashTab === 'matrix') {
+    $('#title').textContent = "Tableau de bord";
+    $('#topActions').innerHTML = `
+      <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:center">
+        <!-- Filtres rapides en 1 clic direct -->
+        <div class="seg" id="seg">${[
+          ['all', 'Tout', 'Tout'],
+          ['year', 'Année', 'Année'],
+          ['month', 'Ce mois', 'Mois'],
+          ['week', 'Semaine', 'Sem.'],
+          ['today', 'Aujourd\'hui', 'Auj.']
+        ].map(([v, l, s]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}"><span class="lbl-full">${l}</span><span class="lbl-short">${s}</span></button>`).join('')}</div>
+
+        <!-- Plage de dates De / À -->
+        <div id="dateBox" title="Cliquer pour appliquer cette plage de dates sur mesure" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2);padding:2px 6px;border-radius:8px;border:1px solid ${S.range === 'custom' ? 'var(--icc-purple)' : 'var(--line)'};height:32px;box-sizing:border-box;cursor:pointer">
+          <input type="date" id="dFrom" value="${effectiveFrom}" title="Date de début" style="border:0;background:transparent;font-size:11px;padding:0;width:94px;height:100%;color:var(--text);cursor:pointer">
+          <span style="color:var(--mut);font-size:10px;user-select:none">→</span>
+          <input type="date" id="dTo" value="${effectiveTo}" title="Date de fin" style="border:0;background:transparent;font-size:11px;padding:0;width:94px;height:100%;color:var(--text);cursor:pointer">
+        </div>
+
+        <button class="btn ghost sm" id="btnExportMatrix" title="Télécharger le tableau configuré en CSV pour Excel" style="font-size:11.5px;padding:2px 10px;height:32px;border-color:var(--icc-light);color:var(--text-title);display:inline-flex;align-items:center;gap:5px;font-weight:600">
+          <span>📥</span> Exporter CSV
+        </button>
+      </div>
+    `;
 
     $('#seg').onclick = e => { 
       const r = e.target.closest('button')?.dataset.r;
@@ -1097,46 +1102,32 @@ VIEWS.dashboard = async () => {
 
   $('#topActions').innerHTML = `
     <div class="row" style="flex-wrap:nowrap;gap:6px;align-items:center">
-      <!-- Commutateur de Mode : Synthèse vs Studio -->
-      <div class="seg" id="dashTabSeg">
-        <button data-tab="summary" class="on">📊 Synthèse</button>
-        <button data-tab="matrix" class="">🔬 Studio d'Analyses</button>
-      </div>
-
       <!-- Filtres rapides en 1 clic direct -->
       <div class="seg" id="seg">${[
-        ['all', 'Tout'],
-        ['year', 'Année'],
-        ['month', 'Ce mois'],
-        ['week', 'Semaine'],
-        ['today', 'Aujourd\'hui']
-      ].map(([v, l]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+        ['all', 'Tout', 'Tout'],
+        ['year', 'Année', 'Année'],
+        ['month', 'Ce mois', 'Mois'],
+        ['week', 'Semaine', 'Sem.'],
+        ['today', 'Aujourd\'hui', 'Auj.']
+      ].map(([v, l, s]) => `<button data-r="${v}" class="${S.range === v ? 'on' : ''}"><span class="lbl-full">${l}</span><span class="lbl-short">${s}</span></button>`).join('')}</div>
 
       <!-- Plage de dates De / À -->
-      <div id="dateBox" title="Cliquer pour appliquer cette plage de dates sur mesure" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2);padding:2px 8px;border-radius:8px;border:1px solid ${S.range === 'custom' ? 'var(--icc-purple)' : 'var(--line)'};height:32px;box-sizing:border-box;cursor:pointer">
-        <input type="date" id="dFrom" value="${effectiveFrom}" title="Date de début" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
+      <div id="dateBox" title="Cliquer pour appliquer cette plage de dates sur mesure" style="display:inline-flex;align-items:center;gap:3px;background:var(--panel2);padding:2px 6px;border-radius:8px;border:1px solid ${S.range === 'custom' ? 'var(--icc-purple)' : 'var(--line)'};height:32px;box-sizing:border-box;cursor:pointer">
+        <input type="date" id="dFrom" value="${effectiveFrom}" title="Date de début" style="border:0;background:transparent;font-size:11px;padding:0;width:94px;height:100%;color:var(--text);cursor:pointer">
         <span style="color:var(--mut);font-size:10px;user-select:none">→</span>
-        <input type="date" id="dTo" value="${effectiveTo}" title="Date de fin" style="border:0;background:transparent;font-size:11px;padding:0;width:105px;height:100%;color:var(--text);cursor:pointer">
+        <input type="date" id="dTo" value="${effectiveTo}" title="Date de fin" style="border:0;background:transparent;font-size:11px;padding:0;width:94px;height:100%;color:var(--text);cursor:pointer">
       </div>
 
       <!-- Sélecteur de culte avec flèche ICC stylisée -->
       <div style="position:relative;display:inline-flex;align-items:center">
-        <select id="fMoment" style="font-size:11.5px;height:32px;padding:4px 28px 4px 10px;border-radius:8px;max-width:175px">
+        <select id="fMoment" style="font-size:11.5px;height:32px;padding:4px 24px 4px 8px;border-radius:8px;max-width:145px">
           <option value="">Tous les cultes</option>
           ${allMoments.map(m => `<option value="${esc(m)}" ${S.moment === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
         </select>
       </div>
-      ${S.moment ? `<button class="btn ghost sm" id="btnClearMoment" title="Retirer le filtre de culte" style="font-size:11px;padding:2px 8px;height:32px;border-color:var(--icc-light);color:var(--icc-light);display:inline-flex;align-items:center;gap:3px">✕ (${esc(S.moment)})</button>` : ''}
+      ${S.moment ? `<button class="btn ghost sm" id="btnClearMoment" title="Retirer le filtre de culte (${esc(S.moment)})" style="font-size:11px;padding:2px 6px;height:32px;border-color:var(--icc-light);color:var(--icc-light);display:inline-flex;align-items:center;gap:2px">✕</button>` : ''}
     </div>
   `;
-
-  $('#dashTabSeg').onclick = e => {
-    const t = e.target.closest('button')?.dataset.tab;
-    if (t && t !== S.dashTab) {
-      S.dashTab = t;
-      VIEWS.dashboard();
-    }
-  };
 
   $('#seg').onclick = e => { 
     const r = e.target.closest('button')?.dataset.r;
