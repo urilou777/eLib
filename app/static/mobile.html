@@ -393,15 +393,18 @@ button, select, input { font:inherit; color:inherit; }
   </main>
 
   <footer class="bottom-bar" id="saleBottom">
-    <!-- Ligne 1 (Origine Unique) : Total & Résumé multi-mode au dessus, puis 4 modes de paiement équilibrés à 100% de largeur -->
+    <!-- Ligne 1 (Origine Unique) : Total à gauche, Résumé multi-mode compact à droite sur la MÊME ligne -->
     <div id="singleOriginRow" style="margin-bottom:6px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+      <!-- Total Bar : 100% de la largeur, Total à gauche, Résumé multi à droite (0 pixel de hauteur ajoutée) -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
         <div style="display:flex;align-items:baseline;gap:6px">
           <span style="font-size:11px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</span>
-          <span class="val" id="totalVal" style="font-size:20px;font-weight:800;color:var(--good);line-height:1">0,00 €</span>
+          <span class="val" id="totalVal" style="font-size:22px;font-weight:800;color:var(--good);line-height:1">0,00 €</span>
         </div>
-        <div id="multiPaySummary" style="display:none;font-size:11px;color:#c4b5fd;font-weight:700;text-align:right"></div>
+        <div id="multiPaySummary" style="display:none;font-size:11px;color:#c4b5fd;font-weight:700;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);border-radius:6px;padding:3px 7px;cursor:pointer;white-space:nowrap;max-width:60%;overflow:hidden;text-overflow:ellipsis" title="Modifier le paiement combiné"></div>
       </div>
+
+      <!-- Rangée 4 Modes de règlement : 100% de la largeur, 4 colonnes équilibrées à 25% chacune (textes courts, jamais tronqués) -->
       <div class="pay-chips" id="payChips" style="display:flex;gap:4px;width:100%"></div>
       <input type="hidden" id="payMethod" value="">
     </div>
