@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS adjustments(
   date TEXT NOT NULL, delta INTEGER NOT NULL, reason TEXT);
 CREATE TABLE IF NOT EXISTS sales(
   id INTEGER PRIMARY KEY, date TEXT NOT NULL, payment TEXT DEFAULT 'Espèces', note TEXT,
-  user_name TEXT DEFAULT 'Anonyme', customer_gender TEXT, customer_age_group TEXT, is_star INTEGER DEFAULT 0);
+  user_name TEXT DEFAULT 'Anonyme', customer_gender TEXT, customer_age_group TEXT, is_star INTEGER DEFAULT 0, service_moment TEXT);
 CREATE TABLE IF NOT EXISTS cash_movements(
   id INTEGER PRIMARY KEY,
   date TEXT NOT NULL,
