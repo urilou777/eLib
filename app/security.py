@@ -207,6 +207,8 @@ PUBLIC = [
     ("GET", re.compile(r"^/static/(mobile\.js|sw\.js|manifest\.webmanifest|icon\.svg|fonts\.css|favicon.*|fonts/.*|img/.*|vendor/zxing\.min\.js)$")),
     ("GET", re.compile(r"^/api/ca\.crt$")),
     ("GET", re.compile(r"^/api/ping$")),
+    ("GET", re.compile(r"^/api/live/stream$")),
+    ("GET", re.compile(r"^/api/live/baskets$")),
     ("POST", re.compile(r"^/api/mobile/pair$")),
 ]
 # Accessible depuis le réseau local AVEC jeton d'appareil valide (privilège minimal : scanner, vendre, réceptionner)
@@ -218,6 +220,10 @@ MOBILE = [
     ("GET", re.compile(r"^/api/books/scan/[^/]+$")),
     ("GET", re.compile(r"^/api/books/\d+/stats$")),
     ("GET", re.compile(r"^/api/books/search$")),
+    ("GET", re.compile(r"^/api/live/stream$")),
+    ("GET", re.compile(r"^/api/live/baskets$")),
+    ("POST", re.compile(r"^/api/mobile/active-cart$")),
+    ("DELETE", re.compile(r"^/api/mobile/active-cart$")),
     ("POST", re.compile(r"^/api/books$")),
     ("POST", re.compile(r"^/api/lots$")),
     ("POST", re.compile(r"^/api/sales$")),

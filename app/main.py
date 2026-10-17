@@ -1,4 +1,4 @@
-"""API FastAPI locale – Librairie."""
+import asyncio
 import io
 import json
 import os
@@ -13,7 +13,7 @@ import zipfile
 from datetime import date, datetime, timedelta
 from urllib.parse import unquote
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
@@ -21,6 +21,68 @@ from . import db, excel_io, security
 
 app = FastAPI(title="Librairie")
 db.init()
+
+
+class LiveHub:
+    """Hub temps réel (SSE) & registre en mémoire des paniers actifs."""
+    def __init__(self):
+        self.listeners = set()  # set of (loop, asyncio.Queue)
+        self.lock = threading.Lock()
+        self.active_baskets = {}  # device_id -> dict
+
+    def register(self, loop, queue):
+        with self.lock:
+            self.listeners.add((loop, queue))
+
+    def unregister(self, loop, queue):
+        with self.lock:
+            self.listeners.discard((loop, queue))
+
+    def broadcast(self, event_type: str, data: dict):
+        payload = json.dumps({"type": event_type, "data": data, "timestamp": time.time()})
+        with self.lock:
+            dead = []
+            for loop, q in list(self.listeners):
+                try:
+                    loop.call_soon_threadsafe(q.put_nowait, payload)
+                except Exception:
+                    dead.append((loop, q))
+            for d in dead:
+                self.listeners.discard(d)
+
+    def update_basket(self, device_id: str, basket_data: dict):
+        now = time.time()
+        basket_data["updated_at"] = now
+        with self.lock:
+            if basket_data.get("qty", 0) <= 0 and not basket_data.get("items"):
+                self.active_baskets.pop(device_id, None)
+            else:
+                self.active_baskets[device_id] = basket_data
+            self._cleanup_expired()
+            active_list = list(self.active_baskets.values())
+        self.broadcast("baskets_updated", {"baskets": active_list})
+
+    def remove_basket(self, device_id: str):
+        with self.lock:
+            removed = self.active_baskets.pop(device_id, None)
+            self._cleanup_expired()
+            active_list = list(self.active_baskets.values())
+        if removed:
+            self.broadcast("baskets_updated", {"baskets": active_list})
+
+    def get_active_baskets(self):
+        with self.lock:
+            self._cleanup_expired()
+            return list(self.active_baskets.values())
+
+    def _cleanup_expired(self):
+        cutoff = time.time() - 300  # expire après 5 min d'inactivité
+        expired = [k for k, v in self.active_baskets.items() if v.get("updated_at", 0) < cutoff]
+        for k in expired:
+            del self.active_baskets[k]
+
+
+live_hub = LiveHub()
 
 STATIC = os.path.join(sys._MEIPASS, "app", "static") if getattr(sys, "frozen", False) \
     else os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -864,12 +926,42 @@ def sale_add(s: SaleIn, request: Request):
                      c.execute("SELECT price FROM books WHERE id=?", (l.book_id,)).fetchone()["price"]) * l.qty for l in s.lines)
         sale_row = c.execute("SELECT payment FROM sales WHERE id=?", (sid,)).fetchone()
         eff_payment = sale_row["payment"] if sale_row else s.payment
+        # Livres pour le flux live
+        summary_lines = []
+        for l in s.lines[:4]:
+            brow = c.execute("SELECT title FROM books WHERE id=?", (l.book_id,)).fetchone()
+            summary_lines.append(f"{l.qty}× {brow['title'] if brow else 'Livre'}")
+        if len(s.lines) > 4:
+            summary_lines.append(f"+{len(s.lines) - 4} autre(s)")
+
         db.log_audit(c, user, "INSERT", "sale", sid,
                      f"Vente #{sid} : {total:.2f} € ({len(s.lines)} article(s), {eff_payment}) par {user}",
                      snapshot_after={"id": sid, "date": s.date, "total": total, "payment": eff_payment,
                                      "payments": payments_list, "user_name": user,
                                      "customer_gender": s.customer_gender, "customer_age_group": s.customer_age_group,
                                      "is_star": s.is_star, "service_moment": s.service_moment, "lines": [l.dict() for l in s.lines]})
+    
+    # Nettoyer l'éventuel panier actif du terminal ayant validé
+    dev = security.device_from_request(request)
+    dev_id = str(dev["id"]) if dev else (request.client.host if request.client else "local")
+    live_hub.remove_basket(dev_id)
+
+    # Diffuser l'événement en direct pour la régie CCTV et l'invalidation des métriques
+    live_hub.broadcast("sale_registered", {
+        "id": sid,
+        "date": s.date,
+        "total": round(total, 2),
+        "qty": sum(l.qty for l in s.lines),
+        "user_name": user,
+        "payment": eff_payment,
+        "service_moment": s.service_moment,
+        "customer_gender": s.customer_gender,
+        "customer_age_group": s.customer_age_group,
+        "is_star": s.is_star or 0,
+        "summary": " · ".join(summary_lines)
+    })
+    live_hub.broadcast("metrics_invalidated", {"reason": "sale_added", "sale_id": sid})
+
     return {"id": sid, "total": total, "warnings": warns}
 
 
@@ -894,6 +986,7 @@ def sale_del(sid: int, request: Request):
             db.log_audit(c, get_current_user(request), "DELETE", "sale", sid,
                          f"Suppression/annulation vente #{sid}",
                          snapshot_before=dict(sale) | {"payments": sale_payments})
+    live_hub.broadcast("metrics_invalidated", {"reason": "sale_deleted", "sale_id": sid})
     return {"ok": True}
 
 
@@ -1901,6 +1994,96 @@ def mobile_revoke(did: int, request: Request):
     with db.tx() as c:
         db.log_audit(c, get_current_user(request), "DELETE", "device", did, f"Appairage téléphone #{did} révoqué")
     return {"ok": True}
+
+
+# ---------- régie temps réel & paniers en direct (CCTV / Streaming) ----------
+class ActiveBasketItem(BaseModel):
+    title: str
+    qty: int = 1
+    price: float = 0.0
+
+
+class ActiveBasketIn(BaseModel):
+    user_name: Optional[str] = "Libraire"
+    total: float = 0.0
+    qty: int = 0
+    items: List[ActiveBasketItem] = Field(default_factory=list)
+    moment: Optional[str] = None
+    gender: Optional[str] = None
+    age: Optional[str] = None
+    star: Optional[int] = 0
+
+
+@app.post("/api/mobile/active-cart")
+def update_active_basket(b: ActiveBasketIn, request: Request):
+    dev = security.device_from_request(request)
+    dev_id = str(dev["id"]) if dev else (request.client.host if request.client else "local")
+    dev_name = dev["name"] if dev else (b.user_name or "Mobile")
+    data = {
+        "device_id": dev_id,
+        "device_name": dev_name,
+        "user_name": b.user_name or dev_name,
+        "total": round(b.total, 2),
+        "qty": b.qty,
+        "items": [getattr(i, 'model_dump', i.dict)() for i in b.items[:15]],
+        "moment": b.moment,
+        "gender": b.gender,
+        "age": b.age,
+        "star": b.star or 0
+    }
+    live_hub.update_basket(dev_id, data)
+    return {"ok": True}
+
+
+@app.delete("/api/mobile/active-cart")
+def delete_active_basket(request: Request):
+    dev = security.device_from_request(request)
+    dev_id = str(dev["id"]) if dev else (request.client.host if request.client else "local")
+    live_hub.remove_basket(dev_id)
+    return {"ok": True}
+
+
+@app.get("/api/live/baskets")
+def get_live_baskets():
+    return {"baskets": live_hub.get_active_baskets()}
+
+
+@app.get("/api/live/stream")
+async def live_stream(request: Request):
+    loop = asyncio.get_event_loop()
+    q = asyncio.Queue(maxsize=200)
+    live_hub.register(loop, q)
+
+    async def event_generator():
+        try:
+            # Envoi initial de l'état actuel des paniers actifs
+            init_msg = json.dumps({
+                "type": "init",
+                "data": {"baskets": live_hub.get_active_baskets()},
+                "timestamp": time.time()
+            })
+            yield f"data: {init_msg}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=20.0)
+                    yield f"data: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    yield f": ping\n\n"
+        finally:
+            live_hub.unregister(loop, q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @app.get("/api/ca.crt")
