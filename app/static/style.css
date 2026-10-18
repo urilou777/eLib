@@ -1251,10 +1251,10 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   background: var(--panel2);
   border: 1px solid var(--line);
   border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 145px;
+  display: grid;
+  grid-template-rows: 38px 30px 18px 8px;
+  row-gap: 6px;
+  align-items: center;
 }
 .gender-header {
   display: flex;
@@ -1262,7 +1262,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   gap: 8px;
   font-weight: 700;
   font-size: 13px;
-  min-height: 38px;
+  line-height: 1.2;
 }
 .gender-header > div:last-child {
   min-width: 0;
@@ -1271,7 +1271,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   white-space: nowrap;
 }
 .gender-card .tr {
-  margin-top: auto !important;
+  width: 100%;
 }
 .gender-icon-box {
   width: 32px;

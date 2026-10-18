@@ -1566,9 +1566,9 @@ VIEWS.dashboard = async () => {
                 <div class="muted" style="font-size:11px;font-weight:400">${fPct}% du total</div>
               </div>
             </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(f.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut)">${f.n} ticket${f.n > 1 ? 's' : ''} · Panier <b>${eur(f.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(f.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut);line-height:1">${f.n} ticket${f.n > 1 ? 's' : ''} · Panier <b>${eur(f.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
               <div class="fl" style="width:${fPct}%;height:100%;background:linear-gradient(90deg, #b452d3, #ca88e3)"></div>
             </div>
           </div>
@@ -1583,9 +1583,9 @@ VIEWS.dashboard = async () => {
                 <div class="muted" style="font-size:11px;font-weight:400">${hPct}% du total</div>
               </div>
             </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(h.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut)">${h.n} ticket${h.n > 1 ? 's' : ''} · Panier <b>${eur(h.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(h.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut);line-height:1">${h.n} ticket${h.n > 1 ? 's' : ''} · Panier <b>${eur(h.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
               <div class="fl" style="width:${hPct}%;height:100%;background:linear-gradient(90deg, #5a9bff, #7cb3ff)"></div>
             </div>
           </div>
@@ -1600,9 +1600,9 @@ VIEWS.dashboard = async () => {
                 <div class="muted" style="font-size:11px;font-weight:400">${cplPct}% du total</div>
               </div>
             </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(cpl.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut)">${cpl.n} ticket${cpl.n > 1 ? 's' : ''} · Panier <b>${eur(cpl.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(cpl.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut);line-height:1">${cpl.n} ticket${cpl.n > 1 ? 's' : ''} · Panier <b>${eur(cpl.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
               <div class="fl" style="width:${cplPct}%;height:100%;background:linear-gradient(90deg, #a855f7, #ec4899)"></div>
             </div>
           </div>
@@ -1617,9 +1617,9 @@ VIEWS.dashboard = async () => {
                 <div class="muted" style="font-size:11px;font-weight:400">${unkPct}% du total</div>
               </div>
             </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);margin-top:4px">${eur(unkGen.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut)">${unkGen.n} ticket${unkGen.n > 1 ? 's' : ''} · Panier <b>${eur(unkGen.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:2px">
+            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(unkGen.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--mut);line-height:1">${unkGen.n} ticket${unkGen.n > 1 ? 's' : ''} · Panier <b>${eur(unkGen.avg_basket)}</b></div>
+            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
               <div class="fl" style="width:${unkPct}%;height:100%;background:linear-gradient(90deg, #64748b, #94a3b8)"></div>
             </div>
           </div>
