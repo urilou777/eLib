@@ -1254,6 +1254,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-height: 145px;
 }
 .gender-header {
   display: flex;
@@ -1261,6 +1262,16 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   gap: 8px;
   font-weight: 700;
   font-size: 13px;
+  min-height: 38px;
+}
+.gender-header > div:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gender-card .tr {
+  margin-top: auto !important;
 }
 .gender-icon-box {
   width: 32px;
