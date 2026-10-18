@@ -1150,6 +1150,21 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
 
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--mut); flex-wrap: wrap; margin-top: 10px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
+
+/* Barres de progression et jauges horizontales standardisées */
+.tr {
+  height: 6px;
+  border-radius: 6px;
+  background: var(--panel2);
+  overflow: hidden;
+}
+.fl {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--icc-purple), var(--icc-light));
+  transition: width .8s cubic-bezier(.2, .8, .2, 1);
+}
+
 .hbar { 
   display: grid; 
   grid-template-columns: minmax(min(100%, 110px), 1.5fr) minmax(60px, 3fr) auto; 
@@ -1159,10 +1174,10 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   font-size: 13px; 
 }
 .hbar .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hbar .tr { height: 9px; border-radius: 9px; background: var(--panel2); overflow: hidden; }
+.hbar .tr { height: 8px; border-radius: 8px; background: var(--panel2); overflow: hidden; }
 .hbar .fl {
   height: 100%;
-  border-radius: 9px;
+  border-radius: 8px;
   background: linear-gradient(90deg, var(--icc-purple), var(--icc-light));
   transition: width .8s cubic-bezier(.2, .8, .2, 1);
 }

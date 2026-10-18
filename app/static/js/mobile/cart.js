@@ -230,6 +230,102 @@ export function updateMpCalculations() {
   }
 }
 
+/* Composant factorisé pour les éléments du panier mobile */
+export function renderMobileCartItem(item, idx) {
+  const b = item.book;
+  if (b.is_pack) {
+    return el('div', { class: 'cart-item pack-cart-item' },
+      el('div', { class: 'ci-top' },
+        el('div', {},
+          el('div', { class: 'ci-title' },
+            el('span', { class: 'badge b-pack', style: 'background:linear-gradient(135deg, #9333ea, #c026d3);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px' }, 'PACK'),
+            b.title
+          ),
+          el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:2px' },
+            `${eur(b.price)} / pack · ${(b.items || []).map(i => i.title).join(' + ')}`
+          )
+        ),
+        el('div', { class: 'qty' },
+          el('button', { type: 'button', text: '−', onclick: () => {
+            item.qty--;
+            const isRemoved = item.qty <= 0;
+            if (isRemoved) state.cart.splice(idx, 1);
+            saveActiveCart(isRemoved ? { type: 'book_removed', title: b.title } : { type: 'book_qty', title: b.title, qty: item.qty });
+            renderCart();
+          } }),
+          el('b', { text: item.qty }),
+          el('button', { type: 'button', text: '+', onclick: () => {
+            if (item.qty + 1 > (b.stock || 999)) toast('Stock pack atteint', 'warn');
+            else {
+              item.qty++;
+              saveActiveCart({ type: 'book_qty', title: b.title, qty: item.qty });
+              renderCart();
+            }
+          } })
+        )
+      ),
+      el('div', { class: 'lots', style: 'display:flex;align-items:center;justify-content:space-between;padding:3px 0' },
+        el('span', { style: 'font-size:11px;color:#c084fc;font-weight:600', text: `📦 Composition : ${b.items ? b.items.length : 2} livres groupés (Cité Royale)` }),
+        el('button', {
+          class: 'chip btn-m-stats',
+          type: 'button',
+          title: 'Statistiques du pack',
+          onclick: (e) => { e.stopPropagation(); openMobileBookStats(b.id); }
+        },
+          createStatsIcon(),
+          el('span', { text: 'Stats' })
+        )
+      )
+    );
+  }
+
+  const availableLots = (b.lots || []).filter(l => l.remaining > 0);
+  const lots = availableLots.map(l => el('button', {
+    class: 'chip' + (item.lot === l.id ? ' on' : ''), type: 'button',
+    onclick: () => { item.lot = l.id; item.qty = Math.min(item.qty, l.remaining); renderCart(); }
+  }, el('i', { style: 'background:' + (/^#[0-9a-fA-F]{3,8}$/.test(l.color || '') ? l.color : '#8892b0') }),
+     `${l.owner} · dispo ${l.remaining}`));
+
+  if (!availableLots.length) {
+    lots.push(el('span', { class: 'chip', style: 'border-color:var(--bad);color:var(--bad);cursor:default', text: 'Stock épuisé (0 dispo)' }));
+  }
+  lots.push(el('button', {
+    class: 'chip btn-m-stats',
+    type: 'button',
+    title: 'Statistiques & tendances de vente',
+    onclick: (e) => { e.stopPropagation(); openMobileBookStats(b.id); }
+  },
+    createStatsIcon(),
+    el('span', { text: 'Stats' })
+  ));
+
+  return el('div', { class: 'cart-item' + (item.lot === undefined ? ' todo' : '') },
+    el('div', { class: 'ci-top' },
+      el('div', {}, el('div', { class: 'ci-title', text: b.title + (b.volume ? ' · Vol. ' + b.volume : '') }),
+        el('div', { class: 'muted', text: eur(b.price) + ' / unité' })),
+      el('div', { class: 'qty' },
+        el('button', { type: 'button', text: '−', onclick: () => {
+          item.qty--;
+          const isRemoved = item.qty <= 0;
+          if (isRemoved) state.cart.splice(idx, 1);
+          saveActiveCart(isRemoved ? { type: 'book_removed', title: b.title } : { type: 'book_qty', title: b.title, qty: item.qty });
+          renderCart();
+        } }),
+        el('b', { text: item.qty }),
+        el('button', { type: 'button', text: '+', onclick: () => {
+          const maxAvail = lotRemaining(item);
+          if (item.qty + 1 > maxAvail) {
+            toast(`Stock maximum atteint (${maxAvail} ex.) pour ce lot`, 'warn');
+          } else {
+            item.qty++;
+            saveActiveCart({ type: 'book_qty', title: b.title, qty: item.qty });
+            renderCart();
+          }
+        } }))),
+    el('div', { class: 'lots' }, lots),
+    item.lot === undefined ? el('div', { class: 'hint', text: 'Touchez l\'origine de cet exemplaire' }) : null);
+}
+
 export function renderCart() {
   const count = state.cart.reduce((s, i) => s + i.qty, 0);
   const total = state.cart.reduce((s, i) => s + i.qty * i.book.price, 0);
@@ -241,97 +337,7 @@ export function renderCart() {
   if (!state.cart.length) {
     list.replaceChildren(el('div', { class: 'muted', style: 'text-align:center;padding:18px', text: 'Visez le code-barres d\'un livre pour commencer.' }));
   } else {
-    list.replaceChildren(...state.cart.map((item, idx) => {
-      const b = item.book;
-      if (b.is_pack) {
-        return el('div', { class: 'cart-item pack-cart-item' },
-          el('div', { class: 'ci-top' },
-            el('div', {},
-              el('div', { class: 'ci-title' },
-                el('span', { class: 'badge b-pack', style: 'background:linear-gradient(135deg, #9333ea, #c026d3);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px' }, 'PACK'),
-                b.title
-              ),
-              el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:2px' },
-                `${eur(b.price)} / pack · ${(b.items || []).map(i => i.title).join(' + ')}`
-              )
-            ),
-            el('div', { class: 'qty' },
-              el('button', { type: 'button', text: '−', onclick: () => {
-                item.qty--;
-                const isRemoved = item.qty <= 0;
-                if (isRemoved) state.cart.splice(idx, 1);
-                saveActiveCart(isRemoved ? { type: 'book_removed', title: b.title } : { type: 'book_qty', title: b.title, qty: item.qty });
-                renderCart();
-              } }),
-              el('b', { text: item.qty }),
-              el('button', { type: 'button', text: '+', onclick: () => {
-                if (item.qty + 1 > (b.stock || 999)) toast('Stock pack atteint', 'warn');
-                else {
-                  item.qty++;
-                  saveActiveCart({ type: 'book_qty', title: b.title, qty: item.qty });
-                  renderCart();
-                }
-              } })
-            )
-          ),
-          el('div', { class: 'lots', style: 'display:flex;align-items:center;justify-content:space-between;padding:3px 0' },
-            el('span', { style: 'font-size:11px;color:#c084fc;font-weight:600', text: `📦 Composition : ${b.items ? b.items.length : 2} livres groupés (Cité Royale)` }),
-            el('button', {
-              class: 'chip btn-m-stats',
-              type: 'button',
-              title: 'Statistiques du pack',
-              onclick: (e) => { e.stopPropagation(); openMobileBookStats(b.id); }
-            },
-              createStatsIcon(),
-              el('span', { text: 'Stats' })
-            )
-          )
-        );
-      }
-      const availableLots = (b.lots || []).filter(l => l.remaining > 0);
-      const lots = availableLots.map(l => el('button', {
-        class: 'chip' + (item.lot === l.id ? ' on' : ''), type: 'button',
-        onclick: () => { item.lot = l.id; item.qty = Math.min(item.qty, l.remaining); renderCart(); }
-      }, el('i', { style: 'background:' + (/^#[0-9a-fA-F]{3,8}$/.test(l.color || '') ? l.color : '#8892b0') }),
-         `${l.owner} · dispo ${l.remaining}`));
-      if (!availableLots.length) {
-        lots.push(el('span', { class: 'chip', style: 'border-color:var(--bad);color:var(--bad);cursor:default', text: 'Stock épuisé (0 dispo)' }));
-      }
-      lots.push(el('button', {
-        class: 'chip btn-m-stats',
-        type: 'button',
-        title: 'Statistiques & tendances de vente',
-        onclick: (e) => { e.stopPropagation(); openMobileBookStats(b.id); }
-      },
-        createStatsIcon(),
-        el('span', { text: 'Stats' })
-      ));
-      return el('div', { class: 'cart-item' + (item.lot === undefined ? ' todo' : '') },
-        el('div', { class: 'ci-top' },
-          el('div', {}, el('div', { class: 'ci-title', text: b.title + (b.volume ? ' · Vol. ' + b.volume : '') }),
-            el('div', { class: 'muted', text: eur(b.price) + ' / unité' })),
-          el('div', { class: 'qty' },
-            el('button', { type: 'button', text: '−', onclick: () => {
-              item.qty--;
-              const isRemoved = item.qty <= 0;
-              if (isRemoved) state.cart.splice(idx, 1);
-              saveActiveCart(isRemoved ? { type: 'book_removed', title: b.title } : { type: 'book_qty', title: b.title, qty: item.qty });
-              renderCart();
-            } }),
-            el('b', { text: item.qty }),
-            el('button', { type: 'button', text: '+', onclick: () => {
-              const maxAvail = lotRemaining(item);
-              if (item.qty + 1 > maxAvail) {
-                toast(`Stock maximum atteint (${maxAvail} ex.) pour ce lot`, 'warn');
-              } else {
-                item.qty++;
-                saveActiveCart({ type: 'book_qty', title: b.title, qty: item.qty });
-                renderCart();
-              }
-            } }))),
-        el('div', { class: 'lots' }, lots),
-        item.lot === undefined ? el('div', { class: 'hint', text: 'Touchez l\'origine de cet exemplaire' }) : null);
-    }));
+    list.replaceChildren(...state.cart.map(renderMobileCartItem));
   }
 
   const origins = getCartByOrigin();

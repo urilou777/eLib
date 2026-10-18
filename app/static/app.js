@@ -8,6 +8,15 @@ const today = () => new Date().toISOString().slice(0, 10);
 const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const mlabel = m => MONTHS[+m.slice(5) - 1] + ' ' + m.slice(2, 4);
 
+/* Composant KPI standardisé pour éliminer toute variation de structure ou de style */
+const renderKpiCard = (title, val, sub = '', color = '#7c5cff', delayMs = 0) => `
+  <div class="card kpi" style="--c:${color};${delayMs ? `animation-delay:${delayMs}ms;` : ''}">
+    <div class="l">${title}</div>
+    <div class="v">${val}</div>
+    <div class="s">${sub}</div>
+  </div>
+`;
+
 /* ---------- gestion utilisateur actif ---------- */
 function getCurrentUser() {
   return localStorage.getItem('librairie_user') || 'Responsable';
@@ -1174,28 +1183,12 @@ async function renderMatrixStudio(from, to, effectiveFrom, effectiveTo) {
       </div>
     </div>
 
-    <!-- Ruban KPI du périmètre -->
+    <!-- Ruban KPI du périmètre (factorisé) -->
     <div class="grid g-kpi" style="margin-bottom:14px">
-      <div class="card kpi" style="--c:#7c5cff">
-        <div class="l">CA du périmètre</div>
-        <div class="v">${eur(data.total.revenue)}</div>
-        <div class="s">${nf(data.total.qty)} exemplaires vendus</div>
-      </div>
-      <div class="card kpi" style="--c:#27d3c3">
-        <div class="l">Marge nette conservée</div>
-        <div class="v">${eur(data.total.margin)}</div>
-        <div class="s">${data.total.margin_pct} % de marge locale</div>
-      </div>
-      <div class="card kpi" style="--c:#5a9bff">
-        <div class="l">Panier moyen caisse</div>
-        <div class="v">${eur(data.total.avg_basket)}</div>
-        <div class="s">${nf(data.total.tickets)} ventes (${data.total.avg_items_per_basket} liv./panier)</div>
-      </div>
-      <div class="card kpi" style="--c:#c77dff">
-        <div class="l">Part Serviteurs STAR ⭐</div>
-        <div class="v">${data.total.star_pct} %</div>
-        <div class="s">${eur(data.total.star_revenue)} (${data.total.star_tickets} tickets)</div>
-      </div>
+      ${renderKpiCard('CA du périmètre', eur(data.total.revenue), `${nf(data.total.qty)} exemplaires vendus`, '#7c5cff')}
+      ${renderKpiCard('Marge nette conservée', eur(data.total.margin), `${data.total.margin_pct} % de marge locale`, '#27d3c3')}
+      ${renderKpiCard('Panier moyen caisse', eur(data.total.avg_basket), `${nf(data.total.tickets)} ventes (${data.total.avg_items_per_basket} liv./panier)`, '#5a9bff')}
+      ${renderKpiCard('Part Serviteurs STAR ⭐', `${data.total.star_pct} %`, `${eur(data.total.star_revenue)} (${data.total.star_tickets} tickets)`, '#c77dff')}
     </div>
 
     <!-- Section Tableau Dynamique / Pivot -->
@@ -1561,9 +1554,46 @@ VIEWS.dashboard = async () => {
   };
   const totPayRev = (st.payments || []).reduce((acc, p) => acc + p.revenue, 0) || 1;
 
+  // Composants factorisés pour la section démographie et encaissements
+  const renderAgeBar = (a) => {
+    const title = ageLabels[a.label] || a.label;
+    const pct = Math.round((a.revenue / totAgeRev) * 100);
+    return `
+      <div style="margin:8px 0">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px">
+          <span><b>${esc(title)}</b> <span class="muted">(${a.n} ticket${a.n > 1 ? 's' : ''})</span></span>
+          <span><b>${eur(a.revenue)}</b> <span class="muted">(${eur(a.avg_basket)}/t.)</span></span>
+        </div>
+        <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
+          <div class="fl" style="width:${pct}%;height:100%;background:linear-gradient(90deg, var(--icc-purple), var(--icc-light))"></div>
+        </div>
+      </div>
+    `;
+  };
+
+  const renderPayPill = (p) => {
+    const ico = payIcons[p.label] || '🪙';
+    const pct = Math.round((p.revenue / totPayRev) * 100);
+    return `
+      <div class="pay-pill">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">${ico}</span>
+          <div>
+            <div style="font-weight:700">${esc(p.label)}</div>
+            <div class="muted" style="font-size:11px">${p.n} ticket${p.n > 1 ? 's' : ''} · Panier ${eur(p.avg_basket)}</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-weight:700;font-size:14px">${eur(p.revenue)}</div>
+          <div class="muted" style="font-size:11px">${pct}%</div>
+        </div>
+      </div>
+    `;
+  };
+
   $('#view').innerHTML = `
     <div class="grid g-kpi" style="margin-bottom:18px">
-      ${kp.map((x, i) => `<div class="card kpi" style="--c:${x[3]};animation-delay:${i * 60}ms"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}
+      ${kp.map((x, i) => renderKpiCard(x[0], x[1], x[2], x[3], i * 60)).join('')}
     </div>
 
     <!-- Section Évolution & Origines de Stock (placée en haut comme avant) -->
@@ -1617,21 +1647,7 @@ VIEWS.dashboard = async () => {
       <div class="card">
         <h3>Profil acheteurs · Tranches d'Âge</h3>
         <div style="margin-top:12px">
-          ${(st.by_age || []).filter(a => a.label !== 'Non renseigné').map(a => {
-            const title = ageLabels[a.label] || a.label;
-            const pct = Math.round((a.revenue / totAgeRev) * 100);
-            return `
-              <div style="margin:8px 0">
-                <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px">
-                  <span><b>${esc(title)}</b> <span class="muted">(${a.n} ticket${a.n > 1 ? 's' : ''})</span></span>
-                  <span><b>${eur(a.revenue)}</b> <span class="muted">(${eur(a.avg_basket)}/t.)</span></span>
-                </div>
-                <div class="tr" style="height:7px;border-radius:7px;background:var(--panel2);overflow:hidden">
-                  <div class="fl" style="width:${pct}%;height:100%;background:linear-gradient(90deg, var(--icc-purple), var(--icc-light))"></div>
-                </div>
-              </div>
-            `;
-          }).join('') || '<div class="empty">Aucune tranche d\'âge qualifiée</div>'}
+          ${(st.by_age || []).filter(a => a.label !== 'Non renseigné').map(renderAgeBar).join('') || '<div class="empty">Aucune tranche d\'âge qualifiée</div>'}
         </div>
       </div>
 
@@ -1671,25 +1687,7 @@ VIEWS.dashboard = async () => {
       <div class="card">
         <h3>Moyens de Paiement & Encaissements</h3>
         <div style="margin-top:12px">
-          ${(st.payments || []).map(p => {
-            const ico = payIcons[p.label] || '🪙';
-            const pct = Math.round((p.revenue / totPayRev) * 100);
-            return `
-              <div class="pay-pill">
-                <div style="display:flex;align-items:center;gap:8px">
-                  <span style="font-size:18px">${ico}</span>
-                  <div>
-                    <div style="font-weight:700">${esc(p.label)}</div>
-                    <div class="muted" style="font-size:11px">${p.n} ticket${p.n > 1 ? 's' : ''} · Panier ${eur(p.avg_basket)}</div>
-                  </div>
-                </div>
-                <div style="text-align:right">
-                  <div style="font-weight:700;font-size:14px">${eur(p.revenue)}</div>
-                  <div class="muted" style="font-size:11px">${pct}%</div>
-                </div>
-              </div>
-            `;
-          }).join('') || '<div class="empty">Aucun encaissement sur la période</div>'}
+          ${(st.payments || []).map(renderPayPill).join('') || '<div class="empty">Aucun encaissement sur la période</div>'}
         </div>
       </div>
 
@@ -2264,14 +2262,56 @@ VIEWS.pos = async () => {
     paySel.innerHTML = allPayOpts.map(p => `<option value="${esc(p.label)}" ${p.label === curVal ? 'selected' : ''}>${esc(p.label)}</option>`).join('') || '<option value="Espèces">Espèces</option><option value="CB">CB</option>';
   };
 
+  const renderCartItem = (l, i) => {
+    const b = S.books.find(x => x.id === l.id);
+    if (!b) return '';
+    return `
+      <div class="ci" style="grid-template-columns:1fr">
+        <div class="row" style="justify-content:space-between;flex-wrap:nowrap">
+          <div class="t" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}
+            <button type="button" class="btn-ci-stats" title="Voir les statistiques & réassurance client" onclick="event.stopPropagation(); openBookStatsModal(${b.id})">
+              <svg class="ico sm" style="width:11px;height:11px" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span>Stats</span>
+            </button>
+          </div>
+          <div class="qty">
+            <button type="button" data-i="${i}" data-d="-1">−</button>
+            <b>${l.qty}</b>
+            <button type="button" data-i="${i}" data-d="1">+</button>
+          </div>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <span class="muted">Prix</span>
+          <input class="pr" type="number" step="0.5" value="${l.price}" data-p="${i}"> €
+        </div>
+        ${comps(l).map(c => {
+          const g = got(l, c.book_id), ok = g === c.need;
+          return `
+            <div style="padding:8px 10px;border-radius:10px;background:var(--panel2);border:1px solid ${ok ? 'var(--good)' : 'var(--warn)'}">
+              <div class="row" style="justify-content:space-between;font-size:12px">
+                <span>${b.is_pack ? esc(c.title) : 'Origine des exemplaires'}</span>
+                <b style="color:${ok ? 'var(--good)' : 'var(--warn)'}">${g}/${c.need} ${ok ? 'complet' : 'à répartir'}</b>
+              </div>
+              ${(c.lots || []).filter(t => t.remaining > 0).map(t => `
+                <div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap">
+                  <span class="chip"><i style="background:${t.color}"></i>${esc(t.owner)} · ${t.date} · dispo ${t.remaining}</span>
+                  <span class="row" style="gap:4px;flex-wrap:nowrap">
+                    <input type="number" min="0" max="${t.remaining}" style="width:clamp(48px, 5vw, 68px);padding:4px 6px" value="${l.alloc[c.book_id + '|' + t.id] || 0}" data-a="${i}" data-k="${c.book_id}|${t.id}" data-max="${t.remaining}">
+                    <button type="button" class="btn ghost sm" data-fill="${i}" data-k="${c.book_id}|${t.id}" data-b="${c.book_id}" data-max="${t.remaining}" data-need="${c.need}">Max</button>
+                  </span>
+                </div>
+              `).join('') || '<div class="muted" style="font-size:12px;margin-top:6px;color:var(--bad)">Stock épuisé (0 exemplaire en stock).</div>'}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  };
+
   const cart = () => {
     const el = $('#items');
-    el.innerHTML = S.cart.map((l, i) => { const b = S.books.find(x => x.id === l.id); return `<div class="ci" style="grid-template-columns:1fr"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div class="t" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}<button type="button" class="btn-ci-stats" title="Voir les statistiques & réassurance client" onclick="event.stopPropagation(); openBookStatsModal(${b.id})"><svg class="ico sm" style="width:11px;height:11px" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Stats</span></button></div>
-      <div class="qty"><button type="button" data-i="${i}" data-d="-1">−</button><b>${l.qty}</b><button type="button" data-i="${i}" data-d="1">+</button></div></div>
-      <div class="row" style="justify-content:flex-end"><span class="muted">Prix</span><input class="pr" type="number" step="0.5" value="${l.price}" data-p="${i}"> €</div>
-      ${comps(l).map(c => { const g = got(l, c.book_id), ok = g === c.need; return `<div style="padding:8px 10px;border-radius:10px;background:var(--panel2);border:1px solid ${ok ? 'var(--good)' : 'var(--warn)'}"><div class="row" style="justify-content:space-between;font-size:12px"><span>${b.is_pack ? esc(c.title) : 'Origine des exemplaires'}</span><b style="color:${ok ? 'var(--good)' : 'var(--warn)'}">${g}/${c.need} ${ok ? 'complet' : 'à répartir'}</b></div>
-        ${(c.lots || []).filter(t => t.remaining > 0).map(t => `<div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="chip"><i style="background:${t.color}"></i>${esc(t.owner)} · ${t.date} · dispo ${t.remaining}</span><span class="row" style="gap:4px;flex-wrap:nowrap"><input type="number" min="0" max="${t.remaining}" style="width:clamp(48px, 5vw, 68px);padding:4px 6px" value="${l.alloc[c.book_id + '|' + t.id] || 0}" data-a="${i}" data-k="${c.book_id}|${t.id}" data-max="${t.remaining}"><button type="button" class="btn ghost sm" data-fill="${i}" data-k="${c.book_id}|${t.id}" data-b="${c.book_id}" data-max="${t.remaining}" data-need="${c.need}">Max</button></span></div>`).join('') || '<div class="muted" style="font-size:12px;margin-top:6px;color:var(--bad)">Stock épuisé (0 exemplaire en stock).</div>'}
-        </div>` }).join('')}</div>`}).join('') ||
+    el.innerHTML = S.cart.map(renderCartItem).join('') ||
       '<div class="empty"><svg class="ico" style="width:28px;height:28px;margin-bottom:8px" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg><br>Glissez un livre ici<br>ou cliquez sur une carte</div>';
     $('#tot').textContent = eur(S.cart.reduce((s, l) => s + l.qty * l.price, 0));
     updatePayDropdown();
