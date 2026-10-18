@@ -1188,7 +1188,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   gap: clamp(12px, 1.4vw, 18px);
 }
 .g-demo {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: clamp(12px, 1.4vw, 18px);
 }
 .g-pay {
@@ -1201,13 +1201,14 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   background: var(--panel2);
   border: 1px solid var(--line);
   border-radius: var(--r);
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-rows: 24px 34px 18px 8px 34px;
+  row-gap: 8px;
+  align-items: center;
   transition: all .25s ease;
   cursor: pointer;
-  min-height: 140px;
+  box-sizing: border-box;
 }
 .moment-card:hover {
   border-color: var(--line-strong);
@@ -1228,20 +1229,27 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   align-items: center;
   gap: 6px;
   color: var(--icc-light);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .moment-rev {
   font-family: var(--font-heading);
   font-size: 24px;
   font-weight: 400;
   color: var(--text-title);
-  margin: 6px 0 2px 0;
+  line-height: 1;
 }
 .moment-meta {
   font-size: 12px;
   color: var(--mut);
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  line-height: 1;
+}
+.moment-card .tr {
+  width: 100%;
 }
 .moment-top {
   background: rgba(0, 0, 0, 0.15);
@@ -1254,12 +1262,19 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
 }
 
 .gender-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
+}
+@media (min-width: 1400px) {
+  .gender-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 .gender-card {
   padding: 12px;
@@ -1270,6 +1285,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   grid-template-rows: 38px 30px 18px 8px;
   row-gap: 6px;
   align-items: center;
+  box-sizing: border-box;
 }
 .gender-header {
   display: flex;

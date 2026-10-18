@@ -1433,20 +1433,18 @@ VIEWS.dashboard = async () => {
     const isAct = S.moment === cfg.id;
     return `
       <div class="moment-card ${isAct ? 'active' : ''}" data-moment="${esc(cfg.id)}" title="Cliquer pour filtrer la vue sur ce culte">
-        <div>
-          <div class="moment-badge" style="color:${cfg.color}">
-            <span>${cfg.icon}</span>
-            <span>${esc(cfg.name)}</span>
-            <span class="muted" style="font-weight:400;text-transform:none">· ${esc(cfg.sub)}</span>
-          </div>
-          <div class="moment-rev">${eur(m.revenue)}</div>
-          <div class="moment-meta">
-            <span>${pct}% du CA caisse · ${m.n} ticket${m.n > 1 ? 's' : ''}</span>
-            <span><b>Panier ${eur(m.avg_basket)}</b></span>
-          </div>
-          <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-bottom:10px">
-            <div class="fl" style="width:${pct}%;height:100%;background:${cfg.color}"></div>
-          </div>
+        <div class="moment-badge" style="color:${cfg.color}">
+          <span>${cfg.icon}</span>
+          <span>${esc(cfg.name)}</span>
+          <span class="muted" style="font-weight:400;text-transform:none">· ${esc(cfg.sub)}</span>
+        </div>
+        <div class="moment-rev">${eur(m.revenue)}</div>
+        <div class="moment-meta">
+          <span>${pct}% du CA caisse · ${m.n} ticket${m.n > 1 ? 's' : ''}</span>
+          <span><b>Panier ${eur(m.avg_basket)}</b></span>
+        </div>
+        <div class="tr">
+          <div class="fl" style="width:${pct}%;height:100%;background:${cfg.color}"></div>
         </div>
         <div class="moment-top" title="${m.top_book ? esc(m.top_book) : 'Aucun titre'}">
           ${m.top_book ? `🏆 <b>Top :</b> ${esc(m.top_book)} <span class="muted">(${m.top_book_qty} ex)</span>` : '<span class="muted">Aucune vente enregistrée</span>'}
