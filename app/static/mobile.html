@@ -1049,11 +1049,11 @@ button, select, input { font:inherit; color:inherit; }
         <button class="btn sm" id="clearRecv" type="button">Réinitialiser</button>
       </div>
       <div style="margin-bottom:8px">
-        <label class="btn" id="recvOcrLabel" style="width:100%;background:linear-gradient(135deg, rgba(143,22,173,0.35), rgba(202,136,227,0.2));border:1px solid var(--a2);padding:9px 12px;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-radius:12px;color:#fff">
+        <button type="button" class="btn" id="recvOcrBtn" style="width:100%;background:linear-gradient(135deg, rgba(143,22,173,0.35), rgba(202,136,227,0.2));border:1px solid var(--a2);padding:9px 12px;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-radius:12px;color:#fff">
           <svg style="width:17px;height:17px;color:var(--a2)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           <span id="recvOcrText">📸 Scanner page de garde (OCR)</span>
-          <input type="file" id="recvOcrInput" accept="image/*" capture="environment" hidden>
-        </label>
+        </button>
+        <input type="file" id="recvOcrInput" accept="image/*" capture="environment" hidden>
       </div>
       <div style="margin-bottom:10px">
         <label style="font-size:11px;color:var(--mut);display:block;margin-bottom:4px">Origine / Propriétaire du stock réceptionné :</label>
@@ -1153,11 +1153,11 @@ button, select, input { font:inherit; color:inherit; }
 
       <!-- Bouton OCR dans la modale -->
       <div>
-        <label class="btn" id="nbOcrBtn" style="width:100%;background:rgba(143,22,173,0.22);border:1px dashed var(--a2);padding:8px 12px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-radius:10px;color:var(--a2)">
+        <button type="button" class="btn" id="nbOcrBtn" style="width:100%;background:rgba(143,22,173,0.22);border:1px dashed var(--a2);padding:8px 12px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-radius:10px;color:var(--a2)">
           <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           <span id="nbOcrText">📸 Remplir via photo page de garde</span>
-          <input type="file" id="nbOcrInput" accept="image/*" capture="environment" hidden>
-        </label>
+        </button>
+        <input type="file" id="nbOcrInput" accept="image/*" capture="environment" hidden>
       </div>
 
       <!-- Bannière Livre déjà existant en base -->
@@ -1200,13 +1200,13 @@ button, select, input { font:inherit; color:inherit; }
         <div id="nbOcrChipsList" style="display:flex;flex-direction:column;gap:6px;max-height:clamp(120px, 20vh, 180px);overflow-y:auto"></div>
       </div>
       
-      <form id="newBookForm" onsubmit="return false;" style="display:flex;flex-direction:column;gap:8px">
+      <form id="newBookForm" onsubmit="return false;" autocomplete="off" style="display:flex;flex-direction:column;gap:8px">
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
             <label style="font-size:11px;color:var(--mut)">Code-barres / ISBN :</label>
             <span id="nbCodeBddBadge" class="bdd-badge" style="display:none">✓ En base</span>
           </div>
-          <input class="field" id="nbCode" style="width:100%;font-weight:700">
+          <input class="field" id="nbCode" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="width:100%;font-weight:700">
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
@@ -1218,7 +1218,7 @@ button, select, input { font:inherit; color:inherit; }
               🔤 Majuscule 1ère lettre
             </button>
           </div>
-          <input class="field" id="nbTitle" required placeholder="Titre..." style="width:100%">
+          <input class="field" id="nbTitle" required placeholder="Titre..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="width:100%">
           <div id="nbTitleTypoSuggestion" style="display:none"></div>
         </div>
         <div class="row">
@@ -1232,12 +1232,12 @@ button, select, input { font:inherit; color:inherit; }
                 🔤 Maj.
               </button>
             </div>
-            <input class="field" id="nbAuthor" placeholder="Auteur..." style="width:100%">
+            <input class="field" id="nbAuthor" placeholder="Auteur..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="width:100%">
             <div id="nbAuthorTypoSuggestion" style="display:none"></div>
           </div>
           <div style="flex:0 0 clamp(80px, 26vw, 110px)">
             <label style="font-size:11px;color:var(--mut)">Prix (€) * :</label>
-            <input class="field" id="nbPrice" type="number" step="0.5" required placeholder="0.00" style="width:100%">
+            <input class="field" id="nbPrice" type="number" step="0.5" required placeholder="0.00" autocomplete="off" style="width:100%">
           </div>
         </div>
         <div>
@@ -1245,8 +1245,7 @@ button, select, input { font:inherit; color:inherit; }
             <label style="font-size:11px;color:var(--mut)">Éditeur :</label>
             <span id="nbPublisherBddBadge" class="bdd-badge" style="display:none">✓ BDD</span>
           </div>
-          <input class="field" id="nbPublisher" list="dl_nb_publishers" placeholder="Éditeur..." style="width:100%">
-          <datalist id="dl_nb_publishers"></datalist>
+          <input class="field" id="nbPublisher" placeholder="Éditeur..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="width:100%">
           <div id="nbPublisherTypoSuggestion" style="display:none"></div>
         </div>
       </form>
@@ -1326,10 +1325,50 @@ button, select, input { font:inherit; color:inherit; }
   <div class="sheet m-stats-sheet" id="mBookStatsContent"></div>
 </section>
 
+<!-- Viseur Caméra Live OCR In-App (Garantit la caméra arrière sans passer par l'app photo native) -->
+<section class="overlay" id="ocrCamModal" hidden style="z-index:99999;background:rgba(0,0,0,0.92);padding:12px;display:none;flex-direction:column;align-items:center;justify-content:center">
+  <div style="width:100%;max-width:440px;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,0.7)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card2);border-bottom:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">📸</span>
+        <b style="font-size:14px;color:#fff" id="ocrCamModalTitle">Photo Page de Garde</b>
+      </div>
+      <button type="button" id="btnCloseOcrCam" class="btn sm" style="padding:4px 10px;font-size:13px;border-radius:8px">✕ Annuler</button>
+    </div>
+    <div style="position:relative;width:100%;height:340px;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center">
+      <video id="ocrVideo" playsinline autoplay muted style="width:100%;height:100%;object-fit:cover"></video>
+      <canvas id="ocrArCanvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2"></canvas>
+      <div id="ocrArGuide" style="position:absolute;inset:20px;border:2px dashed rgba(255,255,255,0.45);border-radius:14px;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;z-index:3;transition:border-color 0.3s">
+        <span id="ocrArGuideText" style="background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);color:#fff;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:6px">
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#a855f7;animation:pulse 1.2s infinite"></span>
+          Cadrez la couverture ou page de garde
+        </span>
+      </div>
+      <div id="ocrCamSpinner" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.7);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#fff;font-size:12px;z-index:4">
+        <div style="width:28px;height:28px;border:3px solid var(--a1);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+        <span>Initialisation capteur arrière...</span>
+      </div>
+    </div>
+    <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;background:var(--card2)">
+      <button type="button" id="btnSnapOcrLive" class="btn primary" style="width:100%;padding:13px;font-size:15px;font-weight:800;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px;background:linear-gradient(135deg, #8f16ad, #6366f1);border:none;box-shadow:0 4px 15px rgba(143,22,173,0.4)">
+        <svg style="width:20px;height:20px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <span>Prendre la photo (OCR)</span>
+      </button>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <button type="button" id="btnSwitchOcrCam" class="btn sm" style="font-size:11px;padding:6px 10px;background:transparent;border:1px solid var(--line);color:var(--mut)">🔄 Changer capteur</button>
+        <label style="font-size:11px;color:var(--mut);text-decoration:underline;cursor:pointer">
+          Importer un fichier
+          <input type="file" id="ocrFileFallback" accept="image/*" hidden>
+        </label>
+      </div>
+    </div>
+  </div>
+</section>
+
 <div id="toasts" aria-live="polite"></div>
 
 <script src="/static/vendor/zxing.min.js"></script>
-<script src="/static/mobile.js?v=20261018_v4"></script>
+<script src="/static/mobile.js?v=20261018_v12"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

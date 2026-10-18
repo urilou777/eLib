@@ -2237,17 +2237,10 @@ function openNewBookModal(code = '', prefill = {}) {
     m.style.removeProperty('display');
   }
   
-  // N'auto-focus que s'il n'y a PAS de lignes OCR détectées pour éviter d'ouvrir le clavier virtuel
-  // et de réduire l'espace visible en masquant les contrôles et boutons Enregistrer/Annuler
-  if (!prefill.lines || !prefill.lines.length) {
-    setTimeout(() => {
-      if (!$('#nbTitle').value) $('#nbTitle').focus();
-      else if (!$('#nbPrice').value) $('#nbPrice').focus();
-    }, 150);
-  } else {
-    if (document.activeElement && document.activeElement.blur) {
-      document.activeElement.blur();
-    }
+  // Ne JAMAIS ouvrir le clavier virtuel automatiquement à l'ouverture de la modale
+  // Cela garantit que la zone caméra et les boutons Enregistrer restent 100% visibles sans écrasement
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur();
   }
 }
 
@@ -2373,107 +2366,650 @@ $('#btnSaveNewBook').addEventListener('click', async () => {
   }
 });
 
-// Écouteur OCR dans la modale
-const nbOcrInput = $('#nbOcrInput');
-if (nbOcrInput) {
-  nbOcrInput.addEventListener('change', async e => {
-    window.scrollTo(0, 0);
-    updateViewportHeight();
-    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+// ==========================================
+// SYSTÈME CAMÉRA LIVE OCR (GARANTIT LE CAPTEUR ARRIÈRE GEEKY / SAMSUNG S24)
+// ==========================================
+let ocrStream = null;
+let currentOcrTarget = null; // 'modal' | 'recv'
+let ocrAvailableRearDevices = [];
+let ocrCurrentDeviceIdx = 0;
 
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const txtSpan = $('#nbOcrText');
-    const oldText = txtSpan ? txtSpan.textContent : '';
-    if (txtSpan) txtSpan.textContent = '⏳ Analyse OCR en cours...';
-    try {
-      toast('Analyse de la page de garde...', 'ok');
-      const res = await performOcr(file);
-      window.scrollTo(0, 0);
-      updateViewportHeight();
-      if (res && res.candidates) {
-        const c = res.candidates;
-        if (c.title) $('#nbTitle').value = c.title;
-        if (c.author) $('#nbAuthor').value = c.author;
-        if (c.publisher && $('#nbPublisher')) $('#nbPublisher').value = c.publisher;
-        if (c.price != null && c.price > 0) $('#nbPrice').value = c.price;
-        const badge = $('#nbOcrBadge');
-        if (badge) badge.style.display = 'inline-flex';
-        renderOcrChips(res.lines);
-        
-        // Si le livre existe déjà en base, proposer immédiatement l'ajout au stock
-        if (res.matched_book) {
-          showExistingBookBanner(res.matched_book);
-        }
+async function enumerateRearCamerasForOcr() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const videoDevs = devs.filter(d => d.kind === 'videoinput');
+    // Exclure formellement selfie/front/avant
+    const rear = videoDevs.filter(d => {
+      const l = (d.label || '').toLowerCase();
+      const isFront = l.includes('front') || l.includes('avant') || l.includes('selfie') || l.includes('user') || l.includes('face');
+      return !isFront;
+    });
+    return rear.length ? rear : videoDevs;
+  } catch (e) {
+    return [];
+  }
+}
 
-        // Notifier les corrections de coquilles détectées
-        if (res.corrections) {
-          if (res.corrections.author) {
-            toast(`✨ Auteur corrigé d'après la base : ${res.corrections.author.corrected}`, 'ok');
-          }
-          if (res.corrections.publisher) {
-            toast(`✨ Éditeur corrigé d'après la base : ${res.corrections.publisher.corrected}`, 'ok');
-          }
-        }
+async function stopOcrCameraStream() {
+  const barcodeVid = $('#video');
+  const isSharedWithBarcode = barcodeVid && barcodeVid.srcObject === ocrStream;
+  if (ocrStream && !isSharedWithBarcode) {
+    ocrStream.getTracks().forEach(t => t.stop());
+  }
+  ocrStream = null;
+  const ocrVid = $('#ocrVideo');
+  if (ocrVid) ocrVid.srcObject = null;
+}
 
-        triggerAllBddChecks();
-        toast('Page de garde analysée avec succès', 'ok');
-      }
-    } catch (err) {
-      toast(err.message || "Erreur lors de l'OCR", 'err');
-    } finally {
-      if (txtSpan) txtSpan.textContent = oldText;
-      nbOcrInput.value = '';
-      window.scrollTo(0, 0);
-      updateViewportHeight();
+function closeOcrCameraModal() {
+  stopOcrCameraStream();
+  const modal = $('#ocrCamModal');
+  if (modal) {
+    modal.hidden = true;
+    modal.style.display = 'none';
+  }
+  currentOcrTarget = null;
+}
+
+async function startOcrStream(deviceId = null) {
+  const ocrVid = $('#ocrVideo');
+  const spinner = $('#ocrCamSpinner');
+  if (spinner) spinner.style.display = 'flex';
+  await stopOcrCameraStream();
+
+  let stream = null;
+  const constraintsList = [];
+
+  if (deviceId) {
+    constraintsList.push({
+      video: {
+        deviceId: { exact: deviceId },
+        width: { ideal: 1920, max: 2560 },
+        height: { ideal: 1080, max: 1440 }
+      },
+      audio: false
+    });
+  }
+
+  // Hierarchie de contraintes pour forcer l'arrière sans jamais tomber sur selfie
+  constraintsList.push(
+    {
+      video: {
+        facingMode: { exact: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    },
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    },
+    {
+      video: {
+        facingMode: 'environment'
+      },
+      audio: false
     }
+  );
+
+  for (const c of constraintsList) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(c);
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const settings = track.getSettings ? track.getSettings() : {};
+        if (settings.facingMode === 'user') {
+          // Rejeter si le navigateur a renvoyé la caméra frontale malgré tout
+          track.stop();
+          stream = null;
+          continue;
+        }
+      }
+      if (stream) break;
+    } catch (err) {}
+  }
+
+  if (!stream) {
+    // Si getUserMedia n'a pas pu obtenir l'arrière
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (err) {
+      if (spinner) spinner.style.display = 'none';
+      throw new Error("Impossible d'accéder à la caméra arrière.");
+    }
+  }
+
+  ocrStream = stream;
+  if (ocrVid) {
+    ocrVid.srcObject = stream;
+    await ocrVid.play();
+  }
+
+  // Tenter focus continuous
+  const vTrack = stream ? stream.getVideoTracks()[0] : null;
+  if (vTrack && vTrack.applyConstraints) {
+    try { await vTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+  }
+
+  if (spinner) spinner.style.display = 'none';
+}
+
+let liveOcrTimer = null;
+let isLiveOcrAnalyzing = false;
+let lastLiveOcrResult = null;
+
+function stopLiveOcrLoop() {
+  if (liveOcrTimer) {
+    clearTimeout(liveOcrTimer);
+    liveOcrTimer = null;
+  }
+  isLiveOcrAnalyzing = false;
+}
+
+// Boucle continue de détection AR en temps réel AVANT d'appuyer sur le bouton
+function startLiveOcrLoop() {
+  stopLiveOcrLoop();
+
+  const liveTick = async () => {
+    const ocrVid = $('#ocrVideo');
+    const modal = $('#ocrCamModal');
+    if (!modal || modal.hidden || !ocrVid || !ocrStream || !ocrVid.videoWidth) {
+      liveOcrTimer = setTimeout(liveTick, 900);
+      return;
+    }
+
+    if (!isLiveOcrAnalyzing) {
+      isLiveOcrAnalyzing = true;
+      try {
+        const vw = ocrVid.videoWidth || 1280;
+        const vh = ocrVid.videoHeight || 720;
+        const offCanvas = document.createElement('canvas');
+        const scale = Math.min(1, 960 / Math.max(vw, vh));
+        offCanvas.width = Math.round(vw * scale);
+        offCanvas.height = Math.round(vh * scale);
+        const offCtx = offCanvas.getContext('2d');
+        offCtx.drawImage(ocrVid, 0, 0, offCanvas.width, offCanvas.height);
+
+        const b64 = offCanvas.toDataURL('image/jpeg', 0.72).split(',')[1];
+        const res = await api('/api/ocr/scan', {
+          method: 'POST',
+          body: { image_base64: b64 },
+          timeoutMs: 4000
+        });
+
+        if (res && res.lines && res.lines.length && !modal.hidden) {
+          lastLiveOcrResult = res;
+          const c = res.candidates || {};
+          res.lines.forEach(l => {
+            const t = (l.text || '').toLowerCase();
+            if (c.author && t.includes(c.author.toLowerCase())) l.tag = 'author';
+            else if (c.publisher && t.includes(c.publisher.toLowerCase())) l.tag = 'publisher';
+            else if (c.title && t.includes(c.title.toLowerCase())) l.tag = 'title';
+          });
+
+          // Projeter les cadres AR en continu sur la couverture
+          renderOcrArBoxes(res.lines, offCanvas.width, offCanvas.height);
+
+          const guideText = $('#ocrArGuideText');
+          if (guideText) {
+            const detectedTitle = c.title ? `« ${c.title.slice(0, 22)}… »` : `${res.lines.length} textes détectés`;
+            guideText.innerHTML = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e"></span> Vision AR active · ${detectedTitle}`;
+          }
+        }
+      } catch (err) {
+      } finally {
+        isLiveOcrAnalyzing = false;
+      }
+    }
+
+    liveOcrTimer = setTimeout(liveTick, 750);
+  };
+
+  liveOcrTimer = setTimeout(liveTick, 350);
+}
+
+async function openOcrCameraModal(targetType = 'modal') {
+  currentOcrTarget = targetType;
+  lastLiveOcrResult = null;
+  const modal = $('#ocrCamModal');
+  if (!modal) return;
+
+  const titleEl = $('#ocrCamModalTitle');
+  if (titleEl) {
+    titleEl.textContent = targetType === 'recv' ? 'Scan Carton (Page de Garde)' : 'Photo Page de Garde';
+  }
+
+  modal.hidden = false;
+  modal.style.display = 'flex';
+
+  try {
+    const ocrVid = $('#ocrVideo');
+    const spinner = $('#ocrCamSpinner');
+    if (spinner) spinner.style.display = 'flex';
+
+    // SOLUTION ROBUSTE S24 & SMARTPHONES :
+    // Si le scanner code-barres principal est déjà actif avec la caméra arrière (#video.srcObject),
+    // on clone ou réutilise immédiatement ce même flux arrière déjà validé sans conflit de matériel !
+    const barcodeVid = $('#video');
+    if (barcodeVid && barcodeVid.srcObject && barcodeVid.srcObject.active) {
+      const liveTracks = barcodeVid.srcObject.getVideoTracks();
+      if (liveTracks.length && liveTracks[0].readyState === 'live') {
+        const liveTrack = liveTracks[0];
+        const settings = liveTrack.getSettings ? liveTrack.getSettings() : {};
+        if (settings.facingMode !== 'user') {
+          // On partage le flux arrière parfait déjà actif !
+          ocrStream = barcodeVid.srcObject;
+          if (ocrVid) {
+            ocrVid.srcObject = ocrStream;
+            await ocrVid.play();
+          }
+          if (spinner) spinner.style.display = 'none';
+          startLiveOcrLoop();
+          return;
+        }
+      }
+    }
+
+    if (!bestCameraDeviceId) {
+      bestCameraDeviceId = await findOptimalCamera();
+    }
+
+    ocrAvailableRearDevices = await enumerateRearCamerasForOcr();
+    ocrCurrentDeviceIdx = 0;
+    const targetDevId = bestCameraDeviceId || (ocrAvailableRearDevices.length ? ocrAvailableRearDevices[0].deviceId : null);
+    await startOcrStream(targetDevId);
+    startLiveOcrLoop();
+  } catch (err) {
+    toast(err.message || 'Erreur ouverture caméra arrière', 'err');
+    closeOcrCameraModal();
+    if (targetType === 'modal') {
+      $('#nbOcrInput')?.click();
+    } else {
+      $('#recvOcrInput')?.click();
+    }
+  }
+}
+
+// Bouton changer de capteur arrière dans le viseur live
+$('#btnSwitchOcrCam')?.addEventListener('click', async () => {
+  if (!ocrAvailableRearDevices.length) {
+    ocrAvailableRearDevices = await enumerateRearCamerasForOcr();
+  }
+  if (ocrAvailableRearDevices.length <= 1) {
+    toast('Un seul capteur arrière disponible', 'info');
+    return;
+  }
+  ocrCurrentDeviceIdx = (ocrCurrentDeviceIdx + 1) % ocrAvailableRearDevices.length;
+  const nextDev = ocrAvailableRearDevices[ocrCurrentDeviceIdx];
+  toast(`Capteur : ${nextDev.label || 'Caméra ' + (ocrCurrentDeviceIdx + 1)}`, 'info');
+  try {
+    await startOcrStream(nextDev.deviceId);
+  } catch (e) {
+    toast('Échec bascule capteur', 'warn');
+  }
+});
+
+// Nettoyer l'overlay AR
+function clearOcrArCanvas() {
+  const arCanvas = $('#ocrArCanvas');
+  if (arCanvas) {
+    const ctx = arCanvas.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, arCanvas.width, arCanvas.height);
+  }
+}
+
+// Dessiner les cadres AR holographiques 3D au-dessus des textes reconnus
+function renderOcrArBoxes(lines, imgWidth, imgHeight) {
+  const arCanvas = $('#ocrArCanvas');
+  const ocrVid = $('#ocrVideo');
+  if (!arCanvas || !ocrVid) return;
+
+  const rect = arCanvas.getBoundingClientRect();
+  arCanvas.width = rect.width * (window.devicePixelRatio || 1);
+  arCanvas.height = rect.height * (window.devicePixelRatio || 1);
+
+  const ctx = arCanvas.getContext('2d');
+  ctx.clearRect(0, 0, arCanvas.width, arCanvas.height);
+  if (!lines || !lines.length) return;
+
+  const scaleX = arCanvas.width / (imgWidth || 1600);
+  const scaleY = arCanvas.height / (imgHeight || 1200);
+
+  lines.forEach((l, idx) => {
+    const box = l.box; // 4 points [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+    if (!box || box.length < 4) return;
+
+    const tag = l.tag; // 'author' | 'title' | 'publisher' | etc.
+    let strokeColor = 'rgba(168, 85, 247, 0.85)';
+    let fillColor = 'rgba(168, 85, 247, 0.22)';
+    let badgeText = l.text || '';
+
+    if (tag === 'author') {
+      strokeColor = 'rgba(34, 197, 94, 0.95)';
+      fillColor = 'rgba(34, 197, 94, 0.28)';
+      badgeText = '👤 ' + badgeText;
+    } else if (tag === 'publisher') {
+      strokeColor = 'rgba(59, 130, 246, 0.95)';
+      fillColor = 'rgba(59, 130, 246, 0.28)';
+      badgeText = '🏢 ' + badgeText;
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(box[0][0] * scaleX, box[0][1] * scaleY);
+    ctx.lineTo(box[1][0] * scaleX, box[1][1] * scaleY);
+    ctx.lineTo(box[2][0] * scaleX, box[2][1] * scaleY);
+    ctx.lineTo(box[3][0] * scaleX, box[3][1] * scaleY);
+    ctx.closePath();
+
+    ctx.lineWidth = 2.5 * (window.devicePixelRatio || 1);
+    ctx.strokeStyle = strokeColor;
+    ctx.fillStyle = fillColor;
+    ctx.shadowColor = strokeColor;
+    ctx.shadowBlur = 8 * (window.devicePixelRatio || 1);
+    ctx.fill();
+    ctx.stroke();
+
+    // Pastille de texte flottante en réalité augmentée
+    const px = box[0][0] * scaleX;
+    const py = Math.max(16, box[0][1] * scaleY - 6);
+    ctx.font = `bold ${Math.round(11 * (window.devicePixelRatio || 1))}px Inter, sans-serif`;
+    const textW = ctx.measureText(badgeText).width;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.roundRect(px, py - 14 * (window.devicePixelRatio || 1), textW + 12, 16 * (window.devicePixelRatio || 1), 4);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(badgeText, px + 6, py - 2);
+    ctx.restore();
   });
 }
 
-// Écouteur OCR dans le mode Réception (carton)
+// Bouton Annuler le viseur live
+$('#btnCloseOcrCam')?.addEventListener('click', () => {
+  clearOcrArCanvas();
+  closeOcrCameraModal();
+});
+
+// Bouton Déclencheur / Prise de vue HD live avec vision AR instantanée
+$('#btnSnapOcrLive')?.addEventListener('click', async () => {
+  const ocrVid = $('#ocrVideo');
+  if (!ocrVid || !ocrStream) return;
+
+  const btnSnap = $('#btnSnapOcrLive');
+  const target = currentOcrTarget;
+
+  // Si la Vision AR a déjà détecté le texte en direct pendant la visée, validation instantanée !
+  if (lastLiveOcrResult && lastLiveOcrResult.candidates && (lastLiveOcrResult.candidates.title || lastLiveOcrResult.candidates.author)) {
+    closeOcrCameraModal();
+    clearOcrArCanvas();
+    if (target === 'modal') {
+      await applyOcrResultToModal(lastLiveOcrResult);
+    } else {
+      await applyOcrResultToRecv(lastLiveOcrResult);
+    }
+    return;
+  }
+
+  const guideText = $('#ocrArGuideText');
+  const oldBtnHtml = btnSnap.innerHTML;
+  btnSnap.disabled = true;
+  btnSnap.innerHTML = '✨ Analyse Vision AR...';
+  if (guideText) {
+    guideText.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#38c172;animation:pulse 0.6s infinite"></span> Détection holographique du texte...';
+  }
+
+  const vw = ocrVid.videoWidth || 1920;
+  const vh = ocrVid.videoHeight || 1080;
+  const canvas = document.createElement('canvas');
+  canvas.width = vw;
+  canvas.height = vh;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(ocrVid, 0, 0, vw, vh);
+
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
+      toast('Échec de la capture', 'err');
+      btnSnap.disabled = false;
+      btnSnap.innerHTML = oldBtnHtml;
+      return;
+    }
+    const capturedFile = new File([blob], 'page_garde.jpg', { type: 'image/jpeg' });
+
+    try {
+      // 1. Appel instantané de l'OCR pour projeter la Vision AR
+      const res = await performOcr(capturedFile);
+      if (res && res.lines && res.lines.length) {
+        // Taguer les lignes pour les couleurs AR
+        const c = res.candidates || {};
+        res.lines.forEach(l => {
+          const t = (l.text || '').toLowerCase();
+          if (c.author && t.includes(c.author.toLowerCase())) l.tag = 'author';
+          else if (c.publisher && t.includes(c.publisher.toLowerCase())) l.tag = 'publisher';
+          else if (c.title && t.includes(c.title.toLowerCase())) l.tag = 'title';
+        });
+
+        // Projection holographique sur le canvas au-dessus du flux vidéo
+        renderOcrArBoxes(res.lines, vw, vh);
+        if (guideText) {
+          guideText.innerHTML = `✨ <b>${res.lines.length}</b> textes détectés en Réalité Augmentée !`;
+        }
+        await new Promise(r => setTimeout(r, 650)); // Petit instant de wow-effect pour apprécier l'AR
+      }
+
+      closeOcrCameraModal();
+      clearOcrArCanvas();
+
+      if (target === 'modal') {
+        await applyOcrResultToModal(res);
+      } else {
+        await applyOcrResultToRecv(res);
+      }
+    } catch (err) {
+      toast(err.message || 'Erreur vision OCR', 'err');
+      closeOcrCameraModal();
+      clearOcrArCanvas();
+    } finally {
+      btnSnap.disabled = false;
+      btnSnap.innerHTML = oldBtnHtml;
+    }
+  }, 'image/jpeg', 0.92);
+});
+
+// Fonctions d'application directe des résultats déjà calculés
+async function applyOcrResultToModal(res) {
+  window.scrollTo(0, 0);
+  updateViewportHeight();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  if (res && res.candidates) {
+    const c = res.candidates;
+    if (c.title) $('#nbTitle').value = c.title;
+    if (c.author) $('#nbAuthor').value = c.author;
+    if (c.publisher && $('#nbPublisher')) $('#nbPublisher').value = c.publisher;
+    if (c.price != null && c.price > 0) $('#nbPrice').value = c.price;
+    const badge = $('#nbOcrBadge');
+    if (badge) badge.style.display = 'inline-flex';
+    renderOcrChips(res.lines);
+    
+    if (res.matched_book) {
+      showExistingBookBanner(res.matched_book);
+    }
+    if (res.corrections) {
+      if (res.corrections.author) {
+        toast(`✨ Auteur corrigé d'après la base : ${res.corrections.author.corrected}`, 'ok');
+      }
+      if (res.corrections.publisher) {
+        toast(`✨ Éditeur corrigé d'après la base : ${res.corrections.publisher.corrected}`, 'ok');
+      }
+    }
+    triggerAllBddChecks();
+    toast('Vision AR : Page de garde lue avec succès !', 'ok');
+  }
+}
+
+async function applyOcrResultToRecv(res) {
+  window.scrollTo(0, 0);
+  updateViewportHeight();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  if (res) {
+    if (res.matched_book) {
+      try {
+        const book = await api('/api/books/scan/' + encodeURIComponent(res.matched_book.code));
+        addToRecv(book);
+        toast(`📦 Livre en base ajouté au carton : ${book.title}`, 'ok');
+        return;
+      } catch (e) {}
+    }
+    const c = res.candidates || {};
+    toast('Vision AR : Page de garde enregistrée', 'ok');
+    openNewBookModal('', { ...c, lines: res.lines, matched_book: res.matched_book, corrections: res.corrections });
+  } else {
+    toast('Aucun texte lisible détecté', 'warn');
+  }
+}
+
+// Fallback import fichier depuis le viseur live
+$('#ocrFileFallback')?.addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const target = currentOcrTarget;
+  closeOcrCameraModal();
+  clearOcrArCanvas();
+  if (target === 'modal') {
+    await handleModalOcrFile(file);
+  } else {
+    await handleRecvOcrFile(file);
+  }
+});
+
+async function handleModalOcrFile(file) {
+  window.scrollTo(0, 0);
+  updateViewportHeight();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  const txtSpan = $('#nbOcrText');
+  const oldText = txtSpan ? txtSpan.textContent : '';
+  if (txtSpan) txtSpan.textContent = '⏳ Analyse OCR en cours...';
+  try {
+    toast('Analyse de la page de garde...', 'ok');
+    const res = await performOcr(file);
+    window.scrollTo(0, 0);
+    updateViewportHeight();
+    if (res && res.candidates) {
+      const c = res.candidates;
+      if (c.title) $('#nbTitle').value = c.title;
+      if (c.author) $('#nbAuthor').value = c.author;
+      if (c.publisher && $('#nbPublisher')) $('#nbPublisher').value = c.publisher;
+      if (c.price != null && c.price > 0) $('#nbPrice').value = c.price;
+      const badge = $('#nbOcrBadge');
+      if (badge) badge.style.display = 'inline-flex';
+      renderOcrChips(res.lines);
+      
+      if (res.matched_book) {
+        showExistingBookBanner(res.matched_book);
+      }
+      if (res.corrections) {
+        if (res.corrections.author) {
+          toast(`✨ Auteur corrigé d'après la base : ${res.corrections.author.corrected}`, 'ok');
+        }
+        if (res.corrections.publisher) {
+          toast(`✨ Éditeur corrigé d'après la base : ${res.corrections.publisher.corrected}`, 'ok');
+        }
+      }
+      triggerAllBddChecks();
+      toast('Page de garde analysée avec succès', 'ok');
+    }
+  } catch (err) {
+    toast(err.message || "Erreur lors de l'OCR", 'err');
+  } finally {
+    if (txtSpan) txtSpan.textContent = oldText;
+    const inp = $('#nbOcrInput');
+    if (inp) inp.value = '';
+    window.scrollTo(0, 0);
+    updateViewportHeight();
+  }
+}
+
+async function handleRecvOcrFile(file) {
+  window.scrollTo(0, 0);
+  updateViewportHeight();
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  const txtSpan = $('#recvOcrText');
+  const oldText = txtSpan ? txtSpan.textContent : '';
+  if (txtSpan) txtSpan.textContent = '⏳ Scan OCR...';
+  try {
+    toast('Numérisation de la page de garde...', 'ok');
+    const res = await performOcr(file);
+    window.scrollTo(0, 0);
+    updateViewportHeight();
+    if (res) {
+      if (res.matched_book) {
+        try {
+          const book = await api('/api/books/scan/' + encodeURIComponent(res.matched_book.code));
+          addToRecv(book);
+          toast(`📦 Livre en base ajouté au carton : ${book.title}`, 'ok');
+          return;
+        } catch (e) {}
+      }
+      const c = res.candidates || {};
+      toast('Page de garde lue : vérifiez et enregistrez', 'ok');
+      openNewBookModal('', { ...c, lines: res.lines, matched_book: res.matched_book, corrections: res.corrections });
+    } else {
+      toast('Aucun texte lisible détecté', 'warn');
+    }
+  } catch (err) {
+    toast(err.message || "Erreur lors de l'analyse OCR", 'err');
+  } finally {
+    if (txtSpan) txtSpan.textContent = oldText;
+    const inp = $('#recvOcrInput');
+    if (inp) inp.value = '';
+    window.scrollTo(0, 0);
+    updateViewportHeight();
+  }
+}
+
+// Clics sur les boutons OCR : ouvrent le viseur caméra ARRIÈRE garanti
+const nbOcrBtn = $('#nbOcrBtn');
+if (nbOcrBtn) {
+  nbOcrBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openOcrCameraModal('modal');
+  });
+}
+
+const recvOcrBtn = $('#recvOcrBtn');
+if (recvOcrBtn) {
+  recvOcrBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openOcrCameraModal('recv');
+  });
+}
+
+// Écouteurs de repli sur les inputs file (au cas où déclenchés par l'utilisateur)
+const nbOcrInput = $('#nbOcrInput');
+if (nbOcrInput) {
+  nbOcrInput.addEventListener('change', async e => {
+    const file = e.target.files && e.target.files[0];
+    if (file) await handleModalOcrFile(file);
+  });
+}
+
 const recvOcrInput = $('#recvOcrInput');
 if (recvOcrInput) {
   recvOcrInput.addEventListener('change', async e => {
-    window.scrollTo(0, 0);
-    updateViewportHeight();
-    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-
     const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const txtSpan = $('#recvOcrText');
-    const oldText = txtSpan ? txtSpan.textContent : '';
-    if (txtSpan) txtSpan.textContent = '⏳ Scan OCR...';
-    try {
-      toast('Numérisation de la page de garde...', 'ok');
-      const res = await performOcr(file);
-      window.scrollTo(0, 0);
-      updateViewportHeight();
-      if (res) {
-        // 1. Priorité absolue : livre déjà existant au catalogue -> proposer immédiatement l'ajout au stock
-        if (res.matched_book) {
-          try {
-            const book = await api('/api/books/scan/' + encodeURIComponent(res.matched_book.code));
-            addToRecv(book);
-            toast(`📦 Livre en base ajouté au carton : ${book.title}`, 'ok');
-            return;
-          } catch (e) {}
-        }
-
-        const c = res.candidates || {};
-        // 2. Ouvrir la modale pré-remplie avec titre assemblé, auteur et éditeur
-        toast('Page de garde lue : vérifiez et enregistrez', 'ok');
-        openNewBookModal('', { ...c, lines: res.lines, matched_book: res.matched_book, corrections: res.corrections });
-      } else {
-        toast('Aucun texte lisible détecté', 'warn');
-      }
-    } catch (err) {
-      toast(err.message || "Erreur lors de l'analyse OCR", 'err');
-    } finally {
-      if (txtSpan) txtSpan.textContent = oldText;
-      recvOcrInput.value = '';
-      window.scrollTo(0, 0);
-      updateViewportHeight();
-    }
+    if (file) await handleRecvOcrFile(file);
   });
 }
 
@@ -2504,8 +3040,15 @@ async function lookupCode(code) {
     }
   } catch (e) {
     if (e.message && e.message.includes('Aucun livre pour le code')) {
-      toast('Livre inconnu : ouverture de la fiche', 'warn');
-      openNewBookModal(code);
+      if (currentMode === 'recv') {
+        toast(`Code ${code} inconnu : scannez la page de garde pour créer le livre`, 'info');
+        openNewBookModal(code);
+        // Enchaînement fluide en Réception : déclencher immédiatement la Vision AR pour compléter la fiche
+        setTimeout(() => openOcrCameraModal('modal'), 200);
+      } else {
+        toast('Livre inconnu : ouverture de la fiche', 'warn');
+        openNewBookModal(code);
+      }
     } else {
       toast(e.message, 'warn');
     }
@@ -2813,13 +3356,17 @@ async function findOptimalCamera() {
     // Filtrer les caméras arrière (exclusion stricte des caméras avant / selfie)
     const rear = videoDevices.filter(d => {
       const l = (d.label || '').toLowerCase();
-      const isFront = l.includes('front') || l.includes('avant') || l.includes('selfie') || l.includes('user');
+      const isFront = l.includes('front') || l.includes('avant') || l.includes('selfie') || l.includes('user') || l.includes('face');
       if (isFront) return false;
-      return l.includes('back') || l.includes('rear') || l.includes('environment') || l.includes('arrière') || l.includes('0');
+      return l.includes('back') || l.includes('rear') || l.includes('environment') || l.includes('arrière');
     });
 
-    const candidates = rear.length ? rear : videoDevices;
+    const candidates = rear.length ? rear : videoDevices.filter(d => {
+      const l = (d.label || '').toLowerCase();
+      return !l.includes('front') && !l.includes('avant') && !l.includes('selfie') && !l.includes('user') && !l.includes('face');
+    });
     if (candidates.length === 1) return candidates[0].deviceId;
+    if (candidates.length === 0) return null;
 
     // Tester les capacités réelles de chaque capteur (focusDistance, focusMode, zoom)
     let bestId = null;
@@ -2834,7 +3381,7 @@ async function findOptimalCamera() {
         score -= 100;
       }
       // 2. Bonus sur les mentions de capteur principal / standard / macro
-      if (label.includes('main') || label.includes('standard') || label.includes('camera 0') || label.includes('camera2 0') || label.includes('primary')) {
+      if (label.includes('main') || label.includes('standard') || label.includes('primary') || label.includes('back') || label.includes('rear') || label.includes('arrière')) {
         score += 50;
       }
 
@@ -2879,7 +3426,7 @@ async function findOptimalCamera() {
       }
     }
 
-    return bestId || candidates[0].deviceId;
+    return bestId || (candidates[0] ? candidates[0].deviceId : null);
   } catch (e) {
     return null;
   }
