@@ -1474,12 +1474,65 @@ VIEWS.dashboard = async () => {
     avg_basket: 0
   }), { revenue: 0, n: 0, qty: 0 });
   unkGen.avg_basket = unkGen.n > 0 ? (unkGen.revenue / unkGen.n) : 0;
-
   const totAllGen = (f.revenue + h.revenue + cpl.revenue + unkGen.revenue) || 1;
   const fPct = Math.round((f.revenue / totAllGen) * 100);
   const hPct = Math.round((h.revenue / totAllGen) * 100);
   const cplPct = Math.round((cpl.revenue / totAllGen) * 100);
   const unkPct = Math.round((unkGen.revenue / totAllGen) * 100);
+
+  const genderConfigs = [
+    {
+      title: 'Femmes',
+      cssClass: 'gender-icon-f',
+      gradient: 'linear-gradient(90deg, #b452d3, #ca88e3)',
+      svg: '<svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>',
+      data: f,
+      pct: fPct
+    },
+    {
+      title: 'Hommes',
+      cssClass: 'gender-icon-m',
+      gradient: 'linear-gradient(90deg, #5a9bff, #7cb3ff)',
+      svg: '<svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>',
+      data: h,
+      pct: hPct
+    },
+    {
+      title: 'Couples &amp; Foyers',
+      cssClass: 'gender-icon-c',
+      gradient: 'linear-gradient(90deg, #a855f7, #ec4899)',
+      svg: '<svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+      data: cpl,
+      pct: cplPct
+    },
+    {
+      title: 'Autre / Indéfini',
+      cssClass: 'gender-icon-u',
+      gradient: 'linear-gradient(90deg, #64748b, #94a3b8)',
+      svg: '<svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M15 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><path d="M18 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3"/><line x1="19.5" y1="17" x2="19.5" y2="17.01"/></svg>',
+      data: unkGen,
+      pct: unkPct
+    }
+  ];
+
+  const renderGenderCard = (cfg) => `
+    <div class="gender-card">
+      <div class="gender-header">
+        <div class="gender-icon-box ${cfg.cssClass}" title="${cfg.title.replace('&amp;', '&')}">
+          ${cfg.svg}
+        </div>
+        <div>
+          <div>${cfg.title}</div>
+          <div class="muted" style="font-size:11px;font-weight:400">${cfg.pct}% du total</div>
+        </div>
+      </div>
+      <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(cfg.data.revenue)}</div>
+      <div style="font-size:11.5px;color:var(--mut);line-height:1">${cfg.data.n} ticket${cfg.data.n > 1 ? 's' : ''} · Panier <b>${eur(cfg.data.avg_basket)}</b></div>
+      <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
+        <div class="fl" style="width:${cfg.pct}%;height:100%;background:${cfg.gradient}"></div>
+      </div>
+    </div>
+  `;
 
   // Démographie : Tranches d'âge
   const ageLabels = {
@@ -1556,73 +1609,7 @@ VIEWS.dashboard = async () => {
       <div class="card">
         <h3>Profil acheteurs · Genre (avec pictogrammes)</h3>
         <div class="gender-grid" style="margin-top:12px">
-          <div class="gender-card">
-            <div class="gender-header">
-              <div class="gender-icon-box gender-icon-f" title="Femme">
-                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M9 18h6"/></svg>
-              </div>
-              <div>
-                <div>Femmes</div>
-                <div class="muted" style="font-size:11px;font-weight:400">${fPct}% du total</div>
-              </div>
-            </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(f.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut);line-height:1">${f.n} ticket${f.n > 1 ? 's' : ''} · Panier <b>${eur(f.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
-              <div class="fl" style="width:${fPct}%;height:100%;background:linear-gradient(90deg, #b452d3, #ca88e3)"></div>
-            </div>
-          </div>
-
-          <div class="gender-card">
-            <div class="gender-header">
-              <div class="gender-icon-box gender-icon-m" title="Homme">
-                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="10" cy="14" r="5"/><path d="M19 5l-5.4 5.4M19 5h-5M19 5v5"/></svg>
-              </div>
-              <div>
-                <div>Hommes</div>
-                <div class="muted" style="font-size:11px;font-weight:400">${hPct}% du total</div>
-              </div>
-            </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(h.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut);line-height:1">${h.n} ticket${h.n > 1 ? 's' : ''} · Panier <b>${eur(h.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
-              <div class="fl" style="width:${hPct}%;height:100%;background:linear-gradient(90deg, #5a9bff, #7cb3ff)"></div>
-            </div>
-          </div>
-
-          <div class="gender-card">
-            <div class="gender-header">
-              <div class="gender-icon-box gender-icon-c" title="Couple">
-                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              </div>
-              <div>
-                <div>Couples &amp; Foyers</div>
-                <div class="muted" style="font-size:11px;font-weight:400">${cplPct}% du total</div>
-              </div>
-            </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(cpl.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut);line-height:1">${cpl.n} ticket${cpl.n > 1 ? 's' : ''} · Panier <b>${eur(cpl.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
-              <div class="fl" style="width:${cplPct}%;height:100%;background:linear-gradient(90deg, #a855f7, #ec4899)"></div>
-            </div>
-          </div>
-
-          <div class="gender-card">
-            <div class="gender-header">
-              <div class="gender-icon-box gender-icon-u" title="Autre / Indéfini">
-                <svg style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M15 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><path d="M18 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3"/><line x1="19.5" y1="17" x2="19.5" y2="17.01"/></svg>
-              </div>
-              <div>
-                <div>Autre / Indéfini</div>
-                <div class="muted" style="font-size:11px;font-weight:400">${unkPct}% du total</div>
-              </div>
-            </div>
-            <div style="font-family:var(--font-heading);font-size:22px;color:var(--text-title);line-height:1">${eur(unkGen.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--mut);line-height:1">${unkGen.n} ticket${unkGen.n > 1 ? 's' : ''} · Panier <b>${eur(unkGen.avg_basket)}</b></div>
-            <div class="tr" style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden">
-              <div class="fl" style="width:${unkPct}%;height:100%;background:linear-gradient(90deg, #64748b, #94a3b8)"></div>
-            </div>
-          </div>
+          ${genderConfigs.map(renderGenderCard).join('')}
         </div>
       </div>
 
