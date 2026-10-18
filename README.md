@@ -1,8 +1,8 @@
-# Librairie – Gestion de stock, ventes & statistiques
+# eLib – Gestion de stock, ventes & statistiques
 
 Application locale (100% hors-ligne) pour la gestion d'une librairie, avec synchronisation continue vers Excel et base de données SQLite.
 
-Dépôt GitHub : [https://github.com/urilou777/librairi-e](https://github.com/urilou777/librairi-e)
+Dépôt GitHub : [https://github.com/urilou777/eLib](https://github.com/urilou777/eLib)
 
 ---
 

@@ -471,7 +471,7 @@ async function go(v, updateHash = true) {
   if (updateHash && location.hash !== '#' + v) {
     location.hash = '#' + v;
   }
-  $('#title').textContent = TITLES[v] || 'Librairi-E';
+  $('#title').textContent = TITLES[v] || 'eLib';
   $('#topActions').innerHTML = '';
   $('#view').onclick = null;
   const extra = $('#topTitleExtra'); if (extra) extra.innerHTML = '';

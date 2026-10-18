@@ -148,7 +148,7 @@ def main():
         else:
             import webview
             webview.create_window(
-                "Librairi-E – Chrétienne et impactante",
+                "eLib – Chrétienne et impactante",
                 url,
                 width=1280,
                 height=760,

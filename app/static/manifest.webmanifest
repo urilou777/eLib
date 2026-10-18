@@ -1,6 +1,6 @@
 {
-  "name": "Librairi-E – Chrétienne et impactante",
-  "short_name": "Librairi-E",
+  "name": "eLib – Chrétienne et impactante",
+  "short_name": "eLib",
   "start_url": "/mobile",
   "scope": "/",
   "display": "standalone",
