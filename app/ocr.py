@@ -15,7 +15,10 @@ import io
 import re
 import unicodedata
 from difflib import SequenceMatcher
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 from PIL import Image, ImageOps
 
 _ocr_engine = None
@@ -399,10 +402,10 @@ def scan_book_page(image_bytes: bytes, catalog_books: list = None) -> dict:
     les textes avec heuristiques de qualification (Titre, Auteur, ISBN, Prix).
     """
     engine = get_ocr_engine()
-    if not engine:
+    if not engine or np is None:
         return {
             "ok": False,
-            "error": "Moteur OCR non initialisé. Veuillez installer rapidocr_onnxruntime."
+            "error": "Moteur OCR non initialisé ou numpy absent. Veuillez installer rapidocr_onnxruntime et numpy."
         }
 
     try:

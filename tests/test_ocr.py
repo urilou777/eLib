@@ -5,7 +5,10 @@ import os
 import sys
 import unittest
 import numpy as np
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 from starlette.requests import Request
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -80,6 +83,7 @@ class TestOcr(unittest.TestCase):
         self.assertGreaterEqual(score, 0.85)
 
 
+    @unittest.skipIf(cv2 is None, "OpenCV (cv2) non installé")
     def test_scan_book_page_direct(self):
         # Image synthétique simulant une page de garde d'un livre du catalogue
         # Le code-barres n'est pas extrait de la photo : il est scanné au dos
@@ -104,6 +108,7 @@ class TestOcr(unittest.TestCase):
         self.assertTrue(fields_in_db.get("book_exists"))
         self.assertTrue(fields_in_db.get("author"))
 
+    @unittest.skipIf(cv2 is None, "OpenCV (cv2) non installé")
     def test_ocr_scan_endpoint_json(self):
         img = np.full((350, 500, 3), 245, dtype=np.uint8)
         cv2.putText(img, "LA GUERRE SPIRITUELLE", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (10, 10, 10), 2)

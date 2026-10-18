@@ -66,18 +66,27 @@ Ce guide détaille la mise en service complète de la librairie le jour du culte
 
 ---
 
-### 🖥️ Étape 1 : Préparation du PC de Caisse (Windows)
+### 🖥️ Étape 1 : Préparation du PC de Caisse (Windows 32-bit ou 64-bit)
 
-#### 1. Installer Python (si non installé sur le PC hôte)
-- Téléchargez Python 3.11+ depuis [python.org](https://www.python.org/).
-- **IMPORTANT** : À la première fenêtre de l'installateur, cochez impérativement la case **☑ Add python.exe to PATH** en bas avant de cliquer sur *Install Now*.
+Deux options au choix selon le PC de l'église :
 
-#### 2. Installer les dépendances
-Ouvrez un terminal (PowerShell ou Invite de commandes) dans le dossier du projet :
+#### Option A : Clé USB 100% Autonome "Zero-Install" (Recommandé pour Windows 32-bit & 64-bit)
+Aucune installation de Python ni droits administrateur requis sur le PC hôte :
+1. Le dossier `runtime_win32/` contient un environnement Python 32-bit portable complet préconfiguré.
+2. Copiez simplement l'intégralité du dossier `librairie` sur votre clé USB (avec `runtime_win32/` et votre dossier `data/`).
+3. Branchez la clé sur le PC de l'église et double-cliquez directement sur **`Lancer_Librairie.bat`** (ou utilisez **`dist_win32/Librairie.exe`**). Le lanceur détecte automatiquement le moteur 32-bit embarqué !
+
+#### Option B : Installation classique avec Python
+- **Si le PC est en Windows 10 32-bit** : Téléchargez impérativement l'installateur **32-bit (x86)** :
+  👉 [Télécharger Python 3.13.2 (32-bit / x86)](https://www.python.org/ftp/python/3.13.2/python-3.13.2.exe)
+  *(Ne cliquez pas sur le bouton jaune par défaut sur python.org car il télécharge la version 64-bit incompatible !)*
+- **Si le PC est en Windows 64-bit** : Téléchargez Python 3.13+ 64-bit standard.
+- **IMPORTANT** : Cochez impérativement la case **☑ Add python.exe to PATH** en bas lors de l'installation !
+
+Puis dans PowerShell / Invite de commandes :
 ```powershell
 pip install -r requirements.txt
 ```
-*(Installe FastAPI, Uvicorn, Pillow, OpenPyXL, Cryptography, Segno, PyWebView).*
 
 #### 3. Transférer la base de données réelle (si nouveau PC)
 Si vous installez le projet sur un autre ordinateur que celui-ci :

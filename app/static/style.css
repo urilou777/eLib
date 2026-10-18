@@ -151,6 +151,9 @@
 html {
   height: 100%;
   scrollbar-gutter: stable;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 body {
   background: var(--bg);
@@ -159,11 +162,13 @@ body {
   font-size: 14px;
   background-image: var(--bg-gradient);
   transition: background-color .3s ease, color .3s ease;
-  min-width: 1120px;
-  min-height: 670px;
+  min-width: 980px;
+  min-height: 560px;
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Orbes lumineux fluides et adaptatifs */
@@ -174,9 +179,9 @@ body {
 .app {
   position: relative;
   display: flex;
-  min-height: 670px;
+  min-height: 560px;
   height: 100vh;
-  min-width: 1120px;
+  min-width: 980px;
   width: 100%;
   z-index: 1;
   overflow: hidden;
@@ -657,6 +662,46 @@ html {
     font-size: 15px;
   }
 }
+
+@media (max-height: 800px) {
+  .topbar {
+    padding: 6px 14px;
+    min-height: 48px;
+  }
+  .sidebar {
+    padding: 10px 8px;
+    gap: 6px;
+  }
+  .brand {
+    padding: 2px 4px 6px;
+    gap: 4px;
+  }
+  .brand-logo-img {
+    height: 28px;
+  }
+  .user-badge {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+  nav {
+    gap: 2px;
+  }
+  nav a {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  #view {
+    padding: 8px 14px 14px;
+    gap: 10px;
+  }
+  .total {
+    margin: 4px 0;
+  }
+  .total b {
+    font-size: clamp(24px, 2.4vw, 32px);
+  }
+}
+
 #view { 
   flex: 1 1 auto; 
   min-height: 0;

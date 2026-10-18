@@ -3747,7 +3747,35 @@ const KEY_TO_VIEW = {
   F9: 'data'
 };
 
+// Contrôle de zoom de l'interface (Ctrl + / Ctrl - / Ctrl 0) pour vieux écrans et basse résolution
+let appZoomLevel = parseFloat(localStorage.getItem('librairie_zoom') || '1');
+function setAppZoom(z) {
+  appZoomLevel = Math.round(Math.min(Math.max(z, 0.70), 1.40) * 100) / 100;
+  document.documentElement.style.zoom = appZoomLevel;
+  localStorage.setItem('librairie_zoom', appZoomLevel);
+}
+if (appZoomLevel !== 1) {
+  try { document.documentElement.style.zoom = appZoomLevel; } catch (_) {}
+}
+
 document.addEventListener('keydown', e => {
+  // Ctrl + / Ctrl - / Ctrl 0 : Ajustement du zoom de l'interface
+  if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === 'Add')) {
+    e.preventDefault();
+    setAppZoom(appZoomLevel + 0.05);
+    return;
+  }
+  if (e.ctrlKey && (e.key === '-' || e.key === 'Subtract')) {
+    e.preventDefault();
+    setAppZoom(appZoomLevel - 0.05);
+    return;
+  }
+  if (e.ctrlKey && (e.key === '0' || e.key === 'NumPad0')) {
+    e.preventDefault();
+    setAppZoom(1.0);
+    return;
+  }
+
   // Navigation directe F1 -> F9
   if (KEY_TO_VIEW[e.key]) {
     e.preventDefault();

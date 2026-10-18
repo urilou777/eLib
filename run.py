@@ -6,11 +6,17 @@ Deux écoutes distinctes (principe du moindre privilège réseau) :
 Option --headless : serveur seul, sans fenêtre (utile pour tests / démarrage automatique).
 """
 import ctypes
+import os
 import socket
 import sys
 import threading
 import time
 import webbrowser
+
+# Assure la détection du package app même avec un runtime Python portable
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 import uvicorn
 
@@ -21,6 +27,24 @@ from app.main import app
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 ES_AWAYMODE_REQUIRED = 0x00000040
+
+
+def enable_high_dpi():
+    """Active la netteté native haute résolution (Per-Monitor V2) pour éviter le flou de mise à l'échelle Windows."""
+    if sys.platform == "win32":
+        try:
+            # Windows 10 1703+ : DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (-4)
+            ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        except Exception:
+            try:
+                # Windows 8.1+ : PROCESS_PER_MONITOR_DPI_AWARE (2)
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except Exception:
+                try:
+                    # Windows Vista/7/8 : PROCESS_SYSTEM_DPI_AWARE (1)
+                    ctypes.windll.user32.SetProcessDPIAware()
+                except Exception:
+                    pass
 
 
 def prevent_sleep():
@@ -90,6 +114,7 @@ def start_https():
 
 
 def main():
+    enable_high_dpi()
     prevent_sleep()
     headless = "--headless" in sys.argv
     port = free_port()
@@ -107,7 +132,14 @@ def main():
                 time.sleep(1)
         else:
             import webview
-            webview.create_window("Librairi-E – Chrétienne et impactante", url, width=1440, height=900, min_size=(1120, 670))
+            webview.create_window(
+                "Librairi-E – Chrétienne et impactante",
+                url,
+                width=1280,
+                height=760,
+                min_size=(960, 580),
+                maximized=True
+            )
             webview.start()
     except KeyboardInterrupt:
         pass

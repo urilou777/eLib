@@ -3,8 +3,12 @@ data/
 
 # Build
 build/
+build_win32/
 dist/
+dist_win32/
 __pycache__/
 *.pyc
 *.db
 scratch/
+runtime_win32/
+runtime/
