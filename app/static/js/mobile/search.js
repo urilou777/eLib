@@ -7,11 +7,24 @@ import { addToCart } from './cart.js';
 import { addToRecv } from './modes.js';
 import { openNewBookModal } from './new_book_modal.js';
 
+const codeCache = new Map(); // Cache local en mémoire vive pour réponse instantanée 0ms
+
 export async function lookupCode(code) {
   if (state.isLookingUp) return;
   state.isLookingUp = true;
   try {
-    const book = await api('/api/books/scan/' + encodeURIComponent(code), { timeoutMs: 3500 });
+    let book = codeCache.get(code);
+    if (!book) {
+      book = await api('/api/books/scan/' + encodeURIComponent(code), { timeoutMs: 3500 });
+      if (book && book.id) {
+        codeCache.set(code, book);
+        // Ne garde que les 150 derniers livres scannés en cache mémoire vive
+        if (codeCache.size > 150) {
+          const firstKey = codeCache.keys().next().value;
+          codeCache.delete(firstKey);
+        }
+      }
+    }
     if (state.currentMode === 'sale') {
       addToCart(book);
     } else {

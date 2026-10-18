@@ -344,9 +344,11 @@ export async function startCamera(specificDeviceId = null) {
       targetDeviceId = bestCameraDeviceId;
     }
 
+    // Contraintes adaptatives : idéal 1080p, repli automatique 720p (parfait pour vieux téléphones sans surchauffe)
     const baseVideoConstraints = {
-      width: { ideal: 1920 },
-      height: { ideal: 1080 }
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 30 }
     };
 
     const videoConstraints = targetDeviceId
@@ -367,14 +369,25 @@ export async function startCamera(specificDeviceId = null) {
       } catch (e2) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' },
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
             audio: false
           });
         } catch (e3) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false
-          });
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: 'environment' },
+              audio: false
+            });
+          } catch (e4) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false
+            });
+          }
         }
       }
     }

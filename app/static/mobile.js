@@ -2474,12 +2474,23 @@ if (recvOcrInput) {
 
 /* ---------- recherche / saisie manuelle ---------- */
 let isLookingUp = false;
+const codeCache = new Map(); // Cache local en mémoire vive pour réponse instantanée 0ms
 
 async function lookupCode(code) {
   if (isLookingUp) return; // Ignore tout nouveau scan si une requête est déjà en attente
   isLookingUp = true;
   try {
-    const book = await api('/api/books/scan/' + encodeURIComponent(code), { timeoutMs: 3500 });
+    let book = codeCache.get(code);
+    if (!book) {
+      book = await api('/api/books/scan/' + encodeURIComponent(code), { timeoutMs: 3500 });
+      if (book && book.id) {
+        codeCache.set(code, book);
+        if (codeCache.size > 150) {
+          const firstKey = codeCache.keys().next().value;
+          codeCache.delete(firstKey);
+        }
+      }
+    }
     if (currentMode === 'sale') {
       addToCart(book);
     } else {
@@ -2899,10 +2910,11 @@ async function startCamera(specificDeviceId = null) {
       targetDeviceId = bestCameraDeviceId;
     }
 
-    // Contraintes standards W3C (Full HD idéale)
+    // Contraintes adaptatives : idéal 1280x720, max 1080p (parfait pour vieux téléphones sans surchauffe)
     const baseVideoConstraints = {
-      width: { ideal: 1920 },
-      height: { ideal: 1080 }
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 30 }
     };
 
     const videoConstraints = targetDeviceId
@@ -2923,15 +2935,25 @@ async function startCamera(specificDeviceId = null) {
       } catch (e2) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' },
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
             audio: false
           });
         } catch (e3) {
-          // Dernier repli : n'importe quelle caméra vidéo
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false
-          });
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: 'environment' },
+              audio: false
+            });
+          } catch (e4) {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false
+            });
+          }
         }
       }
     }
