@@ -6,3 +6,5 @@ pywebview
 pyinstaller
 cryptography
 segno
+Pillow
+numpy

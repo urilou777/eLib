@@ -1,6 +1,7 @@
 @echo off
 chcp 65001 > nul
 title Atelier de Scission des Ventes - Librairi-E
+cd /d "%~dp0"
 echo.
 echo ========================================================================
 echo   LIBRAIRI-E : ATELIER EPHEMERE DE SCISSION DES VENTES HISTORIQUES

@@ -22,7 +22,7 @@ import shutil
 import webbrowser
 import threading
 from datetime import datetime, date
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 # Chemin de la base de données SQLite
@@ -41,6 +41,8 @@ def get_db():
     c = sqlite3.connect(DB_PATH, timeout=30.0)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
+    c.execute("PRAGMA journal_mode = WAL")
+    c.execute("PRAGMA busy_timeout = 15000")
     return c
 
 
@@ -263,12 +265,16 @@ def execute_split(sale_id: int, baskets_data: list):
 # ==============================================================================
 
 class SalesRepairHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
     def _send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
@@ -277,6 +283,8 @@ class SalesRepairHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1122,11 +1130,19 @@ main.workspace {
   <!-- Colonne Gauche : Liste des Ventes -->
   <aside class="sidebar">
     <div class="sidebar-title">
-      <span>Ventes historiques (<b id="saleCount">0</b>)</span>
+      <span>Ventes à traiter (<b id="saleCount">14</b>)</span>
       <span id="totalHistoricalCA" style="color:var(--good);font-weight:800">0,00 €</span>
     </div>
+    <div style="display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line);background:rgba(0,0,0,0.25)">
+      <button class="b-filter-pill active" id="btnFilterHist" style="flex:1;text-align:center;padding:5px 6px;font-size:11px" onclick="setSalesFilter('historical')">
+        📦 14 Historiques (<span id="countPillHist">14</span>)
+      </button>
+      <button class="b-filter-pill" id="btnFilterAllSales" style="flex:1;text-align:center;padding:5px 6px;font-size:11px" onclick="setSalesFilter('all')">
+        Toutes (<span id="countPillAll">35</span>)
+      </button>
+    </div>
     <div class="sales-list" id="salesListContainer">
-      <div style="color:var(--mut);font-size:12px;text-align:center;padding:20px">Chargement...</div>
+      <div style="color:var(--mut);font-size:12px;text-align:center;padding:20px">Chargement des ventes...</div>
     </div>
   </aside>
 
@@ -1250,31 +1266,66 @@ function eur(v) {
   return (Number(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 }
 
+let salesFilter = 'historical'; // 'historical' | 'all'
+
 async function api(path, method='GET', body=null) {
-  const opt = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opt.body = JSON.stringify(body);
-  const res = await fetch(path, opt);
-  return await res.json();
+  try {
+    const opt = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opt.body = JSON.stringify(body);
+    const res = await fetch(path, opt);
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.error('API Error:', path, err);
+    return { ok: false, error: err.message || 'Erreur réseau' };
+  }
 }
 
 // -----------------------------------------------------------------------------
-// CHARGEMENT INITIAL DES VENTES
+// GESTION ET FILTRAGE DES VENTES
 // -----------------------------------------------------------------------------
-async function loadSales() {
-  const data = await api('/api/sales');
-  if (!data.ok) return toast('Erreur de chargement des ventes', 'bad');
-  currentSales = data.sales;
-  document.getElementById('saleCount').textContent = currentSales.length;
-  
-  const totalCA = currentSales.reduce((s, x) => s + x.total_rev, 0);
-  document.getElementById('totalHistoricalCA').textContent = eur(totalCA);
+function setSalesFilter(filter) {
+  salesFilter = filter;
+  const btnH = document.getElementById('btnFilterHist');
+  const btnA = document.getElementById('btnFilterAllSales');
+  if (btnH) btnH.classList.toggle('active', filter === 'historical');
+  if (btnA) btnA.classList.toggle('active', filter === 'all');
+  renderSalesList();
+}
 
+function renderSalesList() {
   const container = document.getElementById('salesListContainer');
-  container.innerHTML = '';
+  if (!container) return;
 
-  currentSales.forEach(s => {
+  const filtered = currentSales.filter(s => {
+    if (salesFilter === 'historical') {
+      return s.id <= 14 || s.is_compressed || s.note === 'Import Excel';
+    }
+    return true;
+  });
+
+  const histList = currentSales.filter(s => s.id <= 14 || s.is_compressed || s.note === 'Import Excel');
+  const sc = document.getElementById('saleCount');
+  if (sc) sc.textContent = filtered.length;
+  const cPh = document.getElementById('countPillHist');
+  if (cPh) cPh.textContent = histList.length;
+  const cPa = document.getElementById('countPillAll');
+  if (cPa) cPa.textContent = currentSales.length;
+
+  const totalCA = filtered.reduce((s, x) => s + x.total_rev, 0);
+  const tCa = document.getElementById('totalHistoricalCA');
+  if (tCa) tCa.textContent = eur(totalCA);
+
+  container.innerHTML = '';
+  if (!filtered.length) {
+    container.innerHTML = '<div style="color:var(--mut);font-size:12px;text-align:center;padding:30px">Aucune vente ne correspond à ce filtre.</div>';
+    return;
+  }
+
+  filtered.forEach(s => {
     const el = document.createElement('div');
     el.className = 'sale-item' + (s.id === activeSaleId ? ' active' : '');
+    el.dataset.id = s.id;
     el.onclick = () => selectSale(s.id);
 
     const isQual = s.customer_gender || s.customer_age_group || s.is_star;
@@ -1299,14 +1350,35 @@ async function loadSales() {
 }
 
 // -----------------------------------------------------------------------------
+// CHARGEMENT INITIAL DES VENTES
+// -----------------------------------------------------------------------------
+async function loadSales() {
+  const data = await api('/api/sales');
+  if (!data.ok) return toast('Erreur de chargement des ventes : ' + (data.error || 'Erreur inconnue'), 'bad');
+  currentSales = data.sales || [];
+  renderSalesList();
+
+  // Auto-sélection de la première vente si aucune n'est active
+  if (!activeSaleId && currentSales.length > 0) {
+    const firstSale = currentSales.find(s => s.id <= 14) || currentSales[0];
+    if (firstSale) {
+      selectSale(firstSale.id);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
 // SÉLECTION D'UNE VENTE & INITIALISATION DE L'ATELIER
 // -----------------------------------------------------------------------------
 async function selectSale(id) {
   activeSaleId = id;
-  loadSales(); // rafraîchir la sélection visuelle à gauche
-  
+  // Rafraîchir la surbrillance active sans recharger toute l'API
+  document.querySelectorAll('.sale-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id == id);
+  });
+
   const res = await api('/api/sales/' + id);
-  if (!res.ok) return toast('Impossible de charger la vente #' + id, 'bad');
+  if (!res.ok) return toast('Impossible de charger la vente #' + id + ' : ' + (res.error || ''), 'bad');
   activeSaleData = res;
 
   // Initialiser les paniers de scission par défaut :
@@ -1790,7 +1862,10 @@ function esc(s) {
 
 async function loadBooks() {
   const res = await api('/api/books');
-  if (!res.ok) return;
+  if (!res.ok) {
+    toast('Catalogue : ' + (res.error || 'Erreur de chargement'), 'bad');
+    return;
+  }
   allBooks = res.books || [];
   updateBookCounts();
   if (currentMainView === 'barcodes') {
@@ -1905,7 +1980,7 @@ async function saveBookBarcode(bookId) {
   if (btn) btn.disabled = false;
 
   if (!res.ok) {
-    return alert('Erreur : ' + (res.error || 'Impossible d\'enregistrer'));
+    return alert('Erreur : ' + (res.error || "Impossible d'enregistrer"));
   }
 
   toast(res.message, 'good');
@@ -1976,7 +2051,7 @@ async function saveBarcodeFromModal() {
   btn.disabled = false;
 
   if (!res.ok) {
-    return alert('Erreur : ' + (res.error || 'Impossible d\'enregistrer'));
+    return alert('Erreur : ' + (res.error || "Impossible d'enregistrer"));
   }
 
   toast(res.message, 'good');
@@ -2018,23 +2093,43 @@ document.getElementById('btnManualBackup').onclick = async () => {
 };
 
 // Initialisation globale
-loadSales();
-loadBooks();
+Promise.all([loadSales(), loadBooks()]).catch(e => console.error('Init error:', e));
 </script>
 </body>
 </html>
 """
 
+def free_port_if_stuck(port=PORT):
+    """Tue automatiquement tout ancien processus orphelin bloqué sur le port."""
+    if sys.platform == "win32":
+        try:
+            import subprocess
+            out = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True).decode(errors="ignore")
+            my_pid = os.getpid()
+            for line in out.strip().splitlines():
+                if "LISTENING" in line:
+                    parts = line.strip().split()
+                    pid = int(parts[-1])
+                    if pid != my_pid:
+                        print(f"    [Nettoyage] Libération du port {port} (arrêt processus fantôme PID {pid})...")
+                        os.system(f"taskkill /F /PID {pid} >nul 2>&1")
+        except Exception:
+            pass
+
+
 def run_server():
-    server = HTTPServer(("127.0.0.1", PORT), SalesRepairHandler)
+    free_port_if_stuck(PORT)
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), SalesRepairHandler)
+    server.daemon_threads = True
     url = f"http://127.0.0.1:{PORT}"
     print("=" * 76)
     print("[ATELIER] LIBRAIRI-E : ATELIER EPHEMERE DE SCISSION DES VENTES")
     print("    Outil autonome (aucune dependance requise, aucun impact sur l'app de prod)")
     print("-" * 76)
-    print(f"    Serveur demarre sur : {url}")
+    print(f"    Base connectée      : {DB_PATH}")
+    print(f"    Serveur démarré sur : {url}")
     print("    Ouverture automatique dans votre navigateur...")
-    print("    Appuyez sur Ctrl+C dans ce terminal lorsque vous avez termine.")
+    print("    Appuyez sur Ctrl+C dans ce terminal lorsque vous avez terminé.")
     print("=" * 76)
 
     # Ouvrir le navigateur après un court délai
@@ -2043,7 +2138,7 @@ def run_server():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nArret de l'outil. A bientot !")
+        print("\nArrêt de l'outil. À bientôt !")
         server.server_close()
 
 

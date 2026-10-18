@@ -229,6 +229,7 @@ MOBILE = [
     ("POST", re.compile(r"^/api/books$")),
     ("POST", re.compile(r"^/api/lots$")),
     ("POST", re.compile(r"^/api/sales$")),
+    ("POST", re.compile(r"^/api/ocr/scan$")),
 ]
 
 
@@ -299,7 +300,7 @@ async def security_gate(request: Request, call_next):
             size = int(request.headers.get("content-length") or 0)
         except ValueError:
             return _deny(400, "Content-Length invalide")
-        limit = MAX_IMPORT_BODY if path == "/api/import" else MAX_BODY
+        limit = MAX_IMPORT_BODY if path in ("/api/import", "/api/ocr/scan") else MAX_BODY
         if size > limit:
             return _deny(413, "Requête trop volumineuse")
 

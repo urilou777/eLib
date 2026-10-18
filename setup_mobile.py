@@ -3,7 +3,6 @@ Génère le certificat TLS local pour les adresses IP du PC et configure le pare
 Nécessite des privilèges Administrateur pour la règle de pare-feu.
 """
 import ctypes
-import os
 import subprocess
 import sys
 from pathlib import Path

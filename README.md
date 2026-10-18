@@ -51,33 +51,105 @@ Dépôt GitHub : [https://github.com/urilou777/librairi-e](https://github.com/ur
 
 ---
 
-## 🛠️ Installation & Démarrage
+## ⛪ Procédure de Déploiement à l'Église (Pas à Pas)
 
-### Option 1 : Lancement rapide via script Windows (recommandé)
+Ce guide détaille la mise en service complète de la librairie le jour du culte, que vous utilisiez ce PC portable ou un autre PC à l'église.
+
+---
+
+### 📋 Checklist Rapide avant le Culte
+
+- [ ] **Code à jour** : Dépôt GitHub cloné ou `git pull` effectué.
+- [ ] **Base de données transférée** (si changement de PC) : Le fichier `data/librairie.db` contient tous les livres, stocks et ventes. **Attention : ce dossier est dans `.gitignore` (zéro cloud). Si vous changez de PC, copiez impérativement le dossier `data/` sur clé USB !**
+- [ ] **Réseau Wi-Fi commun** : Le PC de caisse et les smartphones des bénévoles doivent être connectés au **même réseau** (Wi-Fi de l'église ou Partage de connexion 4G/5G).
+- [ ] **Profil Réseau Windows en "Privé"** : Ne laissez pas Windows en "Réseau Public", sinon le pare-feu bloque l'accès des téléphones.
+
+---
+
+### 🖥️ Étape 1 : Préparation du PC de Caisse (Windows)
+
+#### 1. Installer Python (si non installé sur le PC hôte)
+- Téléchargez Python 3.11+ depuis [python.org](https://www.python.org/).
+- **IMPORTANT** : À la première fenêtre de l'installateur, cochez impérativement la case **☑ Add python.exe to PATH** en bas avant de cliquer sur *Install Now*.
+
+#### 2. Installer les dépendances
+Ouvrez un terminal (PowerShell ou Invite de commandes) dans le dossier du projet :
+```powershell
+pip install -r requirements.txt
+```
+*(Installe FastAPI, Uvicorn, Pillow, OpenPyXL, Cryptography, Segno, PyWebView).*
+
+#### 3. Transférer la base de données réelle (si nouveau PC)
+Si vous installez le projet sur un autre ordinateur que celui-ci :
+1. Sur votre PC actuel, copiez le dossier `data/` (qui contient `librairie.db` et vos sauvegardes).
+2. Collez-le à la racine du projet sur le nouveau PC : `chemin/vers/librairie/data/librairie.db`.
+
+---
+
+### 📱 Étape 2 : Configuration du Réseau & Scanner Mobile (1 seule fois par lieu)
+
+Pour permettre aux bénévoles d'utiliser l'appareil photo de leur smartphone comme douchette :
+
+#### 1. Régler le réseau Windows en "Réseau Privé"
+1. Connectez le PC au Wi-Fi de l'église (ou au partage de connexion 4G).
+2. Ouvrez les **Paramètres Windows** > **Réseau et Internet** > **Wi-Fi** (ou Ethernet) > Cliquez sur le nom de votre réseau.
+3. Cochez **Type de profil réseau : Réseau privé** (indispensable pour que Windows autorise les smartphones à joindre le port HTTPS).
+
+#### 2. Configurer les Certificats & Pare-feu
+Faites un **clic droit sur `Installer_Mobile.bat`** > **Exécuter en tant qu'administrateur**.
+Ce script automatique :
+- Détecte l'adresse IP locale du PC sur le réseau de l'église.
+- Génère les certificats TLS sécurisés (HTTPS) nécessaires pour activer la caméra sur Android/iOS.
+- Ouvre le port TCP 8766 dans le pare-feu Windows pour le sous-réseau local.
+
+---
+
+### 🚀 Étape 3 : Lancement de la Caisse
+
 Double-cliquez simplement sur :
 ```text
 Lancer_Librairie.bat
 ```
-L'application démarre le serveur local et s'ouvre dans une fenêtre dédiée (ou votre navigateur à l'adresse `http://127.0.0.1:8765`).
+*(Ou en ligne de commande : `python run.py`)*
 
-### Configuration du Scanner Mobile (Une seule fois)
-Pour activer les téléphones en Wi-Fi local :
-1. Lancez **`Installer_Mobile.bat`** (clic droit > *Exécuter en tant qu'administrateur*). Ce script :
-   - Détecte l'IP locale du PC et génère les certificats TLS requis.
-   - Configure automatiquement la règle de pare-feu Windows pour le port HTTPS (8766), restreinte au profil privé et au sous-réseau local.
-2. Démarrez l'application, ouvrez l'onglet **Caisse**, puis cliquez sur **📱 Ouvrir Scanner Mobile** pour afficher le QR code d'appairage.
+1. L'application démarre le serveur local et s'ouvre dans une fenêtre dédiée (ou votre navigateur sur `http://127.0.0.1:8765`).
+2. L'écoute HTTPS locale pour les smartphones est active automatiquement sur le port 8766.
 
-### Option 2 : Exécutable autonome Windows (.exe)
-Un exécutable portable autonome est disponible dans le dossier `dist/` :
+---
+
+### 📲 Étape 4 : Connexion des Smartphones des Bénévoles
+
+1. Sur le PC de caisse, rendez-vous dans l'onglet **Caisse**.
+2. Cliquez sur le bouton bleu **📱 Ouvrir Scanner Mobile** : le QR code d'appairage s'affiche à l'écran.
+3. Chaque bénévole ouvre l'appareil photo de son smartphone (connecté au même Wi-Fi) et scanne le QR code.
+4. Le smartphone ouvre l'URL sécurisée `https://<IP_PC>:8766/mobile#token=...` :
+   - *Premier accès* : Le navigateur du smartphone affiche un avertissement de sécurité standard (certificat local privé). Cliquez sur **Paramètres avancés** puis **Continuer vers le site (non sécurisé)**.
+   - Vous pouvez également installer le certificat racine CA en 1 clic via le lien proposé pour supprimer tout avertissement.
+5. L'interface mobile démarre instantanément :
+   - Choisissez le nom du libraire bénévole dans la liste.
+   - Visez les codes-barres des livres : détection immédiate, bips sonores, et panier synchronisé en temps réel sur la Régie du PC !
+
+---
+
+### ✂️ Outil Annexe : Atelier de Scission des Ventes Historiques
+
+Si vous souhaitez scinder les 14 tickets groupés historiques ou renseigner des codes-barres manquants :
+Double-cliquez sur :
 ```text
-dist/Librairie.exe
+Lancer_Atelier_Scission.bat
 ```
+L'interface d'atelier dédiée s'ouvre sur `http://127.0.0.1:8769` avec les 14 ventes historiques filtrées et prêtes à être ventilées en paniers distincts sans toucher au stock.
 
-### Option 3 : Lancement via ligne de commande
-```powershell
-pip install -r requirements.txt
-python run.py
-```
+---
+
+### 🆘 En cas d'imprévu le jour J (Plan B)
+
+* **Le Wi-Fi de l'église bloque les connexions directes entre appareils (isolation client) :**
+  Activez le **Partage de connexion 4G/5G** sur l'un de vos smartphones. Connectez le PC et les autres téléphones sur ce partage de connexion. Lancez `Installer_Mobile.bat` pour prendre en compte la nouvelle IP, et démarrez `Lancer_Librairie.bat`.
+* **Coupure de courant inopinée :**
+  La base SQLite tourne en mode **WAL (Write-Ahead Logging)** : aucune vente n'est corrompue ou perdue. Rallumez simplement le PC et relancez `Lancer_Librairie.bat`.
+* **Archivage fin de service :**
+  À la fin des cultes, allez dans l'onglet **Données & Excel** > Cliquez sur **💾 Sauvegarde immédiate** ou téléchargez le classeur Excel miroir pour vos archives.
 
 ---
 
@@ -92,6 +164,7 @@ python run.py
   - `static/` : Interface web moderne desktop et mobile (HTML5, Vanilla CSS, Vanilla JS, librairie ZXing embarquée hors-ligne).
 - `setup_mobile.py` & `Installer_Mobile.bat` : Outil de configuration automatique des certificats et du pare-feu.
 - `run.py` : Point d'entrée avec double liaison réseau (HTTP 127.0.0.1 + HTTPS LAN sécurisé).
-- `Lancer_Librairie.bat` : Lanceur double-clic pour Windows.
-- `requirements.txt` : Dépendances Python.
+- `Lancer_Librairie.bat` : Lanceur double-clic pour la caisse principale.
+- `Lancer_Atelier_Scission.bat` : Lanceur de l'atelier de scission et gestion des codes-barres.
+- `requirements.txt` : Dépendances Python (FastAPI, Uvicorn, Pillow, OpenPyXL, etc.).
 

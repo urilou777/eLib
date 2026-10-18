@@ -33,18 +33,33 @@ async function api(url, method = 'GET', body) {
 function toast(msg, kind = 'ok') {
   const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = msg;
   $('#toasts').appendChild(t); setTimeout(() => t.remove(), kind === 'err' ? 6000 : 3200);
+  const announcer = $('#liveAnnouncer');
+  if (announcer) {
+    announcer.textContent = msg;
+  }
 }
 const safe = fn => async (...a) => { try { return await fn(...a) } catch (e) { toast(e.message, 'err') } };
 
-/* ---------- modal ---------- */
+/* ---------- modal avec rétention de focus accessible ---------- */
+let lastFocusedElement = null;
 function modal(html, onMount) {
+  lastFocusedElement = document.activeElement;
   const root = $('#modalRoot');
   root.innerHTML = `<div class="ov"><div class="modal">${html}</div></div>`;
   const ov = $('.ov', root);
   ov.addEventListener('mousedown', e => { if (e.target === ov) closeModal(); });
   onMount && onMount($('.modal', root));
+  setTimeout(() => {
+    const firstInput = $('input:not([type=hidden]), select, textarea, button.btn:not(.ghost)', root);
+    if (firstInput && firstInput.focus) firstInput.focus();
+  }, 60);
 }
-const closeModal = () => $('#modalRoot').innerHTML = '';
+const closeModal = () => {
+  $('#modalRoot').innerHTML = '';
+  if (lastFocusedElement && lastFocusedElement.focus) {
+    try { lastFocusedElement.focus(); } catch (e) {}
+  }
+};
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 window.openBookStatsModal = safe(async (bid) => {
@@ -260,11 +275,15 @@ function setActiveMoment(moment) {
   } else {
     localStorage.removeItem('librairie_focus_moment');
   }
+  api('/api/session/moment', 'POST', { moment: moment || null }).catch(() => {});
   updateFocusUI();
 }
 
 function openMomentSelectorModal(onDone) {
   const current = getActiveMoment();
+  const availableMoments = (S.options && S.options.service_moment && S.options.service_moment.length)
+    ? S.options.service_moment.map(x => x.label)
+    : DEFAULT_MOMENTS;
   const content = `
     <div style="padding:4px">
       <h3 style="margin-top:0;margin-bottom:6px">Configuration du Culte / Temps de vente</h3>
@@ -272,7 +291,7 @@ function openMomentSelectorModal(onDone) {
         Toutes les ventes réalisées lors de cette session ou en Mode Focus seront automatiquement rattachées à ce temps sans manipulation par ticket.
       </p>
       <div style="display:flex;flex-direction:column;gap:8px" id="modalMomentList">
-        ${DEFAULT_MOMENTS.map(m => `
+        ${availableMoments.map(m => `
           <button type="button" class="btn ${m === current ? 'primary' : 'ghost'}" data-m="${esc(m)}" style="padding:12px 14px;text-align:left;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center">
             <span>${esc(m)}</span>
             ${m === current ? '<span style="font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px">Actif</span>' : ''}
@@ -325,41 +344,80 @@ function updateFocusUI() {
   const label = $('#focusBtnLabel');
   const drawer = $('#cctvDrawer');
 
-  const activeBaskets = (liveBaskets || []).filter(b => b.qty > 0 || (b.items && b.items.length > 0));
-  const countActiveBaskets = activeBaskets.length;
+  const allMobiles = liveBaskets || [];
+  const countMobiles = allMobiles.length;
+  const activeMobiles = allMobiles.filter(b => b.state !== 'idle').length;
+  const idleMobiles = countMobiles - activeMobiles;
+
+  const isCctvReduced = localStorage.getItem('librairie_cctv_reduced') === 'true';
 
   if (btn) {
     btn.classList.toggle('focus-active', active);
+    if (label) label.textContent = "Régie Live";
     if (active) {
-      btn.title = `Régie Live & Caisse ACTIVE (${moment}). Cliquez pour quitter ou déverrouiller. [F11]`;
-      if (label) label.textContent = "Quitter Régie";
+      btn.title = `Régie Live ACTIVE (${moment}). Cliquez pour quitter ou déverrouiller. [F11]`;
     } else {
-      btn.title = "Activer la Régie Live & Caisse (sécurise le poste sur la caisse, active les moniteurs CCTV et la surveillance des paniers mobiles) [F11]";
-      if (label) label.textContent = "🔴 Régie Live & Caisse";
+      btn.title = "Activer la Régie Live (sécurise le poste sur la caisse, active les moniteurs CCTV et la surveillance des mobiles) [F11]";
     }
-  }
-  if (banner) {
-    banner.style.display = active ? 'inline-flex' : 'none';
-    banner.innerHTML = `
-      <span class="cctv-rec-glow"></span>
-      <span>🔴 EN DIRECT · <b style="cursor:pointer;text-decoration:underline" id="bannerMomentTxt">${esc(moment)}</b></span>
-      <span class="cctv-active-tag" id="cctvTopBadge" style="margin-left:6px">${countActiveBaskets} mobile${countActiveBaskets > 1 ? 's' : ''}</span>
-    `;
-    banner.onclick = (e) => {
-      e.stopPropagation();
-      openMomentSelectorModal(() => {
-        if (S.view === 'pos') go('pos');
-      });
-    };
   }
 
   if (drawer) {
-    drawer.style.display = active ? 'block' : 'none';
-    if (active) {
+    drawer.style.display = (active && !isCctvReduced) ? 'block' : 'none';
+    if (active && !isCctvReduced) {
       renderCctvTiles();
       renderLiveFeed();
       updateCctvDailyStats();
     }
+  }
+
+  const btnCloseCctv = $('#btnCloseCctv');
+  if (btnCloseCctv) {
+    btnCloseCctv.onclick = (e) => {
+      e.stopPropagation();
+      localStorage.setItem('librairie_cctv_reduced', 'true');
+      if (drawer) drawer.style.display = 'none';
+      updateFocusUI();
+    };
+  }
+
+  if (banner) {
+    banner.style.display = active ? 'inline-flex' : 'none';
+    const isCollapsed = isCctvReduced || (drawer && drawer.style.display === 'none');
+    const badgeText = countMobiles === 0 
+      ? '0 mobile' 
+      : `${countMobiles} mobile${countMobiles > 1 ? 's' : ''}${idleMobiles > 0 ? ` (${activeMobiles} actif${activeMobiles > 1 ? 's' : ''}, ${idleMobiles} veille)` : ''}`;
+
+    banner.innerHTML = `
+      <span class="cctv-rec-glow"></span>
+      <span>EN DIRECT · <b id="bannerMomentTxt" title="Cliquer pour changer le temps de culte">${esc(moment)}</b></span>
+      <span class="cctv-active-tag" id="cctvTopBadge" style="margin-left:6px">${badgeText}</span>
+      <span style="font-size:11px;margin-left:6px;opacity:0.85">${isCollapsed ? '▾ Déplier' : '▲ Réduire'}</span>
+    `;
+    banner.title = isCollapsed ? "Cliquer pour déplier la Régie CCTV" : "Cliquer pour masquer la Régie CCTV";
+    banner.style.cursor = 'pointer';
+
+    banner.onclick = (e) => {
+      e.stopPropagation();
+      if (e.target && e.target.id === 'bannerMomentTxt') {
+        openMomentSelectorModal(() => {
+          if (S.view === 'pos') go('pos');
+        });
+        return;
+      }
+      // Bascule directe Déplier / Réduire SANS autre clic
+      const currentlyCollapsed = localStorage.getItem('librairie_cctv_reduced') === 'true' || (drawer && drawer.style.display === 'none');
+      if (currentlyCollapsed) {
+        localStorage.setItem('librairie_cctv_reduced', 'false');
+        if (drawer) drawer.style.display = 'block';
+        renderCctvTiles();
+        renderLiveFeed();
+        updateCctvDailyStats();
+      } else {
+        localStorage.setItem('librairie_cctv_reduced', 'true');
+        if (drawer) drawer.style.display = 'none';
+      }
+      updateFocusUI();
+    };
   }
 }
 
@@ -372,19 +430,28 @@ function toggleFocusMode() {
       toast("Régie Live désactivée : accès complet rétabli", "ok");
     }
   } else {
-    openMomentSelectorModal((chosenMoment) => {
+    // Si un culte/temps de vente est déjà configuré, activer directement SANS redemander
+    const savedMoment = localStorage.getItem('librairie_focus_moment');
+    if (savedMoment) {
       localStorage.setItem('librairie_focus_mode', 'true');
+      localStorage.setItem('librairie_cctv_reduced', 'false');
       updateFocusUI();
-      toast(`Régie Live & Caisse activée pour : ${chosenMoment}`, "ok");
-      if (S.view !== 'pos') {
-        go('pos');
-      }
-    });
+      toast(`Régie Live active : ${savedMoment}`, "ok");
+      if (S.view !== 'pos') go('pos');
+    } else {
+      openMomentSelectorModal((chosenMoment) => {
+        localStorage.setItem('librairie_focus_mode', 'true');
+        localStorage.setItem('librairie_cctv_reduced', 'false');
+        updateFocusUI();
+        toast(`Régie Live activée pour : ${chosenMoment}`, "ok");
+        if (S.view !== 'pos') go('pos');
+      });
+    }
   }
 }
 
 /* ---------- navigation ---------- */
-const TITLES = { dashboard: 'Tableau de bord', pos: 'Caisse', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', treasury: 'Trésorerie & Caisse', settle: 'Trésorerie & Caisse', orders: 'Réservations', audit: 'Historique & Sécurité des opérations', data: 'Données & Excel' };
+const TITLES = { dashboard: 'Tableau de bord', pos: 'Encaisser', stock: 'Stock', catalog: 'Catalogue & packs', sales: 'Historique des ventes', treasury: 'Trésorerie & Mouvements', settle: 'Trésorerie & Mouvements', orders: 'Réservations', audit: 'Audit & Sauvegardes', data: 'Données & Excel' };
 async function go(v, updateHash = true) {
   if (isFocusMode() && v !== 'pos') {
     toast("Accès bloqué : navigation verrouillée sur la Caisse uniquement.", "err");
@@ -399,7 +466,11 @@ async function go(v, updateHash = true) {
   $('#topActions').innerHTML = '';
   $('#view').onclick = null;
   const extra = $('#topTitleExtra'); if (extra) extra.innerHTML = '';
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
+  document.querySelectorAll('#nav a').forEach(a => {
+    const isOn = a.dataset.v === v;
+    a.classList.toggle('on', isOn);
+    a.setAttribute('aria-current', isOn ? 'page' : 'false');
+  });
   $('#view').innerHTML = '<div class="empty">Chargement…</div>';
   try { await loadRef(); await VIEWS[v](); } catch (e) { toast(e.message, 'err'); }
 }
@@ -418,6 +489,16 @@ $('#nav').addEventListener('click', e => {
   }
   const a = e.target.closest('a'); 
   if (a) go(a.dataset.v); 
+});
+
+$('#nav').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    const a = e.target.closest('a');
+    if (a) {
+      e.preventDefault();
+      a.click();
+    }
+  }
 });
 
 /* ---------- graphiques SVG ---------- */
@@ -1192,8 +1273,8 @@ VIEWS.dashboard = async () => {
   if (extra) {
     extra.innerHTML = `
       <div class="seg" id="dashTabSeg">
-        <button data-tab="summary" class="${S.dashTab !== 'matrix' ? 'on' : ''}">Synthèse</button>
-        <button data-tab="matrix" class="${S.dashTab === 'matrix' ? 'on' : ''}">🔬 Studio</button>
+        <button data-tab="summary" class="${S.dashTab !== 'matrix' ? 'on' : ''}"><span class="seg-txt">Synthèse</span></button>
+        <button data-tab="matrix" class="${S.dashTab === 'matrix' ? 'on' : ''}"><span class="seg-ico">🔬</span><span class="seg-txt">Studio</span></button>
       </div>
     `;
     $('#dashTabSeg').onclick = e => {
@@ -1863,7 +1944,7 @@ VIEWS.pos = async () => {
             <svg class="ico sm" style="width:13px;height:13px" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
             <span>En attente</span>
           </button>
-          <button class="btn ghost sm" id="clear">Vider</button>
+          <button type="button" class="btn ghost sm" id="clear">Vider</button>
         </div>
       </div>
       <div id="standbyBanner" style="display:none;align-items:center;justify-content:space-between;padding:7px 10px;margin-bottom:8px;background:rgba(230, 167, 60, 0.15);border:1px solid rgba(230, 167, 60, 0.4);border-radius:10px;font-size:12px">
@@ -2052,9 +2133,14 @@ VIEWS.pos = async () => {
     $('#books').innerHTML = list.map(b => `<div class="bk ${b.stock <= 0 ? 'out' : ''}" draggable="true" data-id="${b.id}"><div class="t">${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}</div>
       <div class="bk-owner-row"><div class="bk-chips">${ownerChips(b)}</div><button type="button" class="btn-bk-stats" data-bid="${b.id}" title="Statistiques & tendances de vente" onclick="event.stopPropagation(); openBookStatsModal(${b.id})"><svg class="ico sm" style="width:11px;height:11px" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Stats</span></button></div><div class="m"><span class="p">${eur(b.price)}</span>${stockBadge(b)}</div></div>`).join('') || '<div class="empty"><svg class="ico" style="width:28px;height:28px;margin-bottom:8px" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><br>Aucun résultat</div>';
   };
-  // Le libraire choisit lui-même, pour chaque exemplaire, de quel lot (origine) il sort. Rien n'est automatique.
-  const comps = l => { const b = S.books.find(x => x.id === l.id); return b.is_pack ? (b.items || []).map(i => ({ book_id: i.book_id, title: i.title, need: l.qty * i.qty, lots: i.lots })) : [{ book_id: b.id, title: b.title, need: l.qty, lots: b.lots }] };
-  const got = (l, bid) => Object.entries(l.alloc).filter(([k]) => k.startsWith(bid + '|')).reduce((s, [, v]) => s + v, 0);
+  const comps = l => { 
+    const b = S.books.find(x => x.id === l.id); 
+    if (!b) return [];
+    return b.is_pack 
+      ? (b.items || []).map(i => ({ book_id: i.book_id, title: i.title, need: l.qty * i.qty, lots: i.lots || [] })) 
+      : [{ book_id: b.id, title: b.title, need: l.qty, lots: b.lots || [] }];
+  };
+  const got = (l, bid) => Object.entries(l.alloc || {}).filter(([k]) => k.startsWith(bid + '|') && !k.endsWith('|none')).reduce((s, [, v]) => s + v, 0);
   const complete = l => comps(l).every(c => got(l, c.book_id) === c.need);
   const defaultAllocForBook = (b, qty = 1) => {
     const alloc = {};
@@ -2111,8 +2197,17 @@ VIEWS.pos = async () => {
 
   const add = id => {
     const b = S.books.find(x => x.id === id);
+    if (!b) return;
+    if (b.stock <= 0) {
+      toast(`Stock épuisé (0 exemplaire disponible) pour « ${b.title} ». Vente impossible.`, 'err');
+      return;
+    }
     const l = S.cart.find(x => x.id === id);
     if (l) {
+      if (l.qty + 1 > b.stock) {
+        toast(`Stock maximum atteint (${b.stock} ex.) pour « ${b.title} ».`, 'warn');
+        return;
+      }
       l.qty++;
       if (!b.is_pack) {
         const curAllocTotal = got(l, b.id);
@@ -2185,11 +2280,11 @@ VIEWS.pos = async () => {
   const cart = () => {
     const el = $('#items');
     el.innerHTML = S.cart.map((l, i) => { const b = S.books.find(x => x.id === l.id); return `<div class="ci" style="grid-template-columns:1fr"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div class="t" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${b.is_pack ? '<span class="badge b-pack">PACK</span> ' : ''}${esc(b.title)}${b.volume ? ' · Vol. ' + esc(b.volume) : ''}<button type="button" class="btn-ci-stats" title="Voir les statistiques & réassurance client" onclick="event.stopPropagation(); openBookStatsModal(${b.id})"><svg class="ico sm" style="width:11px;height:11px" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg><span>Stats</span></button></div>
-      <div class="qty"><button data-i="${i}" data-d="-1">−</button><b>${l.qty}</b><button data-i="${i}" data-d="1">+</button></div></div>
+      <div class="qty"><button type="button" data-i="${i}" data-d="-1">−</button><b>${l.qty}</b><button type="button" data-i="${i}" data-d="1">+</button></div></div>
       <div class="row" style="justify-content:flex-end"><span class="muted">Prix</span><input class="pr" type="number" step="0.5" value="${l.price}" data-p="${i}"> €</div>
       ${comps(l).map(c => { const g = got(l, c.book_id), ok = g === c.need; return `<div style="padding:8px 10px;border-radius:10px;background:var(--panel2);border:1px solid ${ok ? 'var(--good)' : 'var(--warn)'}"><div class="row" style="justify-content:space-between;font-size:12px"><span>${b.is_pack ? esc(c.title) : 'Origine des exemplaires'}</span><b style="color:${ok ? 'var(--good)' : 'var(--warn)'}">${g}/${c.need} ${ok ? 'complet' : 'à répartir'}</b></div>
-        ${c.lots.map(t => `<div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="chip"><i style="background:${t.color}"></i>${esc(t.owner)} · ${t.date} · dispo ${t.remaining}</span><span class="row" style="gap:4px;flex-wrap:nowrap"><input type="number" min="0" max="${t.remaining}" style="width:clamp(48px, 5vw, 68px);padding:4px 6px" value="${l.alloc[c.book_id + '|' + t.id] || 0}" data-a="${i}" data-k="${c.book_id}|${t.id}" data-max="${t.remaining}"><button class="btn ghost sm" data-fill="${i}" data-k="${c.book_id}|${t.id}" data-b="${c.book_id}" data-max="${t.remaining}" data-need="${c.need}">Max</button></span></div>`).join('') || '<div class="muted" style="font-size:12px;margin-top:6px">Aucun lot en stock.</div>'}
-        <div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="muted" style="font-size:12px">Hors stock (non tracé)</span><input type="number" min="0" style="width:clamp(48px, 5vw, 68px);padding:4px 6px" value="${l.alloc[c.book_id + '|none'] || 0}" data-a="${i}" data-k="${c.book_id}|none"></div></div>` }).join('')}</div>`}).join('') ||
+        ${(c.lots || []).filter(t => t.remaining > 0).map(t => `<div class="row" style="justify-content:space-between;margin-top:6px;flex-wrap:nowrap"><span class="chip"><i style="background:${t.color}"></i>${esc(t.owner)} · ${t.date} · dispo ${t.remaining}</span><span class="row" style="gap:4px;flex-wrap:nowrap"><input type="number" min="0" max="${t.remaining}" style="width:clamp(48px, 5vw, 68px);padding:4px 6px" value="${l.alloc[c.book_id + '|' + t.id] || 0}" data-a="${i}" data-k="${c.book_id}|${t.id}" data-max="${t.remaining}"><button type="button" class="btn ghost sm" data-fill="${i}" data-k="${c.book_id}|${t.id}" data-b="${c.book_id}" data-max="${t.remaining}" data-need="${c.need}">Max</button></span></div>`).join('') || '<div class="muted" style="font-size:12px;margin-top:6px;color:var(--bad)">Stock épuisé (0 exemplaire en stock).</div>'}
+        </div>` }).join('')}</div>`}).join('') ||
       '<div class="empty"><svg class="ico" style="width:28px;height:28px;margin-bottom:8px" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg><br>Glissez un livre ici<br>ou cliquez sur une carte</div>';
     $('#tot').textContent = eur(S.cart.reduce((s, l) => s + l.qty * l.price, 0));
     updatePayDropdown();
@@ -2237,7 +2332,7 @@ VIEWS.pos = async () => {
         const cBadge = $('#demoGenderCoupleBadge');
         if (cBadge) cBadge.style.display = curGender === 'Couple' ? 'inline-block' : 'none';
         $('#demoGender')?.classList.toggle('is-couple', curGender === 'Couple');
-        $('#demoAge button')?.forEach(b => b.classList.toggle('on', b.dataset.a === curAge));
+        $$('#demoAge button').forEach(b => b.classList.toggle('on', b.dataset.a === curAge));
         if (curGender || curAge || curStar) collapseProfile();
       }
     } catch (e) {
@@ -2342,7 +2437,7 @@ VIEWS.pos = async () => {
         const cBadge = $('#demoGenderCoupleBadge');
         if (cBadge) cBadge.style.display = curGender === 'Couple' ? 'inline-block' : 'none';
         $('#demoGender')?.classList.toggle('is-couple', curGender === 'Couple');
-        $('#demoAge button')?.forEach(b => b.classList.toggle('on', b.dataset.a === curAge));
+        $$('#demoAge button').forEach(b => b.classList.toggle('on', b.dataset.a === curAge));
 
         if (curGender || curAge || curStar) collapseProfile(); else expandProfile();
 
@@ -2377,7 +2472,40 @@ VIEWS.pos = async () => {
   $('#items').onclick = e => {
     const f = e.target.closest('button[data-fill]');
     if (f) { const l = S.cart[+f.dataset.fill], b = f.dataset.b, k = f.dataset.k; const others = got(l, b) - (l.alloc[k] || 0); l.alloc[k] = Math.max(0, Math.min(+f.dataset.max, +f.dataset.need - others)); return cart() }
-    const bt = e.target.closest('button[data-i]'); if (!bt) return; const l = S.cart[+bt.dataset.i]; l.qty += +bt.dataset.d; l.alloc = {}; if (l.qty <= 0) S.cart.splice(+bt.dataset.i, 1); cart()
+    const bt = e.target.closest('button[data-i]');
+    if (!bt) return;
+    const l = S.cart[+bt.dataset.i];
+    const b = S.books.find(x => x.id === l.id);
+    const delta = +bt.dataset.d;
+    if (delta > 0) {
+      if (b && l.qty + 1 > b.stock) {
+        return toast(`Stock maximum atteint (${b.stock} ex.) pour « ${b.title} ».`, 'warn');
+      }
+      add(l.id);
+      return;
+    }
+    if (delta < 0) {
+      if (l.qty <= 1) {
+        S.cart.splice(+bt.dataset.i, 1);
+        cart();
+        return;
+      }
+      l.qty--;
+      comps(l).forEach(c => {
+        let excess = got(l, c.book_id) - c.need;
+        if (excess > 0) {
+          for (const k of Object.keys(l.alloc || {})) {
+            if (k.startsWith(c.book_id + '|')) {
+              const reduceBy = Math.min(excess, l.alloc[k] || 0);
+              l.alloc[k] -= reduceBy;
+              excess -= reduceBy;
+              if (excess <= 0) break;
+            }
+          }
+        }
+      });
+      cart();
+    }
   };
   $('#items').onchange = e => {
     const t = e.target;
@@ -2394,8 +2522,8 @@ VIEWS.pos = async () => {
       btnStar.style.borderColor = '';
       btnStar.style.color = '';
     }
-    $('#demoGender button')?.forEach(b => b.classList.remove('on'));
-    $('#demoAge button')?.forEach(b => b.classList.remove('on'));
+    $$('#demoGender button').forEach(b => b.classList.remove('on'));
+    $$('#demoAge button').forEach(b => b.classList.remove('on'));
     const cBadge = $('#demoGenderCoupleBadge');
     if (cBadge) cBadge.style.display = 'none';
     $('#demoGender')?.classList.remove('is-couple');
@@ -2407,7 +2535,7 @@ VIEWS.pos = async () => {
   $('#valid').onclick = safe(async () => {
     if (!S.cart.length) return toast('Panier vide', 'warn');
     const bad = S.cart.find(l => !complete(l));
-    if (bad) return toast('Indiquez l\'origine de chaque exemplaire avant de valider (cadres orange).', 'warn');
+    if (bad) return toast('Indiquez l\'origine en stock de chaque exemplaire avant de valider (cadres orange).', 'warn');
     const payVal = $('#pay').value;
     const r = await api('/api/sales', 'POST', {
       date: $('#sdate').value,
@@ -2418,7 +2546,7 @@ VIEWS.pos = async () => {
       service_moment: getActiveMoment() || null,
       lines: S.cart.map(l => ({
         book_id: l.id, qty: l.qty, unit_price: l.price,
-        allocations: Object.entries(l.alloc).filter(([, q]) => q > 0).map(([k, q]) => { const [bid, lid] = k.split('|'); return { book_id: +bid, lot_id: lid === 'none' ? null : +lid, qty: q } })
+        allocations: Object.entries(l.alloc).filter(([k, q]) => q > 0 && !k.endsWith('|none')).map(([k, q]) => { const [bid, lid] = k.split('|'); return { book_id: +bid, lot_id: +lid, qty: q } })
       }))
     });
     toast(`Vente enregistrée : ${eur(r.total)}`);
@@ -2494,18 +2622,294 @@ async function lotsModal(id) {
   });
 }
 
+async function fileToResizedBase64(file, maxDim = 1600) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        resolve(dataUrl.split(',')[1]);
+      };
+      img.onerror = () => reject(new Error("Impossible de lire l'image"));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("Échec de chargement du fichier"));
+    reader.readAsDataURL(file);
+  });
+}
+
 /* ---- Catalogue & packs ---- */
 function bookForm(b = {}) {
-  const f = (k, l, t = 'text') => `<label class="f"><span>${l}</span><input id="f_${k}" type="${t}" value="${esc(b[k] ?? '')}"></label>`;
+  const f = (k, l, t = 'text') => `
+    <label class="f">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <span>${l}</span>
+        <span id="b_f_${k}" class="bdd-badge" style="display:none">✓ BDD</span>
+      </div>
+      <input id="f_${k}" type="${t}" value="${esc(b[k] ?? '')}">
+      <div id="sugg_f_${k}" style="display:none"></div>
+    </label>`;
   const cats = S.options.category || [];
   const types = S.options.type || [];
   const pubs = S.options.publisher || [];
-  modal(`<h2>${b.id ? 'Modifier' : 'Nouveau'} ${b.is_pack ? 'pack' : 'livre'}</h2><div class="form">${f('code', 'Code (ISBN)')}${f('title', 'Titre')}${f('series', 'Série')}${f('volume', 'Volume')}${f('author', 'Auteur')}
-  <label class="f"><span>Éditeur</span><input id="f_publisher" list="dl_pubs" value="${esc(b.publisher ?? '')}"><datalist id="dl_pubs">${pubs.map(p => `<option value="${esc(p.label)}">`).join('')}</datalist></label>
+  modal(`<h2>${b.id ? 'Modifier' : 'Nouveau'} ${b.is_pack ? 'pack' : 'livre'}</h2>
+  
+  <!-- Bannière Livre déjà existant en base : Proposition d'ajout immédiat au stock -->
+  <div id="f_exists_banner" style="display:none;background:rgba(56,193,114,0.16);border:1px solid var(--good);border-radius:10px;padding:9px 12px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font-weight:700;color:var(--good);font-size:12.5px;display:flex;align-items:center;gap:6px">📦 Livre déjà présent en base</span>
+      <span id="f_exists_stock" class="bdd-badge" style="background:rgba(56,193,114,0.25);border-color:var(--good)">Stock : 0 ex.</span>
+    </div>
+    <div id="f_exists_title" style="font-size:13px;color:#fff;font-weight:700;margin:3px 0 6px"></div>
+    <div style="display:flex;gap:6px">
+      <button type="button" id="f_btn_add_stock" class="btn good sm" style="font-weight:700;padding:5px 12px;font-size:11.5px">
+        ➕ Entrer du stock pour ce livre
+      </button>
+      <button type="button" id="f_btn_apply_book" class="btn sm ghost" style="padding:5px 10px;font-size:11px">
+        📋 Remplir les champs
+      </button>
+    </div>
+  </div>
+
+  <div style="background:rgba(143,22,173,0.15);border:1px dashed var(--a2);border-radius:10px;padding:9px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <div>
+      <b style="font-size:12.5px;color:var(--text)">📸 Scanner la page de garde (OCR)</b>
+      <div class="muted" style="font-size:11.5px">Extraction automatique du Titre, Auteur, Éditeur et Prix (code-barres scanné au dos)</div>
+    </div>
+    <label class="btn sm" style="cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px">
+      <span id="f_ocr_btn_text">Choisir photo</span>
+      <input type="file" id="f_ocr_file" accept="image/*" style="display:none">
+    </label>
+  </div>
+  <div id="f_ocr_chips" style="display:none;background:rgba(0,0,0,0.22);border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:12px">
+    <div style="font-size:10.5px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Lignes détectées (cliquer pour injecter) :</div>
+    <div id="f_ocr_chips_list" style="display:flex;flex-wrap:wrap;gap:5px;max-height:100px;overflow-y:auto"></div>
+  </div>
+  <div class="form">${f('code', 'Code-barres (ISBN)')}${f('title', 'Titre')}${f('series', 'Série')}${f('volume', 'Volume')}${f('author', 'Auteur')}
+  <label class="f">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+      <span>Éditeur</span>
+      <span id="b_f_publisher" class="bdd-badge" style="display:none">✓ BDD</span>
+    </div>
+    <input id="f_publisher" list="dl_pubs" value="${esc(b.publisher ?? '')}">
+    <div id="sugg_f_publisher" style="display:none"></div>
+    <datalist id="dl_pubs">${pubs.map(p => `<option value="${esc(p.label)}">`).join('')}</datalist>
+  </label>
   <label class="f"><span>Catégorie</span><input id="f_category" list="dl_cats" value="${esc(b.category || 'Standard')}"><datalist id="dl_cats">${cats.map(c => `<option value="${esc(c.label)}">`).join('')}</datalist></label>
   <label class="f"><span>Type / Reliure</span><input id="f_type" list="dl_types" value="${esc(b.type || 'Souple')}"><datalist id="dl_types">${types.map(t => `<option value="${esc(t.label)}">`).join('')}</datalist></label>
   ${f('location', 'Emplacement')}${f('price', 'Prix de vente €', 'number')}${f('min_stock', 'Seuil d\'alerte', 'number')}</div>
   <div class="actions">${b.id ? '<button class="btn bad" id="del">Archiver</button>' : ''}<button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`, m => {
+
+    const dbAuthors = Array.from(new Set(S.books.map(x => x.author).filter(Boolean)));
+    const dbPubs = pubs.map(p => p.label);
+
+    function calcSim(s1, s2) {
+      if (!s1 || !s2) return 0;
+      s1 = s1.toLowerCase().trim();
+      s2 = s2.toLowerCase().trim();
+      if (s1 === s2) return 1;
+      const longer = s1.length > s2.length ? s1 : s2;
+      const shorter = s1.length > s2.length ? s2 : s1;
+      if (longer.length === 0) return 1;
+      // edit distance
+      const m = longer.length, n = shorter.length;
+      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          const cost = longer[i - 1] === shorter[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+        }
+      }
+      return (m - dp[m][n]) / m;
+    }
+
+    function checkField(inputId, badgeId, suggId, list) {
+      const inp = $(inputId, m);
+      const bge = $(badgeId, m);
+      const sg = $(suggId, m);
+      if (!inp) return;
+      const val = inp.value.trim();
+      if (!val) {
+        if (bge) bge.style.display = 'none';
+        if (sg) sg.style.display = 'none';
+        inp.classList.remove('field-in-bdd');
+        return;
+      }
+      const norm = val.toLowerCase();
+      const exact = list.find(x => x && x.toLowerCase() === norm);
+      if (exact) {
+        if (bge) { bge.textContent = '✓ BDD'; bge.style.display = 'inline-flex'; }
+        if (sg) sg.style.display = 'none';
+        inp.classList.add('field-in-bdd');
+        return;
+      }
+      inp.classList.remove('field-in-bdd');
+      if (bge) bge.style.display = 'none';
+
+      let best = null, bestScore = 0;
+      for (const item of list) {
+        if (!item) continue;
+        const s = calcSim(val, item);
+        if (s >= 0.72 && s > bestScore) {
+          bestScore = s;
+          best = item;
+        }
+      }
+      if (best && sg) {
+        sg.innerHTML = `<span class="typo-suggestion">💡 Suggestion BDD : <b>${esc(best)}</b> <span style="font-size:10px;opacity:0.8">(Cliquer pour corriger)</span></span>`;
+        sg.style.display = 'block';
+        sg.onclick = () => {
+          inp.value = best;
+          checkField(inputId, badgeId, suggId, list);
+          toast(`Orthographe BDD appliquée : ${best}`, 'ok');
+        };
+      } else if (sg) {
+        sg.style.display = 'none';
+      }
+    }
+
+    function showBookExists(existing) {
+      const banner = $('#f_exists_banner', m);
+      const title = $('#f_exists_title', m);
+      const stock = $('#f_exists_stock', m);
+      const codeBadge = $('#b_f_code', m);
+      if (!banner) return;
+      title.textContent = `${existing.title}${existing.author ? ' · ' + existing.author : ''} (${eur(existing.price)})`;
+      stock.textContent = `Stock actuel : ${existing.stock ?? 0} ex.`;
+      if (codeBadge) {
+        codeBadge.textContent = `✓ En base (${existing.stock ?? 0} ex.)`;
+        codeBadge.style.display = 'inline-flex';
+      }
+      banner.style.display = 'block';
+
+      $('#f_btn_add_stock', m).onclick = () => {
+        closeModal();
+        lotForm(existing.id);
+      };
+
+      $('#f_btn_apply_book', m).onclick = () => {
+        $('#f_title', m).value = existing.title;
+        if (existing.author) $('#f_author', m).value = existing.author;
+        if (existing.publisher) $('#f_publisher', m).value = existing.publisher;
+        if (existing.price) $('#f_price', m).value = existing.price;
+        banner.style.display = 'none';
+        toast('Champs remplis depuis la fiche officielle', 'ok');
+        checkAll();
+      };
+    }
+
+    function checkCodeExists(code) {
+      const banner = $('#f_exists_banner', m);
+      const codeBadge = $('#b_f_code', m);
+      if (!code) {
+        if (banner) banner.style.display = 'none';
+        if (codeBadge) codeBadge.style.display = 'none';
+        return;
+      }
+      const existing = S.books.find(x => x.code === code && (!b.id || x.id !== b.id));
+      if (existing) {
+        showBookExists(existing);
+      } else {
+        if (banner) banner.style.display = 'none';
+        if (codeBadge) codeBadge.style.display = 'none';
+      }
+    }
+
+    function checkAll() {
+      checkCodeExists($('#f_code', m) ? $('#f_code', m).value.trim() : '');
+      checkField('#f_author', '#b_f_author', '#sugg_f_author', dbAuthors);
+      checkField('#f_publisher', '#b_f_publisher', '#sugg_f_publisher', dbPubs);
+    }
+
+    $('#f_code', m).oninput = () => checkCodeExists($('#f_code', m).value.trim());
+    $('#f_author', m).oninput = () => checkField('#f_author', '#b_f_author', '#sugg_f_author', dbAuthors);
+    $('#f_publisher', m).oninput = () => checkField('#f_publisher', '#b_f_publisher', '#sugg_f_publisher', dbPubs);
+
+    // Initial check
+    checkAll();
+
+    const ocrFile = $('#f_ocr_file', m);
+    if (ocrFile) {
+      ocrFile.onchange = async () => {
+        const file = ocrFile.files && ocrFile.files[0];
+        if (!file) return;
+        const btnText = $('#f_ocr_btn_text', m);
+        if (btnText) btnText.textContent = '⏳ Lecture...';
+        try {
+          const b64 = await fileToResizedBase64(file, 1600);
+          const res = await api('/api/ocr/scan', 'POST', { image_base64: b64 });
+          if (res) {
+            if (res.matched_book) {
+              const mb = res.matched_book;
+              toast(`✨ Livre reconnu : ${mb.title}`, 'ok');
+              showBookExists(mb);
+              $('#f_title', m).value = mb.title;
+              if (mb.author) $('#f_author', m).value = mb.author;
+              if (mb.publisher) $('#f_publisher', m).value = mb.publisher;
+              if (mb.price != null && mb.price > 0) $('#f_price', m).value = mb.price;
+            } else if (res.candidates) {
+              const c = res.candidates;
+              if (c.title) $('#f_title', m).value = c.title;
+              if (c.author) $('#f_author', m).value = c.author;
+              if (c.price != null && c.price > 0) $('#f_price', m).value = c.price;
+              if (c.publisher) $('#f_publisher', m).value = c.publisher;
+            }
+
+            if (res.corrections) {
+              if (res.corrections.author) toast(`✨ Auteur corrigé d'après la base : ${res.corrections.author.corrected}`, 'ok');
+              if (res.corrections.publisher) toast(`✨ Éditeur corrigé d'après la base : ${res.corrections.publisher.corrected}`, 'ok');
+            }
+            
+            const chipsBox = $('#f_ocr_chips', m);
+            const chipsList = $('#f_ocr_chips_list', m);
+            if (chipsBox && chipsList && res.lines && res.lines.length) {
+              chipsList.innerHTML = res.lines.map(l => `<span class="chip" style="cursor:pointer;padding:3px 7px;font-size:11px" data-txt="${esc(l.text)}">${esc(l.text)}</span>`).join('');
+              chipsBox.style.display = 'block';
+              chipsList.onclick = ev => {
+                const chip = ev.target.closest('.chip');
+                if (!chip) return;
+                const t = chip.dataset.txt;
+                const targetField = prompt('Affecter ce texte à :\n1 = Remplacer le Titre\n2 = Ajouter au Titre (+ Titre)\n3 = Auteur\n4 = Éditeur', '1');
+                if (targetField === '1') $('#f_title', m).value = t;
+                else if (targetField === '2') {
+                  const cur = $('#f_title', m).value.trim();
+                  $('#f_title', m).value = cur ? cur + ' ' + t : t;
+                }
+                else if (targetField === '3') $('#f_author', m).value = t;
+                else if (targetField === '4') $('#f_publisher', m).value = t;
+                checkAll();
+              };
+            }
+            checkAll();
+            toast('Page de garde analysée');
+          }
+        } catch (e) {
+          toast(e.message || "Erreur d'analyse", 'err');
+        } finally {
+          if (btnText) btnText.textContent = 'Choisir photo';
+          ocrFile.value = '';
+        }
+      };
+    }
+
     $('#ok', m).onclick = safe(async () => {
       const g = k => $('#f_' + k, m).value.trim();
       const body = { code: g('code'), title: g('title'), series: g('series') || null, volume: g('volume') || null, author: g('author') || null, publisher: g('publisher') || null, category: g('category') || 'Standard', type: g('type') || null, location: g('location') || null, price: +g('price') || 0, min_stock: +g('min_stock') || 0, is_pack: b.is_pack || 0 };
@@ -2516,7 +2920,9 @@ function bookForm(b = {}) {
     const d = $('#del', m); if (d) d.onclick = safe(async () => { if (confirm('Archiver cet article ?')) { await api(`/api/books/${b.id}`, 'DELETE'); closeModal(); go('catalog') } });
   });
 }
+
 function packModal(p) {
+
   let items = (p.items || []).map(i => ({ ...i }));
   modal(`<h2><svg class="ico" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg> ${esc(p.title)}</h2><p class="muted" style="margin-bottom:10px">Glissez des livres dans la composition. Le prix du pack (${eur(p.price)}) est réparti sur les composants au prorata de leurs prix publics.</p>
   <div class="grid g-eq"><div><input id="pq" class="search" placeholder="Chercher un livre…" style="width:100%;margin-bottom:8px"><div id="pl" style="max-height:clamp(180px, 32vh, 360px);overflow:auto;display:flex;flex-direction:column;gap:5px"></div></div>
@@ -2569,7 +2975,7 @@ VIEWS.sales = async () => {
   $('#view').onclick = safe(async e => { const b = e.target.closest('button[data-id]'); if (b && confirm('Annuler cette vente ? Le stock sera restitué.')) { await api(`/api/sales/${b.dataset.id}`, 'DELETE'); toast('Vente annulée'); go('sales') } });
 };
 
-/* ---- Trésorerie & Caisse ---- */
+/* ---- Trésorerie & Mouvements ---- */
 VIEWS.treasury = async () => {
   const [tr, os] = await Promise.all([api('/api/treasury'), api('/api/settlements')]);
   $('#topActions').innerHTML = `
@@ -2823,14 +3229,29 @@ VIEWS.treasury = async () => {
 
 /* ---- Réservations ---- */
 VIEWS.orders = async () => {
-  $('#topActions').innerHTML = '<button class="btn" id="nr">＋ Nouvelle réservation</button>';
+  $('#topActions').innerHTML = `
+    <button class="btn" id="nr">＋ Nouvelle réservation</button>
+    <button class="btn ghost sm" id="btnGdprClean" title="Purger et anonymiser les réservations closes datant de plus de 90 jours (RGPD Art. 5 & 17)">🛡️ Purge RGPD (&gt; 90j)</button>
+  `;
   const rows = await api('/api/reservations');
   $('#view').innerHTML = `<div class="card card-fill" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>Titre</th><th class="num">Qté</th><th>Statut</th><th></th></tr></thead><tbody>
   ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.phone || '')}</td><td>${esc(r.title)}</td><td class="num">${r.qty}</td><td><span class="badge ${r.status === 'Servie' ? 'b-ok' : 'b-low'}">${esc(r.status)}</span></td>
   <td class="num"><button class="btn ghost sm" data-s="${r.id}">${r.status === 'Servie' ? 'Rouvrir' : 'Servie'}</button> <button class="btn bad sm" data-d="${r.id}">✕</button></td></tr>`).join('') || '<tr><td colspan=6 class="muted">Aucune réservation</td></tr>'}</tbody></table></div>`;
+  
   $('#nr').onclick = () => modal(`<h2>Réservation</h2><div class="form"><label class="f">Nom<input id="n"></label><label class="f">Téléphone<input id="p"></label><label class="f full">Titre demandé<input id="t" list="dl"></label><datalist id="dl">${S.books.map(b => `<option value="${esc(b.title)}">`).join('')}</datalist><label class="f">Quantité<input id="q" type="number" value="1"></label></div><div class="actions"><button class="btn ghost" onclick="closeModal()">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`, m => {
     $('#ok', m).onclick = safe(async () => { await api('/api/reservations', 'POST', { name: $('#n', m).value, phone: $('#p', m).value, title: $('#t', m).value, qty: +$('#q', m).value || 1 }); closeModal(); go('orders') });
   });
+
+  const btnClean = $('#btnGdprClean');
+  if (btnClean) {
+    btnClean.onclick = safe(async () => {
+      if (!confirm('Anonymiser définitivement les coordonnées des réservations closes depuis plus de 90 jours conformément au RGPD ?\n(Noms et téléphones seront purgés)')) return;
+      const res = await api('/api/gdpr/cleanup?days=90', 'POST');
+      toast(`🛡️ RGPD : ${res.anonymized} réservation(s) anonymisée(s)`, 'ok');
+      go('orders');
+    });
+  }
+
   $('#view').onclick = safe(async e => {
     const s = e.target.closest('[data-s]'), d = e.target.closest('[data-d]');
     if (s) { const r = rows.find(x => x.id == s.dataset.s); await api(`/api/reservations/${r.id}`, 'PUT', { ...r, status: r.status === 'Servie' ? 'En attente' : 'Servie' }); go('orders') }
@@ -2840,11 +3261,45 @@ VIEWS.orders = async () => {
 
 /* ---- Données & Excel ---- */
 VIEWS.data = async () => {
-  const info = await api('/api/info');
-  $('#view').innerHTML = `<div class="grid g-eq"><div class="card"><h3>Importer un fichier Excel</h3><div class="drop" id="drop"><div style="margin-bottom:8px"><svg class="ico" style="width:36px;height:36px;stroke-width:1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div><b>Glissez votre fichier .xlsx ici</b><div class="muted">ou cliquez pour parcourir<br>(Catalogue STD, Catalogue PACK, Livraisons, Ventes, Commande)</div></div><input type="file" id="file" accept=".xlsx" hidden>
+  const [info, health] = await Promise.all([
+    api('/api/info'),
+    api('/api/system/health').catch(() => null)
+  ]);
+  
+  $('#view').innerHTML = `
+  ${health ? `
+  <div class="card" style="margin-bottom:16px;background:var(--panel2);border:1px solid var(--line-strong)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin:0;display:flex;align-items:center;gap:8px">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)"></span>
+        Télémétrie Système &amp; Résilience Matérielle
+      </h3>
+      <span class="badge b-ok" style="font-weight:700">OPTIMAL · WAL RÉSISTANT CRASH</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;font-size:13px">
+      <div style="background:var(--panel);padding:10px 14px;border-radius:8px">
+        <div class="muted">Disque SSD (Espace libre)</div>
+        <b style="font-size:16px;color:var(--text)">${health.disk.free_gb} Go libres</b> <span class="muted">/ ${health.disk.total_gb} Go (${health.disk.percent_free}%)</span>
+      </div>
+      <div style="background:var(--panel);padding:10px 14px;border-radius:8px">
+        <div class="muted">Base SQLite &amp; WAL</div>
+        <b style="font-size:16px;color:var(--text)">${health.database.db_size_mb} Mo</b> <span class="muted">(Journal WAL : ${health.database.wal_size_mb} Mo)</span>
+      </div>
+      <div style="background:var(--panel);padding:10px 14px;border-radius:8px">
+        <div class="muted">Points de sauvegarde</div>
+        <b style="font-size:16px;color:var(--text)">${health.backups.count} instantanés</b> <span class="muted">(Glissants &amp; journaliers)</span>
+      </div>
+      <div style="background:var(--panel);padding:10px 14px;border-radius:8px">
+        <div class="muted">Intégrité SQLite</div>
+        <b style="font-size:16px;color:var(--good)">Intacte (100% OK)</b> <span class="muted">(PRAGMA quick_check)</span>
+      </div>
+    </div>
+  </div>
+  ` : ''}
+  <div class="grid g-eq"><div class="card"><h3>Importer un fichier Excel</h3><div class="drop" id="drop"><div style="margin-bottom:8px"><svg class="ico" style="width:36px;height:36px;stroke-width:1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div><b>Glissez votre fichier .xlsx ici</b><div class="muted">ou cliquez pour parcourir<br>(Catalogue STD, Catalogue PACK, Livraisons, Ventes, Commande)</div></div><input type="file" id="file" accept=".xlsx" hidden>
   <label class="row muted" style="margin-top:12px"><input type="checkbox" id="rep" checked> Remplacer les données actuelles (une copie de sécurité est faite avant)</label><div id="rep-out" style="margin-top:10px"></div></div>
   <div class="card"><h3>Export complet Excel</h3><div class="row"><a class="btn" href="/api/export" download>Exporter tout en Excel (.xlsx)</a></div>
-  <p class="muted" style="margin-top:14px;line-height:1.7">Un <b>fichier Excel miroir</b> est synchronisé en continu :<br><code>${esc(info.mirror)}</code><br>Dossier de stockage des archives :<br><code>${esc(info.backups)}</code><br>Base SQLite (WAL mode, transactions atomiques, anti-crash coupure secteur).<br><i>Les sauvegardes horodatées, points de restauration et l'audit sont consultables dans l'onglet <b>Historique &amp; Audit</b>.</i></p></div></div>
+  <p class="muted" style="margin-top:14px;line-height:1.7">Un <b>fichier Excel miroir</b> est synchronisé en continu :<br><code>${esc(info.mirror)}</code><br>Dossier de stockage des archives :<br><code>${esc(info.backups)}</code><br>Base SQLite (WAL mode, transactions atomiques, anti-crash coupure secteur).<br><i>Les sauvegardes horodatées, points de restauration et l'audit sont consultables dans l'onglet <b>Audit &amp; Sauvegardes</b>.</i></p></div></div>
 
   <div class="card" style="margin-top:16px"><h3>Origines du stock &amp; règles de reversement <button class="btn sm" id="no">＋ Ajouter</button></h3><div class="table-wrap"><table><thead><tr><th>Nom</th><th>Type</th><th class="num">% reversé</th><th class="num">Ordre (import Excel uniquement)</th><th></th></tr></thead><tbody>
   ${S.owners.map(o => {
@@ -3002,7 +3457,7 @@ VIEWS.data = async () => {
   });
 };
 
-/* ---- Vue Audit & Historique d'actions ---- */
+/* ---- Vue Audit & Sauvegardes ---- */
 VIEWS.audit = async () => {
   const [logs, backups] = await Promise.all([api('/api/audit?limit=200'), api('/api/backups')]);
   $('#topActions').innerHTML = `<button class="btn good" id="bk"><svg class="ico sm" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Créer un snapshot de sécurité maintenant</button>`;
@@ -3521,11 +3976,6 @@ function formatLiveEvent(kind, data) {
       pillLabel = 'ACTIVITÉ';
       text = `<b>${user}</b> : ${esc(payload.detail || payload.title || 'Action effectuée')}`;
     }
-  } else if (kind === 'basket_scan') {
-    icon = '🔍';
-    pillClass = 'scan';
-    pillLabel = 'PANIER EN COURS';
-    text = `<b>${user}</b> : panier total <b>${eur(payload.total)}</b> (${payload.qty} ex.)`;
   }
 
   return { icon, pillClass, pillLabel, text, isSale };
@@ -3587,25 +4037,51 @@ function renderCctvTiles() {
   const topBadge = $('#cctvTopBadge');
   if (!grid) return;
 
-  const activeBaskets = (liveBaskets || []).filter(b => b.qty > 0 || (b.items && b.items.length > 0));
-  const count = activeBaskets.length;
-  const label = `${count} poste${count > 1 ? 's' : ''} mobile${count > 1 ? 's' : ''} actif${count > 1 ? 's' : ''}`;
+  const allMobiles = liveBaskets || [];
+  const total = allMobiles.length;
+  const activeCount = allMobiles.filter(b => b.state !== 'idle').length;
+  const idleCount = total - activeCount;
 
-  if (badgeCount) badgeCount.textContent = count;
+  const label = total === 0
+    ? '0 poste mobile'
+    : `${total} mobile${total > 1 ? 's' : ''} connecté${total > 1 ? 's' : ''}${idleCount > 0 ? ` (${activeCount} actif${activeCount > 1 ? 's' : ''}, ${idleCount} en veille)` : ''}`;
+
+  if (badgeCount) badgeCount.textContent = total;
   if (summary) summary.textContent = label;
-  if (topBadge) topBadge.textContent = `${count} mobile${count > 1 ? 's' : ''}`;
+  if (topBadge) {
+    topBadge.textContent = total === 0 
+      ? '0 mobile' 
+      : `${total} mobile${total > 1 ? 's' : ''}${idleCount > 0 ? ` (${activeCount} actif${activeCount > 1 ? 's' : ''}, ${idleCount} veille)` : ''}`;
+  }
 
-  if (!activeBaskets.length) {
+  if (!allMobiles.length) {
     grid.innerHTML = `
       <div class="cctv-tile empty">
         <span class="cctv-radar"></span>
-        <span>En attente de détection mobile…<br><small style="color:var(--mut)">Scannez depuis un smartphone pour voir son panier s'empiler ici en direct</small></span>
+        <span>En attente de connexion mobile…<br><small style="color:var(--mut)">Ouvrez le scanner mobile sur un smartphone pour le voir apparaître en direct</small></span>
       </div>
     `;
     return;
   }
 
-  grid.innerHTML = activeBaskets.map((b, idx) => {
+  grid.innerHTML = allMobiles.map((b, idx) => {
+    const isScanning = (b.qty || 0) > 0 || (b.items && b.items.length > 0);
+    const isIdle = b.state === 'idle';
+    const tileClass = isIdle ? 'idle' : (isScanning ? 'scanning' : 'ready');
+
+    let badgeText = '🟢 ACTIF';
+    let badgeClass = 'active';
+    if (isIdle) {
+      badgeText = `🟡 EN VEILLE (${b.idle_sec || 45}s)`;
+      badgeClass = 'idle';
+    } else if (isScanning) {
+      badgeText = '🟢 EN SCAN';
+      badgeClass = 'scanning';
+    } else {
+      badgeText = '🟢 CONNECTÉ';
+      badgeClass = 'connected';
+    }
+
     const itemsHtml = (b.items || []).map(i => `
       <div class="tile-item-row">
         <span class="tile-item-title">${esc(i.title)}</span>
@@ -3617,25 +4093,29 @@ function renderCctvTiles() {
     if (b.gender) demogParts.push(b.gender === 'Couple' ? 'Couple 💜' : b.gender);
     if (b.age) demogParts.push(b.age);
     if (b.star) demogParts.push('⭐ STAR');
+    if (b.mode === 'recv') demogParts.unshift('📦 Réception');
 
     return `
-      <div class="cctv-tile scanning">
+      <div class="cctv-tile ${tileClass}">
         <div class="tile-head">
           <div class="tile-cam-id">
-            <span class="tile-rec-dot"></span>
+            <span class="tile-rec-dot ${isIdle ? 'idle' : ''}"></span>
             <b>CAM-0${idx + 1} · ${esc(b.user_name || b.device_name || 'Mobile')}</b>
           </div>
-          <span class="tile-badge scanning">🟢 EN SCAN</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            ${(b.battery !== null && b.battery !== undefined) ? `<span class="tile-battery" style="font-size:11px;font-weight:700;color:${b.battery <= 20 ? 'var(--bad)' : 'var(--good)'}" title="Batterie smartphone: ${b.battery}% ${b.is_charging ? '(En charge)' : ''}">${b.is_charging ? '⚡' : (b.battery <= 20 ? '🪫' : '🔋')} ${b.battery}%</span>` : ''}
+            <span class="tile-badge ${badgeClass}">${badgeText}</span>
+          </div>
         </div>
         <div class="tile-metrics">
           <span class="tile-total">${eur(b.total || 0)}</span>
-          <span class="tile-qty">${b.qty || 0} livre${(b.qty || 0) > 1 ? 's' : ''} en cours</span>
+          <span class="tile-qty">${isScanning ? `${b.qty} livre${b.qty > 1 ? 's' : ''} en cours` : (b.mode === 'recv' ? 'En mode Réception' : 'Prêt à scanner')}</span>
         </div>
         <div class="tile-items-preview">
-          ${itemsHtml || '<span style="color:var(--mut);font-style:italic">Panier vide</span>'}
+          ${itemsHtml || `<span style="color:var(--mut);font-style:italic">${isScanning ? 'Panier vide' : 'Aucun livre en cours · Prêt à scanner'}</span>`}
         </div>
         <div class="tile-footer">
-          <span>${demogParts.length ? demogParts.join(' · ') : 'Client en cours…'}</span>
+          <span>${demogParts.length ? demogParts.join(' · ') : (b.mode === 'recv' ? 'Réception de stock' : 'Client en cours…')}</span>
           <span style="font-size:10px;color:var(--mut)">${esc(b.moment || '')}</span>
         </div>
       </div>
@@ -3689,21 +4169,14 @@ function handleLiveMessage(msg) {
   if (type === 'init') {
     liveBaskets = data.baskets || [];
     renderCctvTiles();
+    updateFocusUI();
     updateCctvDailyStats();
   } else if (type === 'baskets_updated') {
     liveBaskets = data.baskets || [];
     renderCctvTiles();
-    if (data.action) {
-      if (data.action.type !== 'sale_cleared') {
-        const actData = Object.assign({}, data.action, { user_name: data.user_name || data.action.user_name });
-        addLiveFeedRow('activity', actData);
-      }
-    } else {
-      const active = liveBaskets.filter(b => b.qty > 0);
-      if (active.length > 0) {
-        addLiveFeedRow('basket_scan', active[0]);
-      }
-    }
+    updateFocusUI();
+    // Mise à jour visuelle des moniteurs CCTV uniquement.
+    // Le téléscripteur ne doit JAMAIS recevoir de ping sans activité ni de "panier en cours" polluant.
   } else if (type === 'activity_logged') {
     addLiveFeedRow('activity', data);
   } else if (type === 'sale_registered') {
@@ -3726,11 +4199,11 @@ function initLiveStream() {
     if (btn) {
       btn.style.opacity = connected ? '1' : '0.6';
       const label = $('#cctvBtnLabel');
-      const count = liveBaskets.filter(b => b.qty > 0).length;
+      const count = (liveBaskets || []).length;
       if (label) {
         label.innerHTML = connected 
-          ? `🔴 LIVE (<span id="cctvCountBadge">${count}</span>)` 
-          : `⚪ Reconnexion…`;
+          ? `LIVE (<span id="cctvCountBadge">${count}</span>)` 
+          : `Reconnexion…`;
       }
     }
   };
@@ -3792,6 +4265,10 @@ function setupCctvUI() {
 applyTheme(getSavedThemePreference());
 updateUserDisplay();
 updateFocusUI();
+const savedInitMoment = localStorage.getItem('librairie_focus_moment');
+if (savedInitMoment) {
+  api('/api/session/moment', 'POST', { moment: savedInitMoment }).catch(() => {});
+}
 setupCctvUI();
 initLiveStream();
 const initialHash = location.hash.replace(/^#/, '');

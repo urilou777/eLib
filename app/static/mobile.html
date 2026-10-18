@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#12071a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,42 +34,94 @@
 *::-webkit-scrollbar { width:4px; height:4px; background:transparent; }
 *::-webkit-scrollbar-thumb { background:var(--line); border-radius:99px; }
 *::-webkit-scrollbar-thumb:hover { background:var(--a1); }
-[hidden] { display:none !important; }
-body { font-family:'DM Sans',system-ui,-apple-system,sans-serif; background:var(--bg);
-  color:var(--text); height:100vh; height:100dvh; display:flex; flex-direction:column; overflow:hidden;
+[hidden], [hidden] * { display:none !important; }
+.overlay[hidden], .nb-modal-overlay[hidden] { display:none !important; }
+html {
+  width: 100%;
+  max-width: 100vw;
+  height: 100%;
+  height: var(--vvh, 100dvh);
+  max-height: var(--vvh, 100dvh);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+body { 
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif; 
+  background: var(--bg);
+  color: var(--text); 
+  width: 100%;
+  max-width: 100vw;
+  height: 100%; 
+  height: var(--vvh, 100dvh); 
+  max-height: var(--vvh, 100dvh); 
+  margin: 0;
+  padding: 0;
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden;
+  overscroll-behavior: none;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: 0;
   padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right); }
+  padding-right: env(safe-area-inset-right);
+  touch-action: manipulation;
+}
+:fullscreen, :-webkit-full-screen {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
 button, select, input { font:inherit; color:inherit; }
 
-.m-head { padding:10px 14px; background:rgba(29,11,40,.92); border-bottom:1px solid var(--line); display:flex;
-  justify-content:space-between; align-items:center; flex-shrink:0; z-index:10; backdrop-filter:blur(12px); }
+.m-head { 
+  padding: 10px 14px; 
+  background: rgba(29,11,40,.92); 
+  border-bottom: 1px solid var(--line); 
+  display: flex;
+  justify-content: space-between; 
+  align-items: center; 
+  flex-shrink: 0; 
+  z-index: 10; 
+  backdrop-filter: blur(12px);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
 .logo { font-weight:800; font-size:16px; font-family:'Playfair Display',serif; color:#faf7f2; letter-spacing:.5px; }
-.mode-switch { display:inline-flex; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:18px; padding:2px; }
-.mode-btn { background:none; border:0; color:var(--mut); font-size:11.5px; font-weight:700; padding:5px 9px; border-radius:15px; cursor:pointer; transition:.2s; }
+.mode-switch { display:inline-flex; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:18px; padding:2px; flex-shrink:0; }
+.mode-btn { background:none; border:0; color:var(--mut); font-size:11.5px; font-weight:700; padding:5px 9px; border-radius:15px; cursor:pointer; transition:.2s; white-space:nowrap; }
 .mode-btn.on { background:var(--a1); color:#fff; }
 .mode-btn#btnModeRecv.on { background:linear-gradient(135deg, #b452d3, #8f16ad); color:#fff; }
 .user-chip { display:inline-flex; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--line);
   padding:6px 10px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; }
-.user-chip i { width:8px; height:8px; border-radius:50%; background:var(--good); }
+.user-chip i { width:8px; height:8px; border-radius:50%; background:var(--good); flex-shrink:0; }
 
 #app {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: 100%;
   overflow: hidden;
 }
 
 .cam-container { 
   position: relative; 
   width: 100%; 
-  height: clamp(160px, 26vh, 230px); 
+  max-width: 100%;
+  height: clamp(165px, 26dvh, 225px); 
   background: #000; 
   overflow: hidden; 
   flex-shrink: 0;
-  touch-action: pan-x pinch-zoom;
+  touch-action: manipulation;
   transition: height .25s ease;
 }
 .cam-container.minimized {
@@ -120,7 +172,7 @@ button, select, input { font:inherit; color:inherit; }
   animation: scan 1.6s infinite alternate ease-in-out; }
 .target-hint { position: absolute; bottom: 8px; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 600; color: rgba(255,255,255,.8); text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; }
 @keyframes scan { from { top: 15%; opacity: .4; } to { top: 85%; opacity: 1; } }
-.cam-controls { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 6; align-items: center; }
+.cam-controls { position: absolute; top: 10px; right: 10px; display: none; gap: 6px; z-index: 6; align-items: center; }
 .btn-ctrl { background: rgba(18,24,45,.75); border: 1px solid rgba(255,255,255,.2); color: #fff; border-radius: 20px;
   padding: 5px 11px; font-size: 12px; font-weight: 700; cursor: pointer; backdrop-filter: blur(6px); display: inline-flex; align-items: center; }
 .btn-ctrl.on { background: var(--a1); border-color: var(--a1); }
@@ -128,8 +180,8 @@ button, select, input { font:inherit; color:inherit; }
   border-radius: 20px; padding: 4px 8px; backdrop-filter: blur(6px); display: inline-flex; align-items: center; gap: 4px; letter-spacing: .4px; user-select: none; transition: all .2s ease; }
 .cam-badge.burst { background: rgba(231,76,60,.25); border-color: rgba(231,76,60,.6); color: #ff7675; }
 .cam-status { position: absolute; inset: 0; background: rgba(9,12,25,.94); display: flex; flex-direction: column;
-  align-items: center; justify-content: center; padding: 16px; text-align: center; font-size: 13px; gap: 8px; z-index: 5; }
-.cam-status p { color: var(--mut); font-size: 12px; line-height: 1.5; max-width: 320px; }
+  align-items: center; justify-content: center; padding: 12px 14px; text-align: center; font-size: 13px; gap: 6px; z-index: 7; }
+.cam-status p { color: var(--mut); font-size: 11.5px; line-height: 1.35; max-width: 300px; margin: 0; }
 
 .btn { border: 0; border-radius: 12px; padding: 11px 16px; font-weight: 700; cursor: pointer; background: var(--card2);
   border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
@@ -145,38 +197,54 @@ button, select, input { font:inherit; color:inherit; }
   flex-direction: column; 
   gap: 10px; 
   min-height: 0; 
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   overflow-y: auto; 
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch; 
 }
-.row { display: flex; gap: 8px; }
+.row { display: flex; gap: 8px; width: 100%; max-width: 100%; box-sizing: border-box; }
 .field { flex: 1; padding: 11px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; min-width: 0; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; width: 100%; max-width: 100%; box-sizing: border-box; }
 .results { display: flex; flex-direction: column; gap: 6px; }
 .result { text-align: left; background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
 .muted { color: var(--mut); font-size: 12px; }
 
 .cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 14px; font-weight: 700; }
-.cart-list { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; max-height: clamp(140px, 42vh, 480px); overflow-y: auto; }
-.cart-item { background:var(--card2); border-radius:12px; padding:10px 12px; border:1px solid var(--line); }
+.cart-list { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; max-height: clamp(140px, 42vh, 480px); overflow-y: auto; overflow-x: hidden; }
+.cart-item { background:var(--card2); border-radius:12px; padding:10px 12px; border:1px solid var(--line); width: 100%; max-width: 100%; box-sizing: border-box; }
 .cart-item.todo { border-color:var(--warn); }
 .ci-top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
-.ci-title { font-size:13px; font-weight:700; line-height:1.3; }
+.ci-title { font-size:13px; font-weight:700; line-height:1.3; overflow-wrap: break-word; word-break: break-word; }
 .qty { display:flex; align-items:center; gap:8px; flex:none; }
 .qty button { width:30px; height:30px; border-radius:9px; border:1px solid var(--line); background:var(--card); font-size:17px; cursor:pointer; }
 .lots { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.chip { border:1px solid var(--line); background:var(--card); border-radius:999px; padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; user-select:none; }
+.chip { border:1px solid var(--line); background:var(--card); border-radius:999px; padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; user-select:none; max-width: 100%; }
 .chip i { width:8px; height:8px; border-radius:50%; display:inline-block; }
 .chip.on { background:var(--a1); border-color:var(--a1); }
 .hint { font-size:11px; color:var(--warn); margin-top:6px; }
 
-.bottom-bar { background:var(--card); border-top:1px solid var(--line); padding:10px 14px calc(10px + env(safe-area-inset-bottom)); position:sticky; bottom:0; z-index:10; }
+.bottom-bar { 
+  background: var(--card); 
+  border-top: 1px solid var(--line); 
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); 
+  position: sticky; 
+  bottom: 0; 
+  z-index: 10; 
+  width: 100%; 
+  max-width: 100%; 
+  box-sizing: border-box; 
+  overflow: hidden; 
+  flex-shrink: 0;
+}
 .total-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
 .total-row .val { font-size:26px; font-weight:800; color:var(--good); }
 .pay-select { width:100%; padding:11px 12px; background:var(--card2); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; font-weight:600; }
 .pay-select option { background:#12182d; }
 
-.overlay { position:fixed; inset:0; background:rgba(0,0,0,.88); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100; }
-.sheet { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:clamp(16px, 4vw, 24px); width:min(100%, 380px); text-align:center; box-sizing:border-box; }
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.88); display:flex; align-items:center; justify-content:center; padding:clamp(8px, 2vh, 20px); z-index:100; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.sheet { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:clamp(14px, 3.5vw, 22px); width:min(100%, 390px); max-height:calc(var(--vvh, 100dvh) - 24px); text-align:center; box-sizing:border-box; overflow-y:auto; }
 .sheet h2 { font-size:18px; margin-bottom:6px; }
 .sheet p { color:var(--mut); font-size:13px; line-height:1.55; margin-bottom:12px; }
 .user-btn { width:100%; padding:14px; margin-top:8px; background:var(--card2); border:1px solid var(--line); border-radius:12px; font-size:16px; font-weight:600; text-align:left; cursor:pointer; }
@@ -259,7 +327,7 @@ button, select, input { font:inherit; color:inherit; }
   gap: 5px;
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.5px;
   color: #d8b4fe;
 }
@@ -477,7 +545,7 @@ button, select, input { font:inherit; color:inherit; }
 }
 .m-stats-kpi-lbl {
   font-size: 9px;
-  text-transform: uppercase;
+  text-transform: capitalize;
   color: var(--mut);
   font-weight: 700;
   letter-spacing: 0.3px;
@@ -497,7 +565,7 @@ button, select, input { font:inherit; color:inherit; }
 .m-stats-box-title {
   font-size: 10px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: 0.5px;
   color: var(--mut);
   margin-bottom: 5px;
@@ -561,6 +629,252 @@ button, select, input { font:inherit; color:inherit; }
   padding: 3px 6px;
   font-size: 10px;
 }
+
+/* Styles Réception OCR - Disposition Micro-Cards Aérée */
+#nbOcrChipsSection {
+  background: radial-gradient(circle at 95% 5%, rgba(143, 22, 173, 0.22) 0%, rgba(16, 18, 30, 0.98) 70%);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 14px;
+  padding: 10px 11px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+.ocr-section-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mut);
+}
+.ocr-hdr-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ocr-hdr-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ocr-hdr-btn:active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.ocr-close-btn {
+  font-size: 13px;
+  padding: 1px 6px;
+  line-height: 1;
+}
+.ocr-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+  width: 100%;
+}
+.ocr-card.selected {
+  background: rgba(143, 22, 173, 0.16);
+  border-color: rgba(192, 132, 252, 0.55);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.22);
+}
+.ocr-card-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+}
+.ocr-card-check {
+  cursor: pointer;
+  width: 17px;
+  height: 17px;
+  accent-color: var(--a2);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.ocr-card-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: normal;
+  flex: 1;
+}
+.ocr-card-actions {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ocr-pill-btn {
+  padding: 5px 1px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+  border: 1px solid transparent;
+  transition: transform 0.1s ease, filter 0.15s ease;
+  white-space: nowrap;
+  line-height: 1.25;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ocr-pill-btn:active {
+  transform: scale(0.95);
+  filter: brightness(1.2);
+}
+.ocr-pill-title {
+  background: rgba(143, 22, 173, 0.22);
+  color: #e9d5ff;
+  border-color: rgba(192, 132, 252, 0.45);
+}
+.ocr-pill-title-add {
+  background: rgba(143, 22, 173, 0.12);
+  color: #f3e8ff;
+  border-color: rgba(192, 132, 252, 0.25);
+}
+.ocr-pill-author {
+  background: rgba(37, 99, 235, 0.22);
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.45);
+}
+.ocr-pill-author-add {
+  background: rgba(37, 99, 235, 0.12);
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.25);
+}
+.ocr-pill-pub {
+  background: rgba(217, 119, 6, 0.2);
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+/* Modal Bottom Sheet & Adaptive Viewport Layout */
+.nb-modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  height: var(--vvh, 100dvh) !important;
+  max-height: var(--vvh, 100dvh) !important;
+  background: rgba(0, 0, 0, 0.85) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  display: flex;
+  flex-direction: column !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  padding: 0 !important;
+  z-index: 100 !important;
+  overflow: hidden !important;
+}
+.nb-modal-overlay[hidden] {
+  display: none !important;
+}
+@media (min-width: 600px) {
+  .nb-modal-overlay {
+    justify-content: center !important;
+    padding: 16px !important;
+  }
+}
+.nb-modal-sheet {
+  max-width: 440px !important;
+  width: 100% !important;
+  max-height: calc(var(--vvh, 100dvh) - 10px) !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 20px 20px 0 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 -10px 40px rgba(0,0,0,0.7) !important;
+  text-align: left !important;
+  animation: fadeInModalSheet 0.15s ease-out !important;
+}
+@keyframes fadeInModalSheet {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (min-width: 600px) {
+  .nb-modal-sheet {
+    border-radius: 20px !important;
+    max-height: calc(var(--vvh, 100dvh) - 36px) !important;
+  }
+}
+.nb-modal-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 11px 14px !important;
+  border-bottom: 1px solid var(--line) !important;
+  flex-shrink: 0 !important;
+  background: rgba(29, 11, 40, 0.98) !important;
+}
+.nb-close-top-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--mut) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
+}
+.nb-close-top-btn:active {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+}
+.nb-modal-body {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding: 10px 14px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  min-height: 0 !important;
+}
+.nb-modal-footer {
+  padding: 8px 14px calc(8px + env(safe-area-inset-bottom)) !important;
+  border-top: 1px solid var(--line) !important;
+  background: var(--card) !important;
+  flex-shrink: 0 !important;
+  display: flex !important;
+  gap: 8px !important;
+  z-index: 10 !important;
+  box-sizing: border-box !important;
+}
 </style>
 </head>
 <body>
@@ -591,18 +905,18 @@ button, select, input { font:inherit; color:inherit; }
 </div>
 
 <header class="m-head">
-  <div style="display:flex;align-items:center;gap:8px">
+  <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
     <picture>
       <source srcset="/static/img/logo_icc_rennes_bar_white.svg" type="image/svg+xml">
       <img src="/static/img/logo_icc_rennes_bar_white.png" alt="ICC Rennes" style="height:26px;width:auto;max-width:140px;display:block;object-fit:contain" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\'font-weight:800;font-size:15px;color:#fff;letter-spacing:1px\'>ICC RENNES</span>'">
     </picture>
   </div>
-  <div style="display:flex;align-items:center;gap:6px">
+  <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
     <div class="mode-switch">
       <button type="button" class="mode-btn on" id="btnModeSale">Vente</button>
       <button type="button" class="mode-btn" id="btnModeRecv">Réception</button>
     </div>
-    <button class="user-chip" id="userBtn" type="button"><i></i><span id="userName">…</span> ▾</button>
+    <button class="user-chip" id="userBtn" type="button"><i></i><span id="userName">Choisir…</span> ▾</button>
     <button class="icon-btn" id="btnFullscreen" type="button" title="Activer / Quitter le plein écran" aria-label="Plein écran" style="background:var(--card2);border:1px solid var(--line);border-radius:18px;padding:5px 8px;display:inline-flex;align-items:center;justify-content:center;color:var(--mut);cursor:pointer;transition:.2s">
       <svg id="icoFullscreen" style="width:15px;height:15px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
     </button>
@@ -637,28 +951,30 @@ button, select, input { font:inherit; color:inherit; }
       <div class="laser"></div>
       <div class="target-hint">Alignez le code-barres</div>
     </div>
-    <div class="cam-controls" id="camControls">
+    <div class="cam-controls" id="camControls" style="display:none">
       <span class="cam-badge" id="camEcoBadge" title="Mode Éco actif (3 FPS) : économie d'énergie">ÉCO</span>
       <button class="btn-ctrl" id="btnToggleCamSize" type="button" title="Réduire la caméra pour voir tout le panier">▲ Masquer</button>
       <button class="btn-ctrl" id="btnTorch" type="button" title="Éclairer" hidden>Torche</button>
     </div>
     <div class="cam-status" id="camStatus">
-      <div style="width:48px;height:48px;margin:0 auto 8px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center">
-        <svg class="ico" style="width:24px;height:24px" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <div style="width:32px;height:32px;margin:0 auto 2px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center">
+        <svg class="ico" style="width:18px;height:18px" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
       </div>
-      <b id="camTitle">Scanner un code-barres</b>
-      <p id="camMsg">Appuyez pour activer l'appareil photo.</p>
-      <button class="btn primary" id="btnCam" type="button">Activer la caméra</button>
-      <label class="btn" id="snapLabel">Photographier un code-barres
-        <input type="file" id="fileSnap" accept="image/*" capture="environment" hidden>
-      </label>
+      <b id="camTitle" style="font-size:13.5px">Scanner un code-barres</b>
+      <p id="camMsg" style="font-size:11.5px">Appuyez pour activer l'appareil photo.</p>
+      <div style="display:flex;gap:8px;width:100%;max-width:320px;justify-content:center;margin-top:2px">
+        <button class="btn primary sm" id="btnCam" type="button" style="padding:9px 14px;font-size:13px;font-weight:700">Activer la caméra</button>
+        <label class="btn sm" id="snapLabel" style="padding:9px 12px;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer">Photographier
+          <input type="file" id="fileSnap" accept="image/*" capture="environment" hidden>
+        </label>
+      </div>
     </div>
   </div>
 
   <main class="main-body">
     <div class="row">
       <input class="field" id="manualCode" type="search" enterkeyhint="search" autocomplete="off"
-             placeholder="Code ISBN ou titre (si illisible)…">
+             placeholder="Rechercher livre ou ISBN…">
       <button class="btn primary" id="btnSearch" type="button">Chercher</button>
     </div>
     <div class="results" id="results"></div>
@@ -732,6 +1048,13 @@ button, select, input { font:inherit; color:inherit; }
         <span>Réception en cours (<span id="recvCount">0</span> ex.)</span>
         <button class="btn sm" id="clearRecv" type="button">Réinitialiser</button>
       </div>
+      <div style="margin-bottom:8px">
+        <label class="btn" id="recvOcrLabel" style="width:100%;background:linear-gradient(135deg, rgba(143,22,173,0.35), rgba(202,136,227,0.2));border:1px solid var(--a2);padding:9px 12px;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-radius:12px;color:#fff">
+          <svg style="width:17px;height:17px;color:var(--a2)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span id="recvOcrText">📸 Scanner page de garde (OCR)</span>
+          <input type="file" id="recvOcrInput" accept="image/*" capture="environment" hidden>
+        </label>
+      </div>
       <div style="margin-bottom:10px">
         <label style="font-size:11px;color:var(--mut);display:block;margin-bottom:4px">Origine / Propriétaire du stock réceptionné :</label>
         <select class="pay-select" id="recvOwner" style="margin-bottom:0"></select>
@@ -746,7 +1069,7 @@ button, select, input { font:inherit; color:inherit; }
       <!-- Total Bar : 100% de la largeur, Total à gauche, Résumé multi à droite (0 pixel de hauteur ajoutée) -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
         <div style="display:flex;align-items:baseline;gap:6px">
-          <span style="font-size:11px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">Total</span>
+          <span style="font-size:11px;color:var(--mut);font-weight:700;text-transform:capitalize;letter-spacing:0.5px">Total</span>
           <span class="val" id="totalVal" style="font-size:22px;font-weight:800;color:var(--good);line-height:1">0,00 €</span>
         </div>
         <div id="multiPaySummary" style="display:none;font-size:11px;color:#c4b5fd;font-weight:700;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.35);border-radius:6px;padding:3px 7px;cursor:pointer;white-space:nowrap;max-width:60%;overflow:hidden;text-overflow:ellipsis" title="Modifier le paiement combiné"></div>
@@ -812,59 +1135,141 @@ button, select, input { font:inherit; color:inherit; }
   </footer>
 </div>
 
-<!-- Modale Création Rapide de Livre (Livre inconnu lors d'un scan) -->
-<section class="overlay" id="newBookModal" hidden>
-  <div class="sheet" style="max-width:380px;text-align:left">
-    <h2 style="margin-bottom:4px">Nouveau livre détecté</h2>
-    <p style="margin-bottom:12px;font-size:12px">Ce code ISBN n'est pas encore au catalogue. Complétez la fiche en quelques secondes :</p>
-    
-    <form id="newBookForm" onsubmit="return false;" style="display:flex;flex-direction:column;gap:8px">
+<!-- Modale Création Rapide de Livre (Livre inconnu lors d'un scan ou ajout page de garde) -->
+<section class="overlay nb-modal-overlay" id="newBookModal" hidden>
+  <div class="sheet nb-modal-sheet">
+    <!-- Header Fixe (Toujours visible avec bouton Fermer ✕) -->
+    <div class="nb-modal-header">
+      <div style="display:flex;align-items:center;gap:8px">
+        <h2 style="margin:0;font-size:16px;font-weight:700">Fiche livre</h2>
+        <span id="nbOcrBadge" class="cam-badge" style="display:none;background:rgba(143,22,173,0.3);color:#ca88e3;border-color:var(--a2)">OCR</span>
+      </div>
+      <button type="button" id="nbBtnCloseTop" class="nb-close-top-btn" title="Fermer la fiche">✕</button>
+    </div>
+
+    <!-- Corps Scrollable (Prend tout l'espace disponible sans déborder de l'écran) -->
+    <div class="nb-modal-body">
+      <p style="margin:0 0 4px;font-size:11.5px;color:var(--mut)">Complétez la fiche ou scannez la page de garde :</p>
+
+      <!-- Bouton OCR dans la modale -->
       <div>
-        <label style="font-size:11px;color:var(--mut)">Code ISBN :</label>
-        <input class="field" id="nbCode" readonly style="width:100%;font-weight:700;background:rgba(255,255,255,0.03)">
+        <label class="btn" id="nbOcrBtn" style="width:100%;background:rgba(143,22,173,0.22);border:1px dashed var(--a2);padding:8px 12px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-radius:10px;color:var(--a2)">
+          <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span id="nbOcrText">📸 Remplir via photo page de garde</span>
+          <input type="file" id="nbOcrInput" accept="image/*" capture="environment" hidden>
+        </label>
       </div>
-      <div>
-        <label style="font-size:11px;color:var(--mut)">Titre du livre * :</label>
-        <input class="field" id="nbTitle" required placeholder="Titre..." style="width:100%">
-      </div>
-      <div class="row">
-        <div style="flex:1">
-          <label style="font-size:11px;color:var(--mut)">Auteur :</label>
-          <input class="field" id="nbAuthor" placeholder="Auteur..." style="width:100%">
+
+      <!-- Bannière Livre déjà existant en base -->
+      <div id="nbBookExistsBanner" style="display:none;background:rgba(56,193,114,0.18);border:1px solid var(--good);border-radius:12px;padding:9px 11px">
+        <div style="font-size:11.5px;font-weight:700;color:var(--good);display:flex;align-items:center;justify-content:space-between">
+          <span style="display:flex;align-items:center;gap:5px">📦 Livre déjà en base</span>
+          <span id="nbExistsStockBadge" class="bdd-badge" style="background:rgba(56,193,114,0.25);border-color:var(--good)">Stock : 0</span>
         </div>
-        <div style="flex:0 0 clamp(80px, 26vw, 110px)">
-          <label style="font-size:11px;color:var(--mut)">Prix (€) * :</label>
-          <input class="field" id="nbPrice" type="number" step="0.5" required placeholder="0.00" style="width:100%">
+        <div id="nbExistsTitle" style="font-size:12.5px;font-weight:700;color:#fff;margin:3px 0 6px"></div>
+        <div style="display:flex;gap:6px">
+          <button type="button" id="nbBtnAddToStock" class="btn good sm" style="flex:1;padding:6px 10px;font-size:11.5px;font-weight:700">
+            ➕ Ajouter au stock / carton
+          </button>
+          <button type="button" id="nbBtnApplyMatch" class="btn sm" style="padding:6px 10px;font-size:11px">
+            📋 Remplir fiche
+          </button>
         </div>
       </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" id="btnCancelNewBook" type="button" style="flex:1">Annuler</button>
-        <button class="btn primary" id="btnSaveNewBook" type="button" style="flex:1">Enregistrer</button>
+
+      <!-- Conteneur de chips pour les lignes détectées par l'OCR -->
+      <div id="nbOcrChipsSection" style="display:none">
+        <div class="ocr-section-hdr">
+          <span style="display:flex;align-items:center;gap:5px">
+            <span>📸 Texte détecté</span>
+            <span id="nbOcrCount" class="bdd-badge" style="background:rgba(143,22,173,0.3);border-color:var(--a2);color:#e9d5ff">0</span>
+          </span>
+          <div class="ocr-hdr-actions">
+            <button type="button" id="nbToggleAllOcr" class="ocr-hdr-btn">Tout cocher</button>
+            <button type="button" id="nbClearOcrChips" class="ocr-hdr-btn ocr-close-btn" title="Masquer le texte OCR">✕</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:7px">
+          <button type="button" id="nbBtnMergeTitle" class="btn sm" style="flex:1;background:var(--card2);border:1px solid var(--a2);color:var(--a2);font-size:11px;padding:6px 6px;font-weight:700">
+            🔗 Fusionner en Titre
+          </button>
+          <button type="button" id="nbBtnMergeAuthor" class="btn sm" style="flex:1;background:var(--card2);border:1px solid #60a5fa;color:#93c5fd;font-size:11px;padding:6px 6px;font-weight:700">
+            🔗 Fusionner en Auteur
+          </button>
+        </div>
+        <div id="nbOcrChipsList" style="display:flex;flex-direction:column;gap:6px;max-height:clamp(120px, 20vh, 180px);overflow-y:auto"></div>
       </div>
-    </form>
+      
+      <form id="newBookForm" onsubmit="return false;" style="display:flex;flex-direction:column;gap:8px">
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <label style="font-size:11px;color:var(--mut)">Code-barres / ISBN :</label>
+            <span id="nbCodeBddBadge" class="bdd-badge" style="display:none">✓ En base</span>
+          </div>
+          <input class="field" id="nbCode" style="width:100%;font-weight:700">
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <label style="font-size:11px;color:var(--mut)">Titre du livre * :</label>
+              <span id="nbTitleBddBadge" class="bdd-badge" style="display:none">✓ BDD</span>
+            </div>
+            <button type="button" id="nbBtnCaseTitle" class="btn sm ghost" style="padding:1px 6px;font-size:10px;height:20px;border-color:rgba(255,255,255,0.15);color:var(--a2)" title="Majuscule 1ère lettre / Minuscules">
+              🔤 Majuscule 1ère lettre
+            </button>
+          </div>
+          <input class="field" id="nbTitle" required placeholder="Titre..." style="width:100%">
+          <div id="nbTitleTypoSuggestion" style="display:none"></div>
+        </div>
+        <div class="row">
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:11px;color:var(--mut)">Auteur :</label>
+                <span id="nbAuthorBddBadge" class="bdd-badge" style="display:none">✓ BDD</span>
+              </div>
+              <button type="button" id="nbBtnCaseAuthor" class="btn sm ghost" style="padding:1px 5px;font-size:9.5px;height:20px;border-color:rgba(255,255,255,0.15);color:var(--a2)" title="Majuscule 1ère lettre">
+                🔤 Maj.
+              </button>
+            </div>
+            <input class="field" id="nbAuthor" placeholder="Auteur..." style="width:100%">
+            <div id="nbAuthorTypoSuggestion" style="display:none"></div>
+          </div>
+          <div style="flex:0 0 clamp(80px, 26vw, 110px)">
+            <label style="font-size:11px;color:var(--mut)">Prix (€) * :</label>
+            <input class="field" id="nbPrice" type="number" step="0.5" required placeholder="0.00" style="width:100%">
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <label style="font-size:11px;color:var(--mut)">Éditeur :</label>
+            <span id="nbPublisherBddBadge" class="bdd-badge" style="display:none">✓ BDD</span>
+          </div>
+          <input class="field" id="nbPublisher" list="dl_nb_publishers" placeholder="Éditeur..." style="width:100%">
+          <datalist id="dl_nb_publishers"></datalist>
+          <div id="nbPublisherTypoSuggestion" style="display:none"></div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Footer Fixe avec boutons Toujours Visibles sous le pouce -->
+    <div class="nb-modal-footer">
+      <button class="btn" id="btnCancelNewBook" type="button" style="flex:1;height:42px;font-size:14px;font-weight:700">Annuler</button>
+      <button class="btn primary" id="btnSaveNewBook" type="button" style="flex:1.8;height:42px;font-size:14px;font-weight:700;background:linear-gradient(135deg, var(--good), #16a34a)">Enregistrer</button>
+    </div>
   </div>
 </section>
 
 <!-- Choix du libraire -->
 <section class="overlay" id="userModal" hidden>
-  <div class="sheet">
+  <div class="sheet" style="position:relative">
+    <button type="button" id="userModalClose" class="nb-close-top-btn" style="position:absolute;top:14px;right:14px" title="Fermer">✕</button>
     <h2>Qui tient la caisse ?</h2>
     <p>Vos ventes et encaissements seront attribués à votre profil.</p>
     <div id="userList"></div>
   </div>
 </section>
 
-<!-- Choix du Culte / Moment de vente -->
-<section class="overlay" id="momentModal" hidden>
-  <div class="sheet">
-    <h2>Culte / Temps de vente</h2>
-    <p>Sélectionnez le culte ou l'événement en cours pour les ventes :</p>
-    <div id="momentList" style="display:flex;flex-direction:column;gap:8px"></div>
-    <div style="margin-top:14px">
-      <button class="btn sm" id="btnCloseMomentModal" type="button" style="width:100%">Fermer</button>
-    </div>
-  </div>
-</section>
 
 <!-- Modale Paiement Fractionné / Multi-modes (Cumul sur un sous-total) -->
 <section class="overlay" id="multiPayModal" hidden>
@@ -880,7 +1285,7 @@ button, select, input { font:inherit; color:inherit; }
     <div style="display:flex;flex-direction:column;gap:8px">
       <!-- Part 1 -->
       <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px">
-        <div style="font-size:10.5px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">1er mode de règlement</div>
+        <div style="font-size:10.5px;font-weight:700;color:var(--mut);text-transform:capitalize;letter-spacing:0.5px;margin-bottom:5px">1er mode de règlement</div>
         <div id="mpModes1" style="display:flex;gap:4px;margin-bottom:6px"></div>
         <div style="display:flex;gap:6px;align-items:center">
           <input type="number" step="0.5" id="mpAmount1" class="field" placeholder="0.00" style="font-size:16px;font-weight:800;padding:7px 8px;width:95px;color:var(--good)">
@@ -896,7 +1301,7 @@ button, select, input { font:inherit; color:inherit; }
       <!-- Part 2 -->
       <div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-          <span style="font-size:10.5px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:0.5px">2e mode (complément)</span>
+          <span style="font-size:10.5px;font-weight:700;color:var(--mut);text-transform:capitalize;letter-spacing:0.5px">2e mode (complément)</span>
           <span id="mpRemainderBadge" style="font-size:11px;font-weight:800;color:var(--good)">Reste : 0,00 €</span>
         </div>
         <div id="mpModes2" style="display:flex;gap:4px;margin-bottom:6px"></div>
@@ -924,7 +1329,7 @@ button, select, input { font:inherit; color:inherit; }
 <div id="toasts" aria-live="polite"></div>
 
 <script src="/static/vendor/zxing.min.js"></script>
-<script src="/static/mobile.js?v=20261017_live_granular"></script>
+<script src="/static/mobile.js?v=20261018_v3"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

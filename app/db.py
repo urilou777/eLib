@@ -3,7 +3,7 @@ import sqlite3
 import os
 import sys
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 
 def base_dir():
@@ -113,9 +113,14 @@ def connect():
 
 
 @contextmanager
-def tx():
+def tx(immediate=False):
+    """Gestionnaire de transaction résilient.
+    immediate=True : acquiert un verrou d'écriture exclusif (BEGIN IMMEDIATE) pour éliminer les
+    risques de collision ou d'interblocage lors des encaissements simultanés multi-terminaux."""
     c = connect()
     try:
+        if immediate:
+            c.execute("BEGIN IMMEDIATE")
         yield c
         c.commit()
     except Exception:
@@ -123,6 +128,28 @@ def tx():
         raise
     finally:
         c.close()
+
+
+def clean_gdpr_reservations(c, days_retention=90):
+    """RGPD Art. 5.1.e (Limitation de la conservation) & Art. 5.1.c (Minimisation) :
+    Anonymise les coordonnées personnelles (téléphone, nom) des réservations
+    terminées ('Servie' ou 'Annulée') datant de plus de `days_retention` jours."""
+    cutoff = (date.today() - timedelta(days=days_retention)).isoformat()
+    candidates = c.execute("""
+        SELECT id, name, phone, date, status FROM reservations
+        WHERE (status IN ('Servie', 'Annulée') OR date < ?)
+        AND (phone IS NOT NULL OR name NOT LIKE 'Client RGPD-%')
+    """, (cutoff,)).fetchall()
+    count = 0
+    for r in candidates:
+        anonymized_name = f"Client RGPD #{r['id']}"
+        c.execute("""
+            UPDATE reservations
+            SET name = ?, phone = NULL, note = COALESCE(note, '') || ' [Données personnelles anonymisées RGPD]'
+            WHERE id = ?
+        """, (anonymized_name, r["id"]))
+        count += 1
+    return count
 
 
 def safe_backup_db(target_path):
@@ -274,18 +301,20 @@ def _allocate_book(c, line_id, book_id, qty, unit_revenue, day):
 
 
 def _insert_alloc(c, line_id, book_id, lot_id, qty, unit_rev, day):
-    """Impute `qty` exemplaires à un lot choisi par le libraire (lot_id None = hors stock, explicite)."""
+    """Impute `qty` exemplaires à un lot choisi par le libraire (ventes hors stock strictement interdites)."""
     if qty <= 0:
         raise ValueError("Quantité invalide")
     if lot_id is None:
-        c.execute("INSERT INTO allocations(line_id,book_id,lot_id,owner_id,qty,revenue,due,date) VALUES(?,?,NULL,NULL,?,?,0,?)",
-                  (line_id, book_id, qty, unit_rev * qty, day))
-        return
+        bk = c.execute("SELECT title FROM books WHERE id=?", (book_id,)).fetchone()
+        title = bk["title"] if bk else f"Livre #{book_id}"
+        raise ValueError(f"Vente hors stock interdite pour « {title} » : chaque exemplaire doit être alloué à un lot existant en stock.")
     lot = c.execute(f"SELECT l.*, ({LOT_REMAINING}) remaining FROM lots l WHERE l.id=?", (lot_id,)).fetchone()
     if not lot or lot["book_id"] != book_id:
         raise ValueError("Lot incohérent avec le livre")
     if lot["remaining"] < qty:
-        raise ValueError(f"Le lot choisi n'a que {lot['remaining']} exemplaire(s)")
+        bk = c.execute("SELECT title FROM books WHERE id=?", (book_id,)).fetchone()
+        title = bk["title"] if bk else f"Livre #{book_id}"
+        raise ValueError(f"Stock insuffisant pour « {title} » : le lot choisi n'a que {lot['remaining']} exemplaire(s) disponible(s)")
     owner = c.execute("SELECT * FROM owners WHERE id=?", (lot["owner_id"],)).fetchone()
     due = _due_per_unit(lot, owner, unit_rev) * qty
     c.execute("INSERT INTO allocations(line_id,book_id,lot_id,owner_id,qty,revenue,due,date) VALUES(?,?,?,?,?,?,?,?)",

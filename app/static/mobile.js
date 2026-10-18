@@ -3,6 +3,22 @@
 const $ = s => document.querySelector(s);
 const eur = n => (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 const TOKEN_KEY = 'librairie_device_token', USER_KEY = 'librairie_user';
+let currentMode = 'sale'; // 'sale' | 'recv'
+
+/* ---------- Gestion dynamique de la hauteur visible du viewport (non-fullscreen / plein écran) ---------- */
+function updateViewportHeight() {
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  document.documentElement.style.setProperty('--vvh', `${Math.round(h)}px`);
+}
+updateViewportHeight();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', updateViewportHeight);
+}
+window.addEventListener('resize', updateViewportHeight);
+window.addEventListener('orientationchange', () => setTimeout(updateViewportHeight, 100));
+window.addEventListener('pageshow', updateViewportHeight);
+window.addEventListener('focus', updateViewportHeight);
 
 const SVG_TAGS = new Set(['svg', 'path', 'line', 'circle', 'polyline', 'polygon', 'rect', 'g']);
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -145,6 +161,9 @@ async function checkPing(manual = false) {
     if (res.ok) {
       const data = await res.json();
       markNetworkOnline();
+      if (data.active_moment) {
+        mMoment = data.active_moment;
+      }
       if (data.ips && data.ips.length) {
         localStorage.setItem('librairie_known_ips', JSON.stringify({ ips: data.ips, mdns: data.mdns_host }));
       }
@@ -191,46 +210,57 @@ function logMobileLiveActivity(type, title, detail, data = {}) {
   }).catch(() => {});
 }
 
+let mobileBatteryInfo = null;
+if (typeof navigator !== 'undefined' && navigator.getBattery) {
+  navigator.getBattery().then(b => {
+    const updateBat = () => { mobileBatteryInfo = { level: Math.round(b.level * 100), charging: b.charging }; };
+    updateBat();
+    b.addEventListener('levelchange', updateBat);
+    b.addEventListener('chargingchange', updateBat);
+  }).catch(() => {});
+}
+
 function syncLiveCart(action = null) {
+  if (!localStorage.getItem(TOKEN_KEY)) return;
   if (action) pendingLiveAction = action;
   if (liveCartSyncTimer) clearTimeout(liveCartSyncTimer);
   liveCartSyncTimer = setTimeout(async () => {
     const act = pendingLiveAction;
     pendingLiveAction = null;
     try {
-      if (cart && cart.length > 0) {
-        const total = cart.reduce((s, i) => s + i.qty * (i.book ? i.book.price : 0), 0);
-        const count = cart.reduce((s, i) => s + i.qty, 0);
-        const items = cart.map(i => ({
-          title: (i.book ? i.book.title : 'Livre') + (i.book && i.book.volume ? ' · Vol. ' + i.book.volume : ''),
-          qty: i.qty,
-          price: i.book ? i.book.price : 0
-        }));
-        await api('/api/mobile/active-cart', {
-          method: 'POST',
-          body: {
-            user_name: currentUser || 'Libraire Mobile',
-            total,
-            qty: count,
-            items,
-            moment: mMoment || getAutoMobileMoment(),
-            gender: mGender || null,
-            age: mAge || null,
-            star: mStar ? 1 : 0,
-            action: act
-          }
-        });
-      } else {
-        const q = act ? `?reason=${encodeURIComponent(act.type || 'cart_cleared')}` : '';
-        await api('/api/mobile/active-cart' + q, { method: 'DELETE' });
-      }
+      const isCartActive = cart && cart.length > 0;
+      const total = isCartActive ? cart.reduce((s, i) => s + i.qty * (i.book ? i.book.price : 0), 0) : 0;
+      const count = isCartActive ? cart.reduce((s, i) => s + i.qty, 0) : 0;
+      const items = isCartActive ? cart.map(i => ({
+        title: (i.book ? i.book.title : 'Livre') + (i.book && i.book.volume ? ' · Vol. ' + i.book.volume : ''),
+        qty: i.qty,
+        price: i.book ? i.book.price : 0
+      })) : [];
+
+      await api('/api/mobile/active-cart', {
+        method: 'POST',
+        body: {
+          user_name: currentUser || 'Libraire Mobile',
+          total,
+          qty: count,
+          items,
+          mode: currentMode || 'sale',
+          moment: (typeof mMoment !== 'undefined' && mMoment) ? mMoment : (typeof getAutoMobileMoment === 'function' ? getAutoMobileMoment() : 'En semaine / Autre'),
+          gender: (typeof mGender !== 'undefined' && mGender) ? mGender : null,
+          age: (typeof mAge !== 'undefined' && mAge) ? mAge : null,
+          star: (typeof mStar !== 'undefined' && mStar) ? 1 : 0,
+          battery: mobileBatteryInfo ? mobileBatteryInfo.level : null,
+          is_charging: mobileBatteryInfo ? mobileBatteryInfo.charging : null,
+          action: act
+        }
+      });
     } catch (e) {
-      // Ignorer silencieusement si déconnecté
+      // Ignorer silencieusement si temporairement déconnecté
     }
   }, 120);
 }
 
-function clearLiveCartSync(reason = 'cart_cleared') {
+function clearLiveCartSync(reason = 'session_closed') {
   if (liveCartSyncTimer) { clearTimeout(liveCartSyncTimer); liveCartSyncTimer = null; }
   api(`/api/mobile/active-cart?reason=${encodeURIComponent(reason)}`, { method: 'DELETE' }).catch(() => {});
 }
@@ -249,11 +279,10 @@ function saveActiveCart(action = null) {
       timestamp: Date.now()
     };
     localStorage.setItem('librairie_mobile_active_cart', JSON.stringify(data));
-    syncLiveCart(action);
   } else {
     localStorage.removeItem('librairie_mobile_active_cart');
-    clearLiveCartSync(action ? action.type : 'cart_cleared');
   }
+  syncLiveCart(action);
 }
 
 function restoreActiveCart() {
@@ -288,12 +317,26 @@ function restoreActiveCart() {
   }
 }
 
-// Heartbeat toutes les 25s pour garder la session mobile active et éviter tout décrochage
+// Heartbeat toutes les 15s pour maintenir le mobile connecté/actif sur la Régie Live
 setInterval(() => {
-  if (cart && cart.length > 0) {
+  if (localStorage.getItem(TOKEN_KEY)) {
     syncLiveCart();
   }
-}, 25000);
+}, 15000);
+
+// Déconnexion propre de la session lors de la fermeture de l'onglet/navigateur
+window.addEventListener('pagehide', () => {
+  const tok = localStorage.getItem(TOKEN_KEY);
+  if (tok) {
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/mobile/active-cart?reason=session_closed');
+      } else {
+        fetch('/api/mobile/active-cart?reason=session_closed', { method: 'DELETE', keepalive: true }).catch(() => {});
+      }
+    } catch (e) {}
+  }
+});
 
 /* ---------- appairage ---------- */
 function deviceLabel() {
@@ -319,23 +362,66 @@ let users = [];
 function updateUser() { $('#userName').textContent = currentUser || 'Choisir…'; }
 function openUserModal() {
   const list = $('#userList');
-  list.replaceChildren(...users.map(u => el('button', {
-    class: 'user-btn', type: 'button', text: u.name,
-    onclick: () => { currentUser = u.name; localStorage.setItem(USER_KEY, u.name); updateUser(); $('#userModal').hidden = true; toast('Connecté : ' + u.name); }
-  })));
+  if (!users.length) {
+    list.replaceChildren(
+      el('p', { class: 'muted', style: 'margin-bottom:12px;font-size:12.5px', text: 'Serveur hors-ligne ou liste d\'utilisateurs indisponible. Saisissez votre prénom :' }),
+      el('input', {
+        class: 'field',
+        id: 'offlineUserNameInput',
+        placeholder: 'Votre prénom…',
+        value: currentUser,
+        style: 'width:100%;margin-bottom:10px;font-weight:700'
+      }),
+      el('button', {
+        class: 'btn primary',
+        type: 'button',
+        style: 'width:100%;padding:12px;font-weight:700',
+        text: 'Enregistrer mon profil',
+        onclick: () => {
+          const inp = $('#offlineUserNameInput');
+          const val = inp ? inp.value.trim() : '';
+          if (val) {
+            currentUser = val;
+            localStorage.setItem(USER_KEY, val);
+            updateUser();
+            $('#userModal').hidden = true;
+            toast('Connecté : ' + val);
+            syncLiveCart({ type: 'user_connected', user_name: val });
+          }
+        }
+      })
+    );
+  } else {
+    list.replaceChildren(...users.map(u => el('button', {
+      class: 'user-btn', type: 'button', text: u.name,
+      onclick: () => {
+        currentUser = u.name;
+        localStorage.setItem(USER_KEY, u.name);
+        updateUser();
+        $('#userModal').hidden = true;
+        toast('Connecté : ' + u.name);
+        syncLiveCart({ type: 'user_connected', user_name: u.name });
+      }
+    })));
+  }
   $('#userModal').hidden = false;
 }
 $('#userBtn').addEventListener('click', openUserModal);
+const userCloseBtn = $('#userModalClose');
+if (userCloseBtn) userCloseBtn.addEventListener('click', () => { $('#userModal').hidden = true; });
+const userModalEl = $('#userModal');
+if (userModalEl) userModalEl.addEventListener('click', e => {
+  if (e.target.id === 'userModal') userModalEl.hidden = true;
+});
 
 /* ---------- Panier & Origines (Smart Split) & Multi-paiement ---------- */
-let cart = [];            // { book, qty, lot }  lot: undefined = pas encore choisi | 'none' = hors stock | id de lot
-let payOptions = [];
+let cart = [];            // { book, qty, lot }  lot: undefined = pas encore choisi | id de lot
+let payOptions = ['Espèces', 'CB', 'Wero'];
 let originPayments = {};  // { [ownerName]: { method: 'CB'|'Espèces'|'Wero'|'Multi', parts: [{payment, amount}]|null } }
 
 function getItemOwner(item) {
   if (item.book.is_pack) return 'Cité Royale';
-  if (item.lot === 'none') return 'Hors stock';
-  if (item.lot === undefined) return 'À préciser';
+  if (item.lot === undefined || item.lot === null || item.lot === 'none') return 'À préciser';
   const l = (item.book.lots || []).find(x => x.id === item.lot);
   return (l && l.owner) ? l.owner.trim() : 'Autre';
 }
@@ -370,9 +456,9 @@ function getDefaultPaymentForOwner(owner) {
 }
 
 function lotRemaining(item) {
-  if (item.book.is_pack) return item.book.stock != null ? item.book.stock : Infinity;
-  if (item.lot === undefined || item.lot === 'none') return Infinity;
-  const l = item.book.lots.find(x => x.id === item.lot);
+  if (item.book.is_pack) return item.book.stock != null ? item.book.stock : 0;
+  if (item.lot === undefined || item.lot === null || item.lot === 'none') return 0;
+  const l = (item.book.lots || []).find(x => x.id === item.lot);
   return l ? l.remaining : 0;
 }
 
@@ -412,10 +498,15 @@ function hidePackUpsell() {
 }
 
 function addPackToCart(pack) {
+  const stock = pack.stock != null ? pack.stock : 0;
+  if (stock <= 0) {
+    toast(`Stock épuisé (0 dispo) pour ce pack. Vente impossible.`, 'err');
+    return;
+  }
   beep();
   const ex = cart.find(i => i.book.id === pack.id);
   if (ex) {
-    if (ex.qty + 1 > (pack.stock || 999)) toast('Stock maximum atteint pour ce pack', 'warn');
+    if (ex.qty + 1 > stock) toast(`Stock maximum atteint (${stock} ex.) pour ce pack`, 'warn');
     else ex.qty++;
   } else {
     cart.push({ book: pack, qty: 1, lot: 'pack' });
@@ -430,13 +521,24 @@ function addToCart(book) {
     addPackToCart(book);
     return;
   }
+  const totalStock = (book.lots || []).filter(l => l.remaining > 0).reduce((s, l) => s + l.remaining, 0);
+  if (totalStock <= 0) {
+    toast(`Stock épuisé (0 ex. disponible) pour « ${book.title} ». Vente impossible.`, 'err');
+    return;
+  }
   beep();
   const defLot = defaultLotForBook(book);
   const ex = cart.find(i => i.book.id === book.id && (i.lot === defLot || i.lot === undefined));
   if (ex) {
     if (ex.lot === undefined && defLot !== undefined) ex.lot = defLot;
-    if (ex.qty + 1 > lotRemaining(ex)) toast('Stock du lot choisi atteint', 'warn'); else ex.qty++;
-  } else cart.push({ book, qty: 1, lot: defLot });
+    if (ex.qty + 1 > lotRemaining(ex)) {
+      toast(`Stock disponible atteint (${lotRemaining(ex)} ex.) pour « ${book.title} ».`, 'warn');
+      return;
+    }
+    ex.qty++;
+  } else {
+    cart.push({ book, qty: 1, lot: defLot });
+  }
   toast('Ajouté : ' + book.title);
   saveActiveCart({ type: 'book_added', title: book.title, price: book.price });
   renderCart();
@@ -639,15 +741,15 @@ function renderCart() {
           )
         );
       }
-      const lots = (b.lots || []).map(l => el('button', {
+      const availableLots = (b.lots || []).filter(l => l.remaining > 0);
+      const lots = availableLots.map(l => el('button', {
         class: 'chip' + (item.lot === l.id ? ' on' : ''), type: 'button',
         onclick: () => { item.lot = l.id; item.qty = Math.min(item.qty, l.remaining); renderCart(); }
       }, el('i', { style: 'background:' + (/^#[0-9a-fA-F]{3,8}$/.test(l.color || '') ? l.color : '#8892b0') }),
          `${l.owner} · dispo ${l.remaining}`));
-      lots.push(el('button', {
-        class: 'chip' + (item.lot === 'none' ? ' on' : ''), type: 'button',
-        onclick: () => { item.lot = 'none'; renderCart(); }
-      }, 'Hors stock (non tracé)'));
+      if (!availableLots.length) {
+        lots.push(el('span', { class: 'chip', style: 'border-color:var(--bad);color:var(--bad);cursor:default', text: 'Stock épuisé (0 dispo)' }));
+      }
       lots.push(el('button', {
         class: 'chip btn-m-stats',
         type: 'button',
@@ -671,8 +773,10 @@ function renderCart() {
             } }),
             el('b', { text: item.qty }),
             el('button', { type: 'button', text: '+', onclick: () => {
-              if (item.qty + 1 > lotRemaining(item)) toast('Stock du lot choisi atteint', 'warn');
-              else {
+              const maxAvail = lotRemaining(item);
+              if (item.qty + 1 > maxAvail) {
+                toast(`Stock maximum atteint (${maxAvail} ex.) pour ce lot`, 'warn');
+              } else {
                 item.qty++;
                 saveActiveCart({ type: 'book_qty', title: b.title, qty: item.qty });
                 renderCart();
@@ -1008,19 +1112,36 @@ if (btnCloseUpsell) {
   });
 }
 
+let dbAuthors = [];
+let dbPublishers = [];
+
 async function loadPayOptions() {
   try {
     const o = await api('/api/options');
     payOptions = (o.payment || []).map(p => (p.label === 'PayPal POS (CB)' || p.label.toLowerCase().includes('paypal') ? 'CB' : p.label));
+    dbPublishers = (o.publisher || []).map(p => p.label);
+    dbAuthors = o.authors || [];
+    const dl = $('#dl_nb_publishers');
+    if (dl && dbPublishers.length) {
+      dl.innerHTML = dbPublishers.map(p => `<option value="${esc(p)}">`).join('');
+    }
   } catch (e) { payOptions = []; }
   if (!payOptions.length) payOptions = ['Espèces', 'CB', 'Wero'];
   payOptions = Array.from(new Set(payOptions));
   renderCart();
 }
 
+
 let mGender = '';
 let mAge = '';
 let mStar = 0;
+
+const MOMENT_ICONS = {
+  '1er Culte (Principal)': '☀️ 1er Culte',
+  '2e Culte (Jeunes EJP)': '⚡ 2e Culte',
+  'Occasion spéciale': '✨ Spécial',
+  'En semaine / Autre': '📅 Semaine',
+};
 
 function getAutoMobileMoment() {
   const isSunday = new Date().getDay() === 0;
@@ -1028,7 +1149,9 @@ function getAutoMobileMoment() {
   return isSunday ? (currentHour >= 12 ? '2e Culte (Jeunes EJP)' : '1er Culte (Principal)') : 'En semaine / Autre';
 }
 
-let mMoment = localStorage.getItem('librairie_mobile_moment') || getAutoMobileMoment();
+// Le réglage du culte / temps de vente est géré de manière maître sur le poste PC
+let mMoment = getAutoMobileMoment();
+
 
 let mDemoTimer = null;
 
@@ -1364,7 +1487,24 @@ $('#btnValidate').addEventListener('click', async () => {
   btn.disabled = true; // anti double-envoi : un seul encaissement par appui
   
   const origins = getCartByOrigin();
-  if (!origins.length) return;
+  if (!origins.length) {
+    btn.disabled = false;
+    return;
+  }
+
+  const unassigned = cart.find(i => !i.book.is_pack && (i.lot === undefined || i.lot === null || i.lot === 'none'));
+  if (unassigned) {
+    toast(`Indiquez l'origine en stock pour « ${unassigned.book.title} » avant d'encaisser.`, 'warn');
+    btn.disabled = false;
+    return;
+  }
+
+  const zeroStock = cart.find(i => lotRemaining(i) < i.qty);
+  if (zeroStock) {
+    toast(`Stock insuffisant pour « ${zeroStock.book.title} » (${zeroStock.qty} demandés, ${lotRemaining(zeroStock)} dispo).`, 'err');
+    btn.disabled = false;
+    return;
+  }
 
   try {
     const validatedSales = [];
@@ -1378,9 +1518,12 @@ $('#btnValidate').addEventListener('click', async () => {
             const compLots = (comp.lots || []).filter(l => l.remaining > 0);
             let chosenLot = compLots.find(l => (l.owner || '').trim().toLowerCase() === 'cité royale');
             if (!chosenLot && compLots.length) chosenLot = compLots[0];
+            if (!chosenLot) {
+              throw new Error(`Stock épuisé pour le composant « ${comp.title || comp.book_id} » du pack`);
+            }
             allocs.push({
               book_id: comp.book_id,
-              lot_id: chosenLot ? chosenLot.id : null,
+              lot_id: chosenLot.id,
               qty: i.qty * (comp.qty || 1)
             });
           }
@@ -1395,7 +1538,7 @@ $('#btnValidate').addEventListener('click', async () => {
             book_id: i.book.id,
             qty: i.qty,
             unit_price: i.book.price,
-            allocations: [{ book_id: i.book.id, lot_id: i.lot === 'none' ? null : i.lot, qty: i.qty }]
+            allocations: [{ book_id: i.book.id, lot_id: +i.lot, qty: i.qty }]
           };
         }
       });
@@ -1454,7 +1597,7 @@ $('#btnValidate').addEventListener('click', async () => {
 });
 
 /* ---------- Mode de travail Mobile : Vente vs Réception ---------- */
-let currentMode = 'sale'; // 'sale' | 'recv'
+currentMode = 'sale'; // 'sale' | 'recv'
 let recvList = [];        // [{ book, qty }]
 let ownersList = [];
 
@@ -1504,6 +1647,7 @@ function setMobileMode(mode, updateHash = true, showToast = false) {
   $('#recvBottom').hidden = (mode !== 'recv');
   if (mode === 'recv' && !ownersList.length) loadOwners();
   if (showToast) toast(mode === 'sale' ? 'Mode Vente actif' : 'Mode Réception actif', 'ok');
+  syncLiveCart({ type: 'mode_changed', mode });
 }
 
 window.addEventListener('hashchange', () => {
@@ -1593,30 +1737,604 @@ $('#btnValidateRecv').addEventListener('click', async () => {
   }
 });
 
-/* ---------- Modale de Création Rapide de Livre Inconnu ---------- */
-let pendingNewCode = null;
+/* ---------- Traitement OCR Page de Garde & Couverture ---------- */
+async function fileToResizedBase64(file, maxDim = 1600) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        resolve(dataUrl.split(',')[1]);
+      };
+      img.onerror = () => reject(new Error("Impossible de lire l'image"));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("Échec de chargement du fichier"));
+    reader.readAsDataURL(file);
+  });
+}
 
-function openNewBookModal(code) {
-  pendingNewCode = code;
-  $('#nbCode').value = code;
-  $('#nbTitle').value = '';
-  $('#nbAuthor').value = '';
-  $('#nbPrice').value = '';
-  $('#newBookModal').hidden = false;
-  setTimeout(() => $('#nbTitle').focus(), 150);
+async function performOcr(file) {
+  const b64 = await fileToResizedBase64(file, 1600);
+  return api('/api/ocr/scan', {
+    method: 'POST',
+    body: { image_base64: b64 },
+    timeoutMs: 15000
+  });
+}
+
+function updateOcrMergeButtons() {
+  const checks = document.querySelectorAll('.nb-line-check:checked');
+  const count = checks.length;
+  const btnTitle = $('#nbBtnMergeTitle');
+  const btnAuthor = $('#nbBtnMergeAuthor');
+  if (btnTitle) {
+    btnTitle.textContent = count > 0 ? `🔗 Fusionner (${count}) en Titre` : '🔗 Fusionner en Titre';
+    btnTitle.style.background = count > 0 ? 'rgba(143, 22, 173, 0.35)' : 'var(--card2)';
+  }
+  if (btnAuthor) {
+    btnAuthor.textContent = count > 0 ? `🔗 Fusionner (${count}) en Auteur` : '🔗 Fusionner en Auteur';
+    btnAuthor.style.background = count > 0 ? 'rgba(37, 99, 235, 0.35)' : 'var(--card2)';
+  }
+  const toggleBtn = $('#nbToggleAllOcr');
+  if (toggleBtn) {
+    const allChecks = document.querySelectorAll('.nb-line-check');
+    toggleBtn.textContent = (allChecks.length && count === allChecks.length) ? 'Tout décocher' : 'Tout cocher';
+  }
+}
+
+function renderOcrChips(lines) {
+  const list = $('#nbOcrChipsList');
+  const sect = $('#nbOcrChipsSection');
+  if (!list || !sect) return;
+  list.replaceChildren();
+  if (!lines || !lines.length) {
+    sect.style.display = 'none';
+    return;
+  }
+  const validLines = lines.filter(l => (l.text || '').trim().length >= 2);
+  if (!validLines.length) {
+    sect.style.display = 'none';
+    return;
+  }
+  const countBadge = $('#nbOcrCount');
+  if (countBadge) countBadge.textContent = validLines.length;
+
+  validLines.forEach(line => {
+    const txt = (line.text || '').trim();
+    const chk = el('input', {
+      type: 'checkbox',
+      class: 'nb-line-check ocr-card-check',
+      'data-txt': txt
+    });
+
+    const textSpan = el('span', {
+      text: txt,
+      class: 'ocr-card-text'
+    });
+
+    const label = el('label', { class: 'ocr-card-label' }, chk, textSpan);
+
+    const btnTitle = el('button', {
+      type: 'button',
+      text: 'Titre',
+      class: 'ocr-pill-btn ocr-pill-title',
+      title: 'Remplacer le titre par cette ligne',
+      onclick: (e) => {
+        e.stopPropagation();
+        $('#nbTitle').value = toSentenceCase(txt);
+        toast('Titre défini (1ère lettre majuscule)', 'ok');
+        triggerAllBddChecks();
+      }
+    });
+
+    const btnTitleAdd = el('button', {
+      type: 'button',
+      text: '+ Titre',
+      class: 'ocr-pill-btn ocr-pill-title-add',
+      title: 'Ajouter cette ligne au titre existant',
+      onclick: (e) => {
+        e.stopPropagation();
+        const cur = $('#nbTitle').value.trim();
+        $('#nbTitle').value = toSentenceCase(cur ? cur + ' ' + txt : txt);
+        toast('Ligne ajoutée au titre', 'ok');
+        triggerAllBddChecks();
+      }
+    });
+
+    const btnAuthor = el('button', {
+      type: 'button',
+      text: 'Auteur',
+      class: 'ocr-pill-btn ocr-pill-author',
+      title: 'Remplacer l\'auteur par cette ligne',
+      onclick: (e) => {
+        e.stopPropagation();
+        $('#nbAuthor').value = toTitleCase(txt);
+        toast('Auteur défini (1ère lettre majuscule)', 'ok');
+        triggerAllBddChecks();
+      }
+    });
+
+    const btnAuthorAdd = el('button', {
+      type: 'button',
+      text: '+ Auteur',
+      class: 'ocr-pill-btn ocr-pill-author-add',
+      title: 'Ajouter cette ligne à l\'auteur existant',
+      onclick: (e) => {
+        e.stopPropagation();
+        const cur = $('#nbAuthor').value.trim();
+        $('#nbAuthor').value = toTitleCase(cur ? cur + ' ' + txt : txt);
+        toast('Ligne ajoutée à l\'auteur', 'ok');
+        triggerAllBddChecks();
+      }
+    });
+
+    const btnPub = el('button', {
+      type: 'button',
+      text: 'Éditeur',
+      class: 'ocr-pill-btn ocr-pill-pub',
+      title: 'Remplacer l\'éditeur par cette ligne',
+      onclick: (e) => {
+        e.stopPropagation();
+        if ($('#nbPublisher')) $('#nbPublisher').value = txt;
+        toast('Éditeur défini', 'ok');
+        triggerAllBddChecks();
+      }
+    });
+
+    const actionsBar = el('div', { class: 'ocr-card-actions' },
+      btnTitle,
+      btnTitleAdd,
+      btnAuthor,
+      btnAuthorAdd,
+      btnPub
+    );
+
+    const card = el('div', { class: 'ocr-card' }, label, actionsBar);
+
+    chk.addEventListener('change', () => {
+      card.classList.toggle('selected', chk.checked);
+      updateOcrMergeButtons();
+    });
+
+    list.append(card);
+  });
+
+  updateOcrMergeButtons();
+  sect.style.display = 'block';
+}
+
+const clearChipsBtn = $('#nbClearOcrChips');
+if (clearChipsBtn) {
+  clearChipsBtn.addEventListener('click', () => {
+    const sect = $('#nbOcrChipsSection');
+    if (sect) sect.style.display = 'none';
+  });
+}
+
+const toggleAllOcrBtn = $('#nbToggleAllOcr');
+if (toggleAllOcrBtn) {
+  toggleAllOcrBtn.addEventListener('click', () => {
+    const allChecks = document.querySelectorAll('.nb-line-check');
+    const checked = document.querySelectorAll('.nb-line-check:checked');
+    const shouldCheck = (checked.length < allChecks.length);
+    allChecks.forEach(c => {
+      c.checked = shouldCheck;
+      const card = c.closest('.ocr-card');
+      if (card) card.classList.toggle('selected', shouldCheck);
+    });
+    updateOcrMergeButtons();
+  });
+}
+
+const mergeTitleBtn = $('#nbBtnMergeTitle');
+if (mergeTitleBtn) {
+  mergeTitleBtn.addEventListener('click', () => {
+    const checks = document.querySelectorAll('.nb-line-check:checked');
+    if (!checks.length) return toast('Cochez au moins 1 ligne à fusionner en Titre', 'warn');
+    const combined = Array.from(checks).map(c => c.getAttribute('data-txt')).join(' ');
+    $('#nbTitle').value = toSentenceCase(combined);
+    toast(`Titre fusionné et formaté (${checks.length} lignes)`, 'ok');
+    triggerAllBddChecks();
+    updateOcrMergeButtons();
+  });
+}
+
+const mergeAuthorBtn = $('#nbBtnMergeAuthor');
+if (mergeAuthorBtn) {
+  mergeAuthorBtn.addEventListener('click', () => {
+    const checks = document.querySelectorAll('.nb-line-check:checked');
+    if (!checks.length) return toast('Cochez au moins 1 ligne à fusionner en Auteur', 'warn');
+    const combined = Array.from(checks).map(c => c.getAttribute('data-txt')).join(' ');
+    $('#nbAuthor').value = toTitleCase(combined);
+    toast(`Auteur fusionné et formaté (${checks.length} lignes)`, 'ok');
+    triggerAllBddChecks();
+    updateOcrMergeButtons();
+  });
+}
+
+/* ---------- Modale de Création Rapide de Livre Inconnu & Gestion BDD ---------- */
+let pendingNewCode = null;
+let currentMatchedBook = null;
+
+function levenshteinDist(s1, s2) {
+  const m = s1.length, n = s2.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+function stringSimilarity(s1, s2) {
+  if (!s1 || !s2) return 0;
+  s1 = s1.toLowerCase().trim();
+  s2 = s2.toLowerCase().trim();
+  if (s1 === s2) return 1.0;
+  const maxLen = Math.max(s1.length, s2.length);
+  if (maxLen === 0) return 1.0;
+  return (maxLen - levenshteinDist(s1, s2)) / maxLen;
+}
+
+function checkFieldBdd(inputId, badgeId, suggestionId, canonicalList) {
+  const input = $(inputId);
+  const badge = $(badgeId);
+  const sugg = $(suggestionId);
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) {
+    if (badge) badge.style.display = 'none';
+    if (sugg) sugg.style.display = 'none';
+    input.classList.remove('field-in-bdd');
+    return;
+  }
+  const normVal = val.toLowerCase();
+  const exact = (canonicalList || []).find(c => c && c.toLowerCase() === normVal);
+  if (exact) {
+    if (badge) {
+      badge.textContent = '✓ BDD';
+      badge.style.display = 'inline-flex';
+    }
+    if (sugg) sugg.style.display = 'none';
+    input.classList.add('field-in-bdd');
+    return;
+  }
+  input.classList.remove('field-in-bdd');
+  if (badge) badge.style.display = 'none';
+
+  // Détection de coquille / faute d'orthographe (proximité >= 0.72)
+  let bestMatch = null, bestScore = 0;
+  for (const item of (canonicalList || [])) {
+    if (!item) continue;
+    const score = stringSimilarity(val, item);
+    if (score >= 0.72 && score > bestScore) {
+      bestScore = score;
+      bestMatch = item;
+    }
+  }
+  if (bestMatch && sugg) {
+    sugg.innerHTML = `<span class="typo-suggestion">💡 Suggestion BDD : <b>${esc(bestMatch)}</b> <span style="font-size:10px;opacity:0.8">(Cliquer pour corriger)</span></span>`;
+    sugg.style.display = 'block';
+    sugg.onclick = () => {
+      input.value = bestMatch;
+      checkFieldBdd(inputId, badgeId, suggestionId, canonicalList);
+      toast(`Orthographe BDD appliquée : ${bestMatch}`, 'ok');
+    };
+  } else if (sugg) {
+    sugg.style.display = 'none';
+  }
+}
+
+function triggerAllBddChecks() {
+  checkFieldBdd('#nbAuthor', '#nbAuthorBddBadge', '#nbAuthorTypoSuggestion', dbAuthors);
+  checkFieldBdd('#nbPublisher', '#nbPublisherBddBadge', '#nbPublisherTypoSuggestion', dbPublishers);
+  const codeVal = $('#nbCode') ? $('#nbCode').value.trim() : '';
+  if (codeVal) checkCodeInCatalog(codeVal);
+  else hideExistingBookBanner();
+}
+
+async function checkCodeInCatalog(code) {
+  if (!code) {
+    hideExistingBookBanner();
+    return;
+  }
+  try {
+    const book = await api('/api/books/scan/' + encodeURIComponent(code));
+    if (book && book.id) {
+      showExistingBookBanner(book);
+    } else {
+      hideExistingBookBanner();
+    }
+  } catch (e) {
+    hideExistingBookBanner();
+  }
+}
+
+function showExistingBookBanner(b) {
+  currentMatchedBook = b;
+  const banner = $('#nbBookExistsBanner');
+  const title = $('#nbExistsTitle');
+  const badge = $('#nbExistsStockBadge');
+  const codeBadge = $('#nbCodeBddBadge');
+  if (!banner) return;
+  title.textContent = `${b.title}${b.author ? ' · ' + b.author : ''} (${eur(b.price)})`;
+  if (badge) badge.textContent = `Stock actuel : ${b.stock ?? 0} ex.`;
+  if (codeBadge) {
+    codeBadge.textContent = `✓ En base (${b.stock ?? 0} ex.)`;
+    codeBadge.style.display = 'inline-flex';
+  }
+  banner.style.display = 'block';
+
+  // Proposition 1 : Ajouter directement au stock / carton sans doublon
+  const addStockBtn = $('#nbBtnAddToStock');
+  if (addStockBtn) {
+    addStockBtn.onclick = () => {
+      if (currentMode === 'recv') {
+        addToRecv(b);
+        toast(`📦 ${b.title} ajouté au carton de réception !`, 'ok');
+      } else {
+        addToCart(b);
+        toast(`🛒 ${b.title} ajouté au panier !`, 'ok');
+      }
+      closeNewBookModal();
+    };
+  }
+
+  // Proposition 2 : Remplir la fiche
+  const applyBtn = $('#nbBtnApplyMatch');
+  if (applyBtn) {
+    applyBtn.onclick = () => {
+      $('#nbTitle').value = b.title;
+      if (b.author) $('#nbAuthor').value = b.author;
+      if (b.publisher && $('#nbPublisher')) $('#nbPublisher').value = b.publisher;
+      if (b.price != null && b.price > 0) $('#nbPrice').value = b.price;
+      banner.style.display = 'none';
+      toast('Fiche officielle du livre appliquée !', 'ok');
+      triggerAllBddChecks();
+    };
+  }
+}
+
+function hideExistingBookBanner() {
+  currentMatchedBook = null;
+  const banner = $('#nbBookExistsBanner');
+  if (banner) banner.style.display = 'none';
+  const codeBadge = $('#nbCodeBddBadge');
+  if (codeBadge) codeBadge.style.display = 'none';
+}
+
+function toSentenceCase(str) {
+  if (!str) return '';
+  str = str.trim();
+  if (!str) return '';
+  const stopwords = new Set([
+    'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'et', 'en', 'au', 'aux',
+    'par', 'pour', 'sur', 'dans', 'a', 'd', 'l', 'ou', 'avec', 'sans', 'sous', 'vers', 'chez'
+  ]);
+  const words = str.split(/\s+/);
+  const formatted = words.map((w, i) => {
+    if (w.includes('-') && !w.startsWith('-') && !w.endsWith('-')) {
+      return w.split('-').map((p, j) => (i === 0 && j === 0) ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : p.toLowerCase()).join('-');
+    }
+    if (w.includes("'") && !w.startsWith("'") && !w.endsWith("'")) {
+      const [pre, rest] = w.split("'", 2);
+      const preFmt = (i === 0) ? pre.charAt(0).toUpperCase() + pre.slice(1).toLowerCase() + "'" : pre.toLowerCase() + "'";
+      const restFmt = (i === 0) ? rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase() : rest.toLowerCase();
+      return preFmt + restFmt;
+    }
+    const low = w.toLowerCase();
+    if (i === 0) return low.charAt(0).toUpperCase() + low.slice(1);
+    return low;
+  });
+  let res = formatted.join(' ');
+  res = res.replace(/([:\.?!]\s+)([a-zàéèêîôû])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+  return res.charAt(0).toUpperCase() + res.slice(1);
+}
+
+function toTitleCase(str) {
+  if (!str) return '';
+  str = str.trim();
+  if (!str) return '';
+  const stopwords = new Set([
+    'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'et', 'en', 'au', 'aux',
+    'par', 'pour', 'sur', 'dans', 'a', 'd', 'l', 'ou', 'avec', 'sans', 'sous', 'vers', 'chez'
+  ]);
+  const words = str.split(/\s+/);
+  const formatted = words.map((w, i) => {
+    if (w.includes('-') && !w.startsWith('-') && !w.endsWith('-')) {
+      return w.split('-').map(p => stopwords.has(p.toLowerCase()) ? p.toLowerCase() : (p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())).join('-');
+    }
+    if (w.includes("'") && !w.startsWith("'") && !w.endsWith("'")) {
+      const [pre, rest] = w.split("'", 2);
+      const preFmt = (i === 0) ? pre.charAt(0).toUpperCase() + pre.slice(1).toLowerCase() + "'" : pre.toLowerCase() + "'";
+      const restFmt = stopwords.has(rest.toLowerCase()) ? rest.toLowerCase() : (rest.charAt(0).toUpperCase() + rest.slice(1).toLowerCase());
+      return preFmt + restFmt;
+    }
+    const low = w.toLowerCase();
+    if (i === 0 || !stopwords.has(low)) {
+      return low.charAt(0).toUpperCase() + low.slice(1);
+    }
+    return low;
+  });
+  let res = formatted.join(' ');
+  res = res.replace(/([:\.?!]\s+)([a-zàéèêîôû])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+  return res.charAt(0).toUpperCase() + res.slice(1);
+}
+
+function openNewBookModal(code = '', prefill = {}) {
+  pendingNewCode = code || '';
+  $('#nbCode').value = pendingNewCode;
+  $('#nbTitle').value = prefill.matched_book ? (prefill.matched_book.title || '') : toSentenceCase(prefill.title || '');
+  $('#nbAuthor').value = prefill.matched_book ? (prefill.matched_book.author || '') : toTitleCase(prefill.author || '');
+  if ($('#nbPublisher')) $('#nbPublisher').value = prefill.matched_book ? (prefill.matched_book.publisher || '') : (prefill.publisher || '');
+  $('#nbPrice').value = (prefill.price != null && prefill.price > 0) ? prefill.price : (prefill.matched_book && prefill.matched_book.price > 0 ? prefill.matched_book.price : '');
+  
+  const badge = $('#nbOcrBadge');
+  if (badge) badge.style.display = prefill.lines ? 'inline-flex' : 'none';
+
+  // Si le livre existe déjà en base, proposer immédiatement l'ajout au stock
+  if (prefill.matched_book) {
+    showExistingBookBanner(prefill.matched_book);
+  } else if (pendingNewCode) {
+    checkCodeInCatalog(pendingNewCode);
+  } else {
+    hideExistingBookBanner();
+  }
+  
+  if (prefill.lines && prefill.lines.length) {
+    renderOcrChips(prefill.lines);
+  } else {
+    const sect = $('#nbOcrChipsSection');
+    if (sect) sect.style.display = 'none';
+  }
+
+  // Notifier si une faute d'orthographe a été corrigée
+  if (prefill.corrections) {
+    if (prefill.corrections.author) {
+      toast(`✨ Auteur corrigé d'après la base : ${prefill.corrections.author.corrected}`, 'ok');
+    }
+    if (prefill.corrections.publisher) {
+      toast(`✨ Éditeur corrigé d'après la base : ${prefill.corrections.publisher.corrected}`, 'ok');
+    }
+  }
+
+  triggerAllBddChecks();
+  
+  // Réinitialiser tout décalage intempestif de défilement (retour caméra etc.) et actualiser la hauteur
+  window.scrollTo(0, 0);
+  updateViewportHeight();
+  
+  const m = $('#newBookModal');
+  if (m) {
+    m.hidden = false;
+    m.style.removeProperty('display');
+  }
+  
+  // N'auto-focus que s'il n'y a PAS de lignes OCR détectées pour éviter d'ouvrir le clavier virtuel
+  // et de réduire l'espace visible en masquant les contrôles et boutons Enregistrer/Annuler
+  if (!prefill.lines || !prefill.lines.length) {
+    setTimeout(() => {
+      if (!$('#nbTitle').value) $('#nbTitle').focus();
+      else if (!$('#nbPrice').value) $('#nbPrice').focus();
+    }, 150);
+  } else {
+    if (document.activeElement && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
+  }
 }
 
 function closeNewBookModal() {
-  $('#newBookModal').hidden = true;
+  const m = $('#newBookModal');
+  if (m) {
+    m.hidden = true;
+    m.style.setProperty('display', 'none', 'important');
+  }
   pendingNewCode = null;
+  const sect = $('#nbOcrChipsSection');
+  if (sect) sect.style.display = 'none';
+  const badge = $('#nbOcrBadge');
+  if (badge) badge.style.display = 'none';
+  hideExistingBookBanner();
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur();
+  }
+  window.scrollTo(0, 0);
+  updateViewportHeight();
+}
+
+// Fermeture par le bouton ✕ en haut de la fiche livre
+const nbBtnCloseTop = $('#nbBtnCloseTop');
+if (nbBtnCloseTop) {
+  nbBtnCloseTop.addEventListener('click', closeNewBookModal);
+}
+
+// Fermeture en cliquant sur l'overlay sombre autour de la feuille
+const nbModalEl = $('#newBookModal');
+if (nbModalEl) {
+  nbModalEl.addEventListener('click', e => {
+    if (e.target === nbModalEl) closeNewBookModal();
+  });
+}
+
+// Échappement clavier pour fermer la modale
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeNewBookModal();
+    if (typeof closeMobileBookStats === 'function') closeMobileBookStats();
+    if (typeof closeMultiPayModal === 'function') closeMultiPayModal();
+  }
+});
+
+let titleCaseMode = 0;
+const nbBtnCaseTitle = $('#nbBtnCaseTitle');
+if (nbBtnCaseTitle) {
+  nbBtnCaseTitle.addEventListener('click', () => {
+    const val = $('#nbTitle').value.trim();
+    if (!val) return;
+    titleCaseMode = (titleCaseMode + 1) % 2;
+    if (titleCaseMode === 1) {
+      $('#nbTitle').value = toTitleCase(val);
+      toast('Titre formaté (Mots majuscules)', 'ok');
+    } else {
+      $('#nbTitle').value = toSentenceCase(val);
+      toast('Titre formaté (Majuscule 1ère lettre)', 'ok');
+    }
+    triggerAllBddChecks();
+  });
+}
+
+const nbBtnCaseAuthor = $('#nbBtnCaseAuthor');
+if (nbBtnCaseAuthor) {
+  nbBtnCaseAuthor.addEventListener('click', () => {
+    const val = $('#nbAuthor').value.trim();
+    if (!val) return;
+    $('#nbAuthor').value = toTitleCase(val);
+    toast('Auteur formaté (Majuscules)', 'ok');
+    triggerAllBddChecks();
+  });
 }
 
 $('#btnCancelNewBook').addEventListener('click', closeNewBookModal);
+
+// Écouteurs en temps réel sur les champs pour la vérification BDD et la correction de coquilles
+['input', 'blur'].forEach(evt => {
+  const codeInp = $('#nbCode');
+  if (codeInp) codeInp.addEventListener(evt, () => checkCodeInCatalog(codeInp.value.trim()));
+
+  const authInp = $('#nbAuthor');
+  if (authInp) authInp.addEventListener(evt, () => checkFieldBdd('#nbAuthor', '#nbAuthorBddBadge', '#nbAuthorTypoSuggestion', dbAuthors));
+
+  const pubInp = $('#nbPublisher');
+  if (pubInp) pubInp.addEventListener(evt, () => checkFieldBdd('#nbPublisher', '#nbPublisherBddBadge', '#nbPublisherTypoSuggestion', dbPublishers));
+});
 
 $('#btnSaveNewBook').addEventListener('click', async () => {
   const code = $('#nbCode').value.trim();
   const title = $('#nbTitle').value.trim();
   const author = $('#nbAuthor').value.trim();
+  const publisher = $('#nbPublisher') ? $('#nbPublisher').value.trim() : null;
   const price = parseFloat($('#nbPrice').value) || 0;
   if (!title) return toast('Le titre est requis', 'warn');
   if (price <= 0) return toast('Indiquez un prix valide', 'warn');
@@ -1628,6 +2346,7 @@ $('#btnSaveNewBook').addEventListener('click', async () => {
         code,
         title,
         author: author || null,
+        publisher: publisher || null,
         price,
         category: 'Standard',
         min_stock: 2,
@@ -1647,6 +2366,111 @@ $('#btnSaveNewBook').addEventListener('click', async () => {
     toast(err.message, 'err');
   }
 });
+
+// Écouteur OCR dans la modale
+const nbOcrInput = $('#nbOcrInput');
+if (nbOcrInput) {
+  nbOcrInput.addEventListener('change', async e => {
+    window.scrollTo(0, 0);
+    updateViewportHeight();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const txtSpan = $('#nbOcrText');
+    const oldText = txtSpan ? txtSpan.textContent : '';
+    if (txtSpan) txtSpan.textContent = '⏳ Analyse OCR en cours...';
+    try {
+      toast('Analyse de la page de garde...', 'ok');
+      const res = await performOcr(file);
+      window.scrollTo(0, 0);
+      updateViewportHeight();
+      if (res && res.candidates) {
+        const c = res.candidates;
+        if (c.title) $('#nbTitle').value = c.title;
+        if (c.author) $('#nbAuthor').value = c.author;
+        if (c.publisher && $('#nbPublisher')) $('#nbPublisher').value = c.publisher;
+        if (c.price != null && c.price > 0) $('#nbPrice').value = c.price;
+        const badge = $('#nbOcrBadge');
+        if (badge) badge.style.display = 'inline-flex';
+        renderOcrChips(res.lines);
+        
+        // Si le livre existe déjà en base, proposer immédiatement l'ajout au stock
+        if (res.matched_book) {
+          showExistingBookBanner(res.matched_book);
+        }
+
+        // Notifier les corrections de coquilles détectées
+        if (res.corrections) {
+          if (res.corrections.author) {
+            toast(`✨ Auteur corrigé d'après la base : ${res.corrections.author.corrected}`, 'ok');
+          }
+          if (res.corrections.publisher) {
+            toast(`✨ Éditeur corrigé d'après la base : ${res.corrections.publisher.corrected}`, 'ok');
+          }
+        }
+
+        triggerAllBddChecks();
+        toast('Page de garde analysée avec succès', 'ok');
+      }
+    } catch (err) {
+      toast(err.message || "Erreur lors de l'OCR", 'err');
+    } finally {
+      if (txtSpan) txtSpan.textContent = oldText;
+      nbOcrInput.value = '';
+      window.scrollTo(0, 0);
+      updateViewportHeight();
+    }
+  });
+}
+
+// Écouteur OCR dans le mode Réception (carton)
+const recvOcrInput = $('#recvOcrInput');
+if (recvOcrInput) {
+  recvOcrInput.addEventListener('change', async e => {
+    window.scrollTo(0, 0);
+    updateViewportHeight();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const txtSpan = $('#recvOcrText');
+    const oldText = txtSpan ? txtSpan.textContent : '';
+    if (txtSpan) txtSpan.textContent = '⏳ Scan OCR...';
+    try {
+      toast('Numérisation de la page de garde...', 'ok');
+      const res = await performOcr(file);
+      window.scrollTo(0, 0);
+      updateViewportHeight();
+      if (res) {
+        // 1. Priorité absolue : livre déjà existant au catalogue -> proposer immédiatement l'ajout au stock
+        if (res.matched_book) {
+          try {
+            const book = await api('/api/books/scan/' + encodeURIComponent(res.matched_book.code));
+            addToRecv(book);
+            toast(`📦 Livre en base ajouté au carton : ${book.title}`, 'ok');
+            return;
+          } catch (e) {}
+        }
+
+        const c = res.candidates || {};
+        // 2. Ouvrir la modale pré-remplie avec titre assemblé, auteur et éditeur
+        toast('Page de garde lue : vérifiez et enregistrez', 'ok');
+        openNewBookModal('', { ...c, lines: res.lines, matched_book: res.matched_book, corrections: res.corrections });
+      } else {
+        toast('Aucun texte lisible détecté', 'warn');
+      }
+    } catch (err) {
+      toast(err.message || "Erreur lors de l'analyse OCR", 'err');
+    } finally {
+      if (txtSpan) txtSpan.textContent = oldText;
+      recvOcrInput.value = '';
+      window.scrollTo(0, 0);
+      updateViewportHeight();
+    }
+  });
+}
+
 
 /* ---------- recherche / saisie manuelle ---------- */
 let isLookingUp = false;
@@ -1697,6 +2521,10 @@ $('#manualCode').addEventListener('keydown', e => { if (e.key === 'Enter') manua
 
 /* ---------- moteur de scan tolérant aux conditions dégradées (flou, reflets, faible éclairage) ---------- */
 let stream = null, scanTimer = null, isScanning = false, lastCode = '', lastTime = 0;
+let lockedBarcode = null;           // Code-barres actuellement verrouillé sous l'objectif (Règle 1 : Scan-and-Exit)
+let emptyFramesCount = 0;           // Compteur de frames consécutives sans code (sortie de champ confirmée)
+const EMPTY_FRAMES_REQUIRED = 3;    // Minimum 3 frames consécutives (~330ms) sans code pour valider la sortie physique du livre
+const SAME_CODE_COOLDOWN_MS = 1200; // Règle 2 : Cooldown incompressible de 1.2s entre 2 scans consécutifs du MÊME livre
 let videoTrack = null, currentZoom = 1, torchActive = false;
 
 // Canvases hors-écran réutilisables pour le recadrage ROI et les filtres
@@ -1723,9 +2551,15 @@ if (window.ZXing) {
 }
 
 // Détecteur natif Chromium
-const nativeDetector = ('BarcodeDetector' in window)
-  ? new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'code_128'] })
-  : null;
+let nativeDetector = null;
+if ('BarcodeDetector' in window) {
+  try {
+    nativeDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'code_128'] });
+  } catch (e) {
+    console.warn('BarcodeDetector non supporté ou erreur d initialisation:', e);
+    nativeDetector = null;
+  }
+}
 
 // Validation stricte des sommes de contrôle (permet d'être ultra-tolérant sans faux positifs)
 function isValidBarcode(raw) {
@@ -1834,15 +2668,25 @@ function onCode(code) {
   if (isLookingUp || pendingNewCode) return; // En pause si recherche en cours ou modale de création ouverte
   
   const now = Date.now();
-  // RÈGLE AMAZON / LOGISTIQUE PRO :
-  // 1. Si le livre est différent du précédent (ex: 100 livres différents dans un carton) : DÉBIT INSTANTANÉ (0 ms d'attente) !
-  // 2. Si c'est le même livre consécutif, on attend soit que le livre sorte du champ (code == null), soit un micro-délai de 650 ms
-  if (code === lastCode && (now - lastTime < 650)) {
+
+  // RÈGLE 1 : VERROU DE RUPTURE VISUELLE STRICTE (SCAN-AND-EXIT)
+  // Tant que le livre reste immobile devant l'objectif (pas de sortie de champ >= 3 frames consécutives), on bloque
+  if (code === lockedBarcode) {
     return;
   }
-  
+
+  // RÈGLE 2 : COOLDOWN TEMPOREL INCOMPRESSIBLE (GARDE-FOU HUMAIN 1.2s)
+  // Même si le livre a micro-quitté le champ, pour le même livre consécutif, on impose au moins 1 200 ms
+  // (Si le livre est différent : 0 ms de délai, débit instantané !)
+  if (code === lastCode && (now - lastTime < SAME_CODE_COOLDOWN_MS)) {
+    return;
+  }
+
+  // Nouveau scan validé
+  lockedBarcode = code;
   lastCode = code;
   lastTime = now;
+  emptyFramesCount = 0;
   flashSuccess();
   lookupCode(code);
 }
@@ -1926,6 +2770,8 @@ function stopCamera() {
 
 function camStatus(show, title, msg, btnText = null, onBtn = null) {
   $('#camStatus').hidden = !show;
+  const ctrl = $('#camControls');
+  if (ctrl) ctrl.style.display = show ? 'none' : 'flex';
   if (title) $('#camTitle').textContent = title;
   if (msg) $('#camMsg').textContent = msg;
   const btn = $('#btnCam');
@@ -2223,6 +3069,7 @@ async function startCamera(specificDeviceId = null) {
             }
 
             if (code) {
+              emptyFramesCount = 0;
               lastScanSuccessTime = Date.now();
               if (!isBurstMode) {
                 isBurstMode = true;
@@ -2230,9 +3077,13 @@ async function startCamera(specificDeviceId = null) {
               }
               onCode(code);
             } else {
-              // Sortie de champ détectée (aucun code devant l'objectif) :
-              // Réinitialise immédiatement le verrou pour que le livre suivant (même s'il a le même code) soit pris instantanément
-              lastCode = '';
+              // RÈGLE 1 : RUPTURE VISUELLE (SCAN-AND-EXIT)
+              // Il faut au moins EMPTY_FRAMES_REQUIRED frames consécutives sans code (~330ms)
+              // pour prouver que le livre a physiquement quitté la zone de scan et déverrouiller
+              emptyFramesCount++;
+              if (emptyFramesCount >= EMPTY_FRAMES_REQUIRED) {
+                lockedBarcode = null;
+              }
             }
           }
         } catch (err) {
@@ -2309,7 +3160,7 @@ $('#fileSnap').addEventListener('change', async e => {
       }
     }
 
-    if (code) { lastCode = ''; onCode(code); }
+    if (code) { lockedBarcode = null; lastCode = ''; onCode(code); }
     else toast('Code-barres non lisible sur cette photo', 'warn');
   } catch (err) { toast('Erreur de lecture de la photo', 'warn'); }
   finally { URL.revokeObjectURL(url); }
@@ -2362,19 +3213,8 @@ if (btnFullscreen) {
   btnFullscreen.addEventListener('click', toggleFullscreen);
 }
 
-// Essai de bascule automatique en plein écran au premier tap utilisateur (navigateurs Android)
-let autoFullscreenTried = false;
-function attemptAutoFullscreen() {
-  if (autoFullscreenTried || isStandaloneMode()) return;
-  autoFullscreenTried = true;
-  const docEl = document.documentElement;
-  const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
-  if (req) {
-    req.call(docEl).catch(() => {});
-  }
-}
-window.addEventListener('touchstart', attemptAutoFullscreen, { once: true, passive: true });
-window.addEventListener('click', attemptAutoFullscreen, { once: true, passive: true });
+// Plein écran contrôlé explicitement par l'utilisateur via le bouton #btnFullscreen ou mode PWA autonome
+
 
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
   document.addEventListener(evt, updateFullscreenUI);
@@ -2383,20 +3223,40 @@ updateFullscreenUI();
 
 /* ---------- démarrage ---------- */
 (async function init() {
+  updateUser();
+  renderCart();
+  closeNewBookModal();
   startNetworkMonitor();
   restoreActiveCart();
   restoreRecvList();
+  renderCart();
   await pairFromHash();
   const initHash = location.hash.replace(/^#/, '');
   setMobileMode(initHash === 'recv' ? 'recv' : 'sale', true, false);
-  if (!localStorage.getItem(TOKEN_KEY)) { renderCart(); return showPairing(); }
+  if (!localStorage.getItem(TOKEN_KEY)) {
+    renderCart();
+    return showPairing();
+  }
   try {
-    users = await api('/api/users');
-    if (!users.some(u => u.name === currentUser)) { currentUser = ''; localStorage.removeItem(USER_KEY); }
-  } catch (e) { return; }                 // 401 géré dans api()
+    const fetchedUsers = await api('/api/users');
+    if (Array.isArray(fetchedUsers)) {
+      users = fetchedUsers;
+      if (currentUser && !users.some(u => u.name === currentUser)) {
+        currentUser = '';
+        localStorage.removeItem(USER_KEY);
+      }
+    }
+  } catch (e) {
+    console.warn('Mode hors-ligne ou serveur indisponible pour /api/users:', e);
+  }
   updateUser();
-  await loadPayOptions();
+  try {
+    await loadPayOptions();
+  } catch (e) {
+    console.warn('Options de paiement par défaut utilisées:', e);
+  }
   renderCart();
+  syncLiveCart({ type: 'mobile_connected' });
   if (!currentUser) openUserModal();
   startCamera();
 })();

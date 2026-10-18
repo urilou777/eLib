@@ -161,11 +161,20 @@ def import_workbook(path, replace=True):
     return report
 
 
+def _sanitize_cell(v):
+    """Protection anti-injection de formule / CSV Injection (OWASP / ANSSI).
+    Neutralise les caractères d'échappement =, +, -, @, \t, \r qui pourraient
+    être interprétés comme des formules ou commandes dynamiques par Excel."""
+    if isinstance(v, str) and v and v[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
+
+
 def _sheet(wb, title, headers, data, widths=None):
     ws = wb.create_sheet(title)
     ws.append(headers)
     for row in data:
-        ws.append(row)
+        ws.append([_sanitize_cell(c) for c in row])
     fill = PatternFill("solid", fgColor="2B3A67")
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")

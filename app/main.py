@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Optional, List, Literal
-from . import db, excel_io, security
+from . import db, excel_io, security, ocr
 
 app = FastAPI(title="Librairie")
 db.init()
@@ -53,13 +53,17 @@ class LiveHub:
     def update_basket(self, device_id: str, basket_data: dict, action: dict = None):
         now = time.time()
         basket_data["updated_at"] = now
+        # Même sans article scanné (panier vide), le smartphone est connecté et actif !
+        if basket_data.get("qty", 0) > 0 or basket_data.get("items"):
+            basket_data["status"] = "scanning"
+        else:
+            basket_data["status"] = "connected"
+
         with self.lock:
-            if basket_data.get("qty", 0) <= 0 and not basket_data.get("items"):
-                self.active_baskets.pop(device_id, None)
-            else:
-                self.active_baskets[device_id] = basket_data
+            self.active_baskets[device_id] = basket_data
             self._cleanup_expired()
-            active_list = list(self.active_baskets.values())
+            active_list = self._prepare_baskets()
+
         self.broadcast("baskets_updated", {
             "baskets": active_list,
             "action": action,
@@ -69,9 +73,24 @@ class LiveHub:
 
     def remove_basket(self, device_id: str, action: dict = None):
         with self.lock:
-            removed = self.active_baskets.pop(device_id, None)
+            act_type = (action or {}).get("type", "")
+            # Déconnexion réelle uniquement lors de fermeture explicite de session ou révocation
+            if act_type in ("session_closed", "disconnected", "unpaired"):
+                removed = self.active_baskets.pop(device_id, None)
+            else:
+                # Si le panier est vidé ou la vente finalisée, le mobile reste connecté avec panier à 0
+                if device_id in self.active_baskets:
+                    self.active_baskets[device_id]["qty"] = 0
+                    self.active_baskets[device_id]["total"] = 0.0
+                    self.active_baskets[device_id]["items"] = []
+                    self.active_baskets[device_id]["status"] = "connected"
+                    self.active_baskets[device_id]["updated_at"] = time.time()
+                    removed = self.active_baskets[device_id]
+                else:
+                    removed = None
             self._cleanup_expired()
-            active_list = list(self.active_baskets.values())
+            active_list = self._prepare_baskets()
+
         if removed:
             self.broadcast("baskets_updated", {
                 "baskets": active_list,
@@ -83,13 +102,27 @@ class LiveHub:
     def get_active_baskets(self):
         with self.lock:
             self._cleanup_expired()
-            return list(self.active_baskets.values())
+            return self._prepare_baskets()
+
+    def _prepare_baskets(self):
+        now = time.time()
+        res = []
+        for v in self.active_baskets.values():
+            item = dict(v)
+            age = now - item.get("updated_at", now)
+            item["idle_sec"] = int(age)
+            # Actif si ping récent (< 45s), Inactif / En veille après 45s sans ping
+            item["state"] = "idle" if age > 45 else "active"
+            res.append(item)
+        return res
 
     def _cleanup_expired(self):
-        cutoff = time.time() - 300  # expire après 5 min d'inactivité
+        # Expiration après 150s (2 min 30) sans aucun ping (écran éteint / navigateur fermé)
+        cutoff = time.time() - 150
         expired = [k for k, v in self.active_baskets.items() if v.get("updated_at", 0) < cutoff]
         for k in expired:
             del self.active_baskets[k]
+
 
 
 live_hub = LiveHub()
@@ -100,6 +133,107 @@ MIRROR = os.path.join(db.DATA_DIR, "Bibliotheque_miroir.xlsx")
 BACKUPS = os.path.join(db.DATA_DIR, "sauvegardes")
 os.makedirs(BACKUPS, exist_ok=True)
 _dirty = threading.Event()
+
+
+def cleanup_old_backups(max_hourly: int = 24, max_daily: int = 30, max_pre_ops: int = 10) -> int:
+    """Politique de rétention intelligente de l'espace disque :
+    - Conserve les 30 derniers snapshots quotidiens (YYYY-MM-DD) + tous les 1ers du mois (archives permanentes).
+    - Conserve les 24 derniers snapshots horaires (YYYYMMDD_HHMM).
+    - Conserve les 10 derniers snapshots pré-opérations (avant_renommage_*, librairie_backup_pre_*).
+    Retourne le nombre de fichiers purgés.
+    """
+    if not os.path.exists(BACKUPS):
+        return 0
+    deleted_count = 0
+
+    hourly_pattern = re.compile(r"^librairie_(\d{8})_(\d{4}|\d{6})\.db$")
+    daily_db_pattern = re.compile(r"^librairie_(\d{4})-(\d{2})-(\d{2})\.db$")
+    daily_xl_pattern = re.compile(r"^Bibliotheque_(\d{4})-(\d{2})-(\d{2})\.xlsx$")
+    pre_op_pattern = re.compile(r"^(avant_renommage_|librairie_backup_pre_|librairie_backup_before_).*\.(db|xlsx)$")
+    manual_xl_pattern = re.compile(r"^Bibliotheque_(\d{8})_(\d{6})\.xlsx$")
+
+    hourly_files = []
+    daily_db_files = []
+    daily_xl_files = []
+    pre_op_files = []
+    manual_xl_files = []
+
+    for fname in os.listdir(BACKUPS):
+        fpath = os.path.join(BACKUPS, fname)
+        if not os.path.isfile(fpath):
+            continue
+        try:
+            mtime = os.stat(fpath).st_mtime
+        except OSError:
+            continue
+
+        m_hourly = hourly_pattern.match(fname)
+        m_daily_db = daily_db_pattern.match(fname)
+        m_daily_xl = daily_xl_pattern.match(fname)
+        m_pre_op = pre_op_pattern.match(fname)
+        m_manual_xl = manual_xl_pattern.match(fname)
+
+        if m_hourly:
+            hourly_files.append((fpath, mtime))
+        elif m_daily_db:
+            year, month, day = m_daily_db.groups()
+            daily_db_files.append((fpath, mtime, day == "01"))
+        elif m_daily_xl:
+            year, month, day = m_daily_xl.groups()
+            daily_xl_files.append((fpath, mtime, day == "01"))
+        elif m_pre_op:
+            pre_op_files.append((fpath, mtime))
+        elif m_manual_xl:
+            manual_xl_files.append((fpath, mtime))
+
+    # 1. Purge des instantanés horaires : ne garder que les `max_hourly` plus récents
+    hourly_files.sort(key=lambda x: x[1], reverse=True)
+    for fpath, _ in hourly_files[max_hourly:]:
+        try:
+            os.remove(fpath)
+            deleted_count += 1
+        except OSError:
+            pass
+
+    # 2. Purge des instantanés pré-opérations : ne garder que les `max_pre_ops` plus récents
+    pre_op_files.sort(key=lambda x: x[1], reverse=True)
+    for fpath, _ in pre_op_files[max_pre_ops:]:
+        try:
+            os.remove(fpath)
+            deleted_count += 1
+        except OSError:
+            pass
+
+    # 3. Purge des exports Excel manuels anciens : garder les 10 plus récents
+    manual_xl_files.sort(key=lambda x: x[1], reverse=True)
+    for fpath, _ in manual_xl_files[10:]:
+        try:
+            os.remove(fpath)
+            deleted_count += 1
+        except OSError:
+            pass
+
+    # 4. Purge des sauvegardes journalières .db : garder les `max_daily` plus récents OU le 1er du mois
+    daily_db_files.sort(key=lambda x: x[1], reverse=True)
+    for idx, (fpath, _, is_first_of_month) in enumerate(daily_db_files):
+        if idx >= max_daily and not is_first_of_month:
+            try:
+                os.remove(fpath)
+                deleted_count += 1
+            except OSError:
+                pass
+
+    # 5. Purge des sauvegardes journalières .xlsx : garder les `max_daily` plus récents OU le 1er du mois
+    daily_xl_files.sort(key=lambda x: x[1], reverse=True)
+    for idx, (fpath, _, is_first_of_month) in enumerate(daily_xl_files):
+        if idx >= max_daily and not is_first_of_month:
+            try:
+                os.remove(fpath)
+                deleted_count += 1
+            except OSError:
+                pass
+
+    return deleted_count
 
 
 def _mirror_loop():
@@ -133,6 +267,11 @@ def _mirror_loop():
                     stamp = now.strftime("%Y%m%d_%H%M")
                     db.safe_backup_db(os.path.join(BACKUPS, f"librairie_{stamp}.db"))
                     last_hourly_backup = time.time()
+                    cleanup_old_backups()
+
+                # 5. Rétention automatique lors du passage au jour suivant
+                if last_day != today:
+                    cleanup_old_backups()
 
                 last_day = today
             except Exception as e:
@@ -141,7 +280,9 @@ def _mirror_loop():
 
 @app.on_event("startup")
 def _start():
+    cleanup_old_backups()
     threading.Thread(target=_mirror_loop, daemon=True).start()
+    threading.Thread(target=ocr.get_ocr_engine, daemon=True).start()
 
 
 @app.middleware("http")
@@ -211,7 +352,7 @@ class AdjIn(BaseModel):
 
 class AllocIn(BaseModel):
     book_id: Optional[int] = None   # composant (packs) ; vide = le livre de la ligne
-    lot_id: Optional[int] = None    # None = vente hors stock (explicite)
+    lot_id: int                     # lot obligatoire avec stock (ventes hors stock strictement interdites)
     qty: int = Field(ge=1, le=1000)
 
 
@@ -265,8 +406,13 @@ class ResIn(BaseModel):
 
 
 class DropdownItemIn(BaseModel):
-    group_key: Literal["category", "type", "payment", "publisher"]
+    group_key: Literal["category", "type", "payment", "publisher", "service_moment"]
     label: str = Field(min_length=1, max_length=80)
+
+
+class OcrScanIn(BaseModel):
+    image_base64: str
+
 
 
 class DropdownItemRenameIn(BaseModel):
@@ -281,6 +427,15 @@ class UserIn(BaseModel):
 class PairIn(BaseModel):
     code: str = Field(min_length=8, max_length=64)
     name: Optional[str] = Field(None, max_length=60)
+
+
+def _dump(model):
+    """Sérialisation d'un modèle Pydantic v1/v2 sans avertissement de dépréciation."""
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    if hasattr(model, "dict"):
+        return model.dict()
+    return dict(model)
 
 
 def get_current_user(request: Request) -> str:
@@ -443,11 +598,13 @@ def undo_audit(log_id: int, request: Request):
 def get_options():
     with db.tx() as c:
         rows = db.rows(c, "SELECT id, group_key, label FROM dropdown_options ORDER BY group_key, label")
-        res = {"category": [], "type": [], "payment": [], "publisher": []}
+        db_authors = [r[0] for r in c.execute("SELECT DISTINCT author FROM books WHERE author IS NOT NULL AND TRIM(author) != '' ORDER BY author").fetchall()]
+        res = {"category": [], "type": [], "payment": [], "publisher": [], "service_moment": [], "authors": db_authors}
         for r in rows:
             if r["group_key"] in res:
                 res[r["group_key"]].append({"id": r["id"], "label": r["label"]})
         return res
+
 
 
 @app.post("/api/options")
@@ -486,6 +643,8 @@ def get_option_impact(opt_id: int):
             books_count = c.execute("SELECT COUNT(*) FROM books WHERE publisher=?", (lbl,)).fetchone()[0]
         elif gk == "payment":
             sales_count = c.execute("SELECT COUNT(*) FROM sales WHERE payment=?", (lbl,)).fetchone()[0]
+        elif gk == "service_moment":
+            sales_count = c.execute("SELECT COUNT(*) FROM sales WHERE service_moment=?", (lbl,)).fetchone()[0]
 
         return {
             "id": opt_id,
@@ -543,6 +702,12 @@ def rename_or_merge_option(opt_id: int, body: DropdownItemRenameIn, request: Req
             elif gk == "payment":
                 cur = c.execute("UPDATE sales SET payment=? WHERE payment=?", (new_lbl, old_lbl))
                 updated_sales = cur.rowcount
+            elif gk == "service_moment":
+                cur = c.execute("UPDATE sales SET service_moment=? WHERE service_moment=?", (new_lbl, old_lbl))
+                updated_sales = cur.rowcount
+                global MASTER_SESSION_MOMENT
+                if MASTER_SESSION_MOMENT == old_lbl:
+                    MASTER_SESSION_MOMENT = new_lbl
 
         # Mise à jour de la table dropdown_options
         if is_merge:
@@ -700,7 +865,7 @@ def book_add(b: BookIn, request: Request):
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (b.code, b.title, b.series, b.volume, b.author, b.publisher,
                                                      b.category, b.type, b.location, b.price, b.min_stock, b.is_pack))
             bid = cur.lastrowid
-            db.log_audit(c, get_current_user(request), "INSERT", "book", bid, f"Création livre « {b.title} » ({b.code})", snapshot_after=b.dict() | {"id": bid})
+            db.log_audit(c, get_current_user(request), "INSERT", "book", bid, f"Création livre « {b.title} » ({b.code})", snapshot_after=_dump(b) | {"id": bid})
             return {"id": bid}
         except Exception:
             raise HTTPException(400, "Ce code existe déjà")
@@ -715,8 +880,71 @@ def book_upd(bid: int, b: BookIn, request: Request):
         c.execute("""UPDATE books SET code=?,title=?,series=?,volume=?,author=?,publisher=?,category=?,type=?,
             location=?,price=?,min_stock=? WHERE id=?""", (b.code, b.title, b.series, b.volume, b.author,
                                                            b.publisher, b.category, b.type, b.location, b.price, b.min_stock, bid))
-        db.log_audit(c, get_current_user(request), "UPDATE", "book", bid, f"Modification fiche « {b.title} »", snapshot_before=dict(old), snapshot_after=b.dict() | {"id": bid})
+        db.log_audit(c, get_current_user(request), "UPDATE", "book", bid, f"Modification fiche « {b.title} »", snapshot_before=dict(old), snapshot_after=_dump(b) | {"id": bid})
     return {"ok": True}
+
+
+# ---------- OCR Haute Fidélité (Page de garde, couverture, livres physiques) ----------
+@app.post("/api/ocr/scan")
+async def ocr_scan(request: Request):
+    """
+    Analyse une image de page de garde ou de couverture de livre par OCR local (RapidOCR).
+    Supporte de manière transparente :
+    - JSON : {"image_base64": "..."} ou {"image": "..."}
+    - Multipart FormData : champ 'file' ou 'image'
+    - Corps brut binaire
+    """
+    content_type = (request.headers.get("content-type") or "").lower()
+    img_bytes = None
+
+    if "multipart/form-data" in content_type:
+        try:
+            form = await request.form()
+            uploaded = form.get("file") or form.get("image")
+            if uploaded and hasattr(uploaded, "read"):
+                img_bytes = await uploaded.read()
+        except Exception as e:
+            raise HTTPException(400, f"Erreur lecture multipart : {e}")
+    elif "application/json" in content_type:
+        try:
+            data = await request.json()
+            raw_b64 = data.get("image_base64") or data.get("image") or data.get("data") or ""
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            if raw_b64:
+                import base64
+                img_bytes = base64.b64decode(raw_b64)
+        except Exception as e:
+            raise HTTPException(400, f"Erreur décodage JSON / base64 : {e}")
+    else:
+        # Tenter d'abord JSON puis binaire direct
+        body_bytes = await request.body()
+        if body_bytes.startswith(b"{"):
+            try:
+                data = json.loads(body_bytes.decode("utf-8", errors="ignore"))
+                raw_b64 = data.get("image_base64") or data.get("image") or ""
+                if "," in raw_b64:
+                    raw_b64 = raw_b64.split(",", 1)[1]
+                if raw_b64:
+                    import base64
+                    img_bytes = base64.b64decode(raw_b64)
+            except Exception:
+                pass
+        if not img_bytes and body_bytes:
+            img_bytes = body_bytes
+
+    if not img_bytes:
+        raise HTTPException(400, "Aucune image reçue pour l'analyse OCR")
+
+    try:
+        result = ocr.scan_book_page(img_bytes)
+        if not result.get("ok"):
+            raise HTTPException(500, result.get("error", "Erreur lors de l'OCR"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Erreur OCR : {str(e)}")
 
 
 @app.delete("/api/books/{bid}")
@@ -739,7 +967,7 @@ def pack_set(bid: int, items: List[PackItem], request: Request):
             c.execute("INSERT INTO pack_items(pack_id,book_id,qty) VALUES(?,?,?) ON CONFLICT(pack_id,book_id) DO UPDATE SET qty=qty+excluded.qty",
                       (bid, i.book_id, max(1, i.qty)))
         db.log_audit(c, get_current_user(request), "UPDATE", "pack", bid, f"Modification composition pack « {bk['title'] if bk else bid} »",
-                     snapshot_before={"items": old_items}, snapshot_after={"items": [i.dict() for i in items]})
+                     snapshot_before={"items": old_items}, snapshot_after={"items": [_dump(i) for i in items]})
     return {"ok": True}
 
 
@@ -901,7 +1129,7 @@ def lot_add(l: LotIn, request: Request):
         ow = c.execute("SELECT name FROM owners WHERE id=?", (l.owner_id,)).fetchone()
         db.log_audit(c, user, "INSERT", "lot", lid,
                      f"Entrée stock : {l.qty_in}× « {bk['title'] if bk else l.book_id} » ({ow['name'] if ow else l.owner_id})",
-                     snapshot_after=l.dict() | {"id": lid})
+                     snapshot_after=_dump(l) | {"id": lid})
     live_hub.broadcast("activity_logged", {
         "type": "stock_added",
         "user_name": user,
@@ -941,14 +1169,14 @@ def lot_adjust(lid: int, a: AdjIn, request: Request):
 def sale_add(s: SaleIn, request: Request):
     user = require_known_user(request)
     
-    with db.tx() as c:
-        payments_list = [p.dict() for p in s.payments] if s.payments else None
-        sid, warns = db.create_sale(c, s.date, s.payment, s.note, [l.dict() for l in s.lines],
+    with db.tx(immediate=True) as c:
+        payments_list = [_dump(p) for p in s.payments] if s.payments else None
+        sid, warns = db.create_sale(c, s.date, s.payment, s.note, [_dump(l) for l in s.lines],
                                     manual=True, user_name=user,
                                     customer_gender=s.customer_gender,
                                     customer_age_group=s.customer_age_group,
                                     is_star=s.is_star or 0,
-                                    service_moment=s.service_moment,
+                                    service_moment=s.service_moment or get_current_moment(),
                                     payments=payments_list)
         total = sum((l.unit_price if l.unit_price is not None else
                      c.execute("SELECT price FROM books WHERE id=?", (l.book_id,)).fetchone()["price"]) * l.qty for l in s.lines)
@@ -967,7 +1195,7 @@ def sale_add(s: SaleIn, request: Request):
                      snapshot_after={"id": sid, "date": s.date, "total": total, "payment": eff_payment,
                                      "payments": payments_list, "user_name": user,
                                      "customer_gender": s.customer_gender, "customer_age_group": s.customer_age_group,
-                                     "is_star": s.is_star, "service_moment": s.service_moment, "lines": [l.dict() for l in s.lines]})
+                                     "is_star": s.is_star, "service_moment": s.service_moment, "lines": [_dump(l) for l in s.lines]})
     
     # Nettoyer l'éventuel panier actif du terminal ayant validé
     dev = security.device_from_request(request)
@@ -1256,7 +1484,7 @@ def settle(s: SettleIn, request: Request):
         ow = c.execute("SELECT name FROM owners WHERE id=?", (s.owner_id,)).fetchone()
         db.log_audit(c, get_current_user(request), "INSERT", "settlement", sid,
                      f"Règlement {s.amount:.2f} € à « {ow['name'] if ow else s.owner_id} »",
-                     snapshot_after=s.dict() | {"id": sid})
+                     snapshot_after=_dump(s) | {"id": sid})
     return {"ok": True}
 
 
@@ -1274,7 +1502,7 @@ def res_add(r: ResIn, request: Request):
                         (r.name, r.phone, r.title, r.qty, date.today().isoformat(), r.status, r.note))
         rid = cur.lastrowid
         db.log_audit(c, get_current_user(request), "INSERT", "reservation", rid,
-                     f"Réservation pour « {r.name} » : {r.qty}× {r.title}", snapshot_after=r.dict() | {"id": rid})
+                     f"Réservation pour « {r.name} » : {r.qty}× {r.title}", snapshot_after=_dump(r) | {"id": rid})
     return {"ok": True}
 
 
@@ -1286,19 +1514,56 @@ def res_upd(rid: int, r: ResIn, request: Request):
                   (r.name, r.phone, r.title, r.qty, r.status, r.note, rid))
         db.log_audit(c, get_current_user(request), "UPDATE", "reservation", rid,
                      f"Mise à jour réservation #{rid} ({r.name}) -> statut: {r.status}",
-                     snapshot_before=dict(old) if old else None, snapshot_after=r.dict() | {"id": rid})
+                     snapshot_before=dict(old) if old else None, snapshot_after=_dump(r) | {"id": rid})
     return {"ok": True}
 
 
 @app.delete("/api/reservations/{rid}")
 def res_del(rid: int, request: Request):
-    with db.tx() as c:
+    with db.tx(immediate=True) as c:
         old = c.execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
         if old:
             c.execute("DELETE FROM reservations WHERE id=?", (rid,))
+            # RGPD Art. 17 (Droit à l'effacement) : anonymiser les données personnelles sensibles du journal d'audit
+            safe_old = dict(old)
+            if safe_old.get("phone"):
+                safe_old["phone"] = "[MASQUÉ RGPD]"
             db.log_audit(c, get_current_user(request), "DELETE", "reservation", rid,
-                         f"Suppression réservation #{rid} ({old['name']})", snapshot_before=dict(old))
+                         f"Suppression réservation #{rid} ({old['name']})", snapshot_before=safe_old)
     return {"ok": True}
+
+
+# ---------- conformité RGPD & CNIL (Gouvernance des données) ----------
+@app.get("/api/gdpr/info")
+def gdpr_info():
+    """Référentiel de conformité CNIL / RGPD (Règlement UE 2016/679)."""
+    return {
+        "status": "CONFORME",
+        "framework": "RGPD UE 2016/679 & Loi Informatique et Libertés",
+        "data_controller": "Librairi-E (Gestion locale privée)",
+        "purposes": [
+            {"id": "sales", "label": "Encaissement et justificatifs comptables", "basis": "Obligation légale (Code de commerce)", "retention": "10 ans"},
+            {"id": "reservations", "label": "Réservations d'ouvrages à la demande", "basis": "Exécution d'une demande de service", "retention": "90 jours après service/annulation"},
+            {"id": "audit", "label": "Journal de sécurité et intégrité", "basis": "Intérêt légitime de sécurité (ANSSI)", "retention": "1 an glissant"}
+        ],
+        "principles": {
+            "minimization": "Les tickets de caisse ne comportent aucun nom client personnel.",
+            "privacy_by_design": "Architecture 100% locale, zéro Cloud, zéro pistage tiers.",
+            "right_to_erasure": "Anonymisation automatique et masquage dans les snapshots d'audit."
+        }
+    }
+
+
+@app.post("/api/gdpr/cleanup")
+def gdpr_cleanup(request: Request, days: int = 90):
+    """RGPD Art. 5.1.e : Anonymise les coordonnées personnelles des réservations closes."""
+    user = get_current_user(request)
+    with db.tx(immediate=True) as c:
+        count = db.clean_gdpr_reservations(c, days_retention=max(1, days))
+        if count > 0:
+            db.log_audit(c, user, "UPDATE", "gdpr", None,
+                         f"Purge RGPD : anonymisation de {count} réservation(s) de plus de {days} jours")
+    return {"ok": True, "anonymized": count, "retention_days": days}
 
 
 # ---------- statistiques ----------
@@ -1316,8 +1581,8 @@ def _forecast(vals, n=3):
 
 @app.get("/api/stats")
 def stats(start: Optional[str] = None, end: Optional[str] = None, moment: Optional[str] = None):
-    start = start or "0000-00-00"
-    end = end or "9999-12-31"
+    start = start if (start and re.match(r"^\d{4}-\d{2}-\d{2}$", start)) else "0000-00-00"
+    end = end if (end and re.match(r"^\d{4}-\d{2}-\d{2}$", end)) else "9999-12-31"
     with db.tx() as c:
         W = "a.date BETWEEN ? AND ?"
         A = [start, end]
@@ -1902,6 +2167,15 @@ def delete_backup_file(filename: str, request: Request):
     return {"ok": True}
 
 
+@app.post("/api/backups/cleanup")
+def trigger_backup_cleanup(request: Request):
+    """Purge immédiate des snapshots horaires et fichiers temporaires obsolètes selon les règles de rétention."""
+    purged = cleanup_old_backups()
+    with db.tx() as c:
+        db.log_audit(c, get_current_user(request), "CLEANUP", "backup", None, f"Purge et rétention des sauvegardes ({purged} fichiers nettoyés)")
+    return {"ok": True, "purged": purged}
+
+
 @app.post("/api/backups/{filename}/restore")
 def restore_backup(filename: str, request: Request):
     """Restaure une base de données de sauvegarde existante avec copie de sécurité préalable."""
@@ -1957,11 +2231,72 @@ def info():
     return {"data_dir": db.DATA_DIR, "mirror": MIRROR, "backups": BACKUPS}
 
 
+@app.get("/api/system/health")
+def system_health():
+    """Télémétrie et état de santé du système local :
+    Espace disque, taille de la base SQLite et WAL, intégrité, nombre de sauvegardes."""
+    total, used, free = shutil.disk_usage(db.DATA_DIR)
+    db_size = os.path.getsize(db.DB_PATH) if os.path.exists(db.DB_PATH) else 0
+    wal_path = db.DB_PATH + "-wal"
+    wal_size = os.path.getsize(wal_path) if os.path.exists(wal_path) else 0
+    backup_files = [f for f in os.listdir(BACKUPS) if f.endswith((".db", ".xlsx"))] if os.path.exists(BACKUPS) else []
+    
+    integrity_ok = True
+    try:
+        with db.tx() as c:
+            row = c.execute("PRAGMA quick_check").fetchone()
+            integrity_ok = bool(row and row[0] == "ok")
+    except Exception:
+        integrity_ok = False
+        
+    return {
+        "status": "optimal" if (integrity_ok and free > 1024 * 1024 * 500) else "warning",
+        "integrity": "ok" if integrity_ok else "corrupted",
+        "disk": {
+            "total_gb": round(total / (1024 ** 3), 2),
+            "free_gb": round(free / (1024 ** 3), 2),
+            "used_gb": round(used / (1024 ** 3), 2),
+            "percent_free": round((free / total) * 100, 1)
+        },
+        "database": {
+            "db_size_mb": round(db_size / (1024 ** 2), 2),
+            "wal_size_mb": round(wal_size / (1024 ** 2), 2),
+            "mode": "WAL"
+        },
+        "backups": {
+            "count": len(backup_files)
+        }
+    }
+
+
 # ---------- scanner mobile : appairage, recherche, QR local ----------
 try:
     from . import certs
 except ImportError:      # bibliothèque `cryptography` absente : le poste fonctionne, sans mobile
     certs = None
+
+
+# ---------- Moment de culte / Session maître (piloté par le poste PC) ----------
+MASTER_SESSION_MOMENT: Optional[str] = None
+
+def get_current_moment() -> str:
+    if MASTER_SESSION_MOMENT:
+        return MASTER_SESSION_MOMENT
+    now = datetime.now()
+    if now.weekday() == 6:  # Dimanche
+        return "2e Culte (Jeunes EJP)" if now.hour >= 12 else "1er Culte (Principal)"
+    return "En semaine / Autre"
+
+@app.get("/api/session/moment")
+def get_session_moment():
+    return {"moment": MASTER_SESSION_MOMENT, "effective_moment": get_current_moment()}
+
+@app.post("/api/session/moment")
+def set_session_moment(body: dict):
+    global MASTER_SESSION_MOMENT
+    m = body.get("moment")
+    MASTER_SESSION_MOMENT = m.strip() if (m and isinstance(m, str) and m.strip()) else None
+    return {"ok": True, "moment": MASTER_SESSION_MOMENT, "effective_moment": get_current_moment()}
 
 
 def _mobile_base():
@@ -1976,7 +2311,8 @@ def ping():
         "time": time.time(),
         "host": socket.gethostname(),
         "mdns_host": f"{socket.gethostname().lower()}.local",
-        "ips": security.local_ips()
+        "ips": security.local_ips(),
+        "active_moment": get_current_moment()
     }
 
 
@@ -2036,10 +2372,13 @@ class ActiveBasketIn(BaseModel):
     total: float = 0.0
     qty: int = 0
     items: List[ActiveBasketItem] = Field(default_factory=list)
+    mode: Optional[str] = "sale"
     moment: Optional[str] = None
     gender: Optional[str] = None
     age: Optional[str] = None
     star: Optional[int] = 0
+    battery: Optional[float] = None
+    is_charging: Optional[bool] = None
     action: Optional[dict] = None
 
 
@@ -2055,13 +2394,17 @@ def update_active_basket(b: ActiveBasketIn, request: Request):
         "total": round(b.total, 2),
         "qty": b.qty,
         "items": [getattr(i, 'model_dump', i.dict)() for i in b.items[:15]],
+        "mode": b.mode or "sale",
         "moment": b.moment,
         "gender": b.gender,
         "age": b.age,
-        "star": b.star or 0
+        "star": b.star or 0,
+        "battery": b.battery,
+        "is_charging": b.is_charging
     }
     live_hub.update_basket(dev_id, data, action=b.action)
     return {"ok": True}
+
 
 
 @app.delete("/api/mobile/active-cart")
