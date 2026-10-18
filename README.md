@@ -74,7 +74,7 @@ Deux options au choix selon le PC de l'église :
 Aucune installation de Python ni droits administrateur requis sur le PC hôte :
 1. Le dossier `runtime_win32/` contient un environnement Python 32-bit portable complet préconfiguré.
 2. Copiez simplement l'intégralité du dossier `librairie` sur votre clé USB (avec `runtime_win32/` et votre dossier `data/`).
-3. Branchez la clé sur le PC de l'église et double-cliquez directement sur **`Lancer_Librairie.bat`** (ou utilisez **`dist_win32/Librairie.exe`**). Le lanceur détecte automatiquement le moteur 32-bit embarqué !
+3. Branchez la clé sur le PC de l'église et double-cliquez directement sur **`Lancer_Librairie.bat`** (ou utilisez **`dist/Librairie.exe`**). Le lanceur détecte automatiquement le moteur 32-bit embarqué !
 
 #### Option B : Installation classique avec Python
 - **Si le PC est en Windows 10 32-bit** : Téléchargez impérativement l'installateur **32-bit (x86)** :
