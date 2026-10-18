@@ -29,6 +29,20 @@ ES_SYSTEM_REQUIRED = 0x00000001
 ES_AWAYMODE_REQUIRED = 0x00000040
 
 
+def configure_low_spec_hardware():
+    """Optimise le rendu et la consommation mémoire/CPU sur machines modestes (Xeon, PC de caisse)."""
+    if sys.platform == "win32":
+        # Empêche WebView2 de saturer le CPU/GPU logiciel ou de crasher sur de vieux pilotes graphiques
+        # --disable-features=Translate : désactive la traduction Chromium inutile
+        # --disable-background-networking : coupe les requêtes réseau internes Edge
+        # --disable-sync : coupe toute tentative de synchro Edge
+        # --disable-component-update : bloque les màj de composants Edge en tâche de fond
+        current_args = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+        opt_flags = "--disable-features=Translate --disable-background-networking --disable-sync --disable-component-update"
+        if opt_flags not in current_args:
+            os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{current_args} {opt_flags}".strip()
+
+
 def enable_high_dpi():
     """Active la netteté native haute résolution (Per-Monitor V2) pour éviter le flou de mise à l'échelle Windows."""
     if sys.platform == "win32":
@@ -114,6 +128,7 @@ def start_https():
 
 
 def main():
+    configure_low_spec_hardware()
     enable_high_dpi()
     prevent_sleep()
     headless = "--headless" in sys.argv

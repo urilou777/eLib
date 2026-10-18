@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS sale_payments(
 CREATE INDEX IF NOT EXISTS ix_alloc_date ON allocations(date);
 CREATE INDEX IF NOT EXISTS ix_alloc_book ON allocations(book_id);
 CREATE INDEX IF NOT EXISTS ix_lots_book ON lots(book_id);
+CREATE INDEX IF NOT EXISTS ix_adjustments_lot ON adjustments(lot_id);
+CREATE INDEX IF NOT EXISTS ix_books_active ON books(active);
 CREATE INDEX IF NOT EXISTS ix_audit_timestamp ON audit_logs(timestamp);
 CREATE INDEX IF NOT EXISTS ix_sale_payments_sale ON sale_payments(sale_id);
 """
@@ -109,6 +111,10 @@ def connect():
     c.execute("PRAGMA journal_mode=WAL")       # Journalisation write-ahead : résistant aux crashs & arrêts brutaux
     c.execute("PRAGMA synchronous=NORMAL")      # Compromis standard industriel ultra-sûr en mode WAL
     c.execute("PRAGMA busy_timeout=15000")      # Évite tout blocage en cas d'accès simultané
+    # Optimisations 32-bit & rush caisse :
+    c.execute("PRAGMA cache_size=-8000")        # 8 Mo de cache mémoire pages (extrêmement rapide, 0 pression RAM)
+    c.execute("PRAGMA temp_store=MEMORY")       # Tables et tris temporaires en RAM (évite I/O disque lent)
+    c.execute("PRAGMA mmap_size=0")             # Évite la fragmentation d'espace d'adressage virtuel 2 Go en 32-bit
     return c
 
 
