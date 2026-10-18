@@ -1271,7 +1271,7 @@ tr.click:hover { background: rgba(143, 22, 173, 0.08); }
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
-@media (min-width: 1400px) {
+@container (min-width: 540px) {
   .gender-grid {
     grid-template-columns: repeat(4, 1fr);
   }
