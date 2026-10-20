@@ -82,6 +82,8 @@ Le script installe les dépendances binaires épinglées et construit `dist_win3
 #### Utiliser la distribution (utilisateurs)
 Copiez `dist_win32\Librairie.exe` sur le PC de caisse et lancez-le. L'application crée son dossier `data` à côté de l'exécutable. Pour transférer un catalogue existant, copiez aussi son dossier `data`. Un exécutable x86 fonctionne également sur Windows 64-bit.
 
+**Affichage natif :** la fenêtre intégrée utilise Microsoft Edge WebView2 Runtime, qui n'est pas inclus dans l'exécutable. S'il n'est pas disponible sur le PC, le lanceur ouvre automatiquement l'application dans le navigateur par défaut. Le serveur local et l'OCR restent intégrés et fonctionnent hors ligne.
+
 #### 3. Transférer la base de données réelle (si nouveau PC)
 Si vous installez le projet sur un autre ordinateur que celui-ci :
 1. Sur votre PC actuel, copiez le dossier `data/` (qui contient `librairie.db` et vos sauvegardes).
