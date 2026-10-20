@@ -4,7 +4,10 @@ python-multipart
 openpyxl
 pywebview
 pyinstaller
-cryptography
+cryptography==48.0.1
 segno
 Pillow
-numpy
+numpy==1.26.4
+rapidocr_onnxruntime==1.4.4
+onnxruntime==1.16.3
+opencv-python==4.10.0.84

@@ -17,8 +17,8 @@ if not defined PY_EXE (
     echo ========================================================
     echo.
     echo  Sur un PC Windows 10 32-bit :
-    echo  1. Téléchargez Python 3.13 32-bit (x86) sur python.org
-    echo     (Lien direct : https://www.python.org/ftp/python/3.13.2/python-3.13.2.exe)
+    echo  1. Téléchargez Python 3.10 32-bit (x86) sur python.org
+    echo     (Lien direct : https://www.python.org/downloads/release/python-31011/)
     echo     IMPORTANT : Cochez 'Add python.exe to PATH' lors de l'installation !
     echo  2. OU copiez le dossier autonome 'runtime_win32' a la racine du projet.
     echo.
@@ -26,6 +26,15 @@ if not defined PY_EXE (
     exit /b 1
 )
 
+"%PY_EXE%" -c "import struct,sys; sys.exit(0 if struct.calcsize('P') == 4 else 1)"
+if errorlevel 1 (
+    echo ========================================================
+    echo  ERREUR : Cette application necessite Python 32-bit x86.
+    echo ========================================================
+    echo Installez Python 3.10 32-bit ou utilisez runtime_win32.
+    pause
+    exit /b 1
+)
+
 "%PY_EXE%" run.py
 if errorlevel 1 pause
-

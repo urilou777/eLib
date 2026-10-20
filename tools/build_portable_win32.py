@@ -1,7 +1,4 @@
-"""
-Script pour construire un environnement Python 32-bit (x86) 100% autonome et portable (Zero-Install).
-Utilise la dernière version stable de Python (3.13.2 par défaut) avec architecture win32.
-"""
+"""Build an embedded Python 3.10 x86 runtime with the pinned RapidOCR stack."""
 import glob
 import os
 import shutil
@@ -10,7 +7,7 @@ import sys
 import urllib.request
 import zipfile
 
-DEFAULT_VERSION = "3.13.2"
+DEFAULT_VERSION = "3.10.11"
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RUNTIME_DIR = os.path.join(PROJECT_DIR, "runtime_win32")
 
@@ -20,9 +17,9 @@ def log(msg):
 
 
 def build_portable(version=DEFAULT_VERSION):
-    ver_short = "".join(version.split(".")[:2])  # ex: '313'
+    ver_short = "".join(version.split(".")[:2])  # ex: '310'
     embed_url = f"https://www.python.org/ftp/python/{version}/python-{version}-embed-win32.zip"
-    
+
     log(f"Préparation de l'environnement Python {version} (32-bit x86) dans : {RUNTIME_DIR}")
     
     # Nettoyer l'ancien runtime si version différente

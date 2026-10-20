@@ -66,27 +66,21 @@ Ce guide détaille la mise en service complète de la librairie le jour du culte
 
 ---
 
-### 🖥️ Étape 1 : Préparation du PC de Caisse (Windows 32-bit ou 64-bit)
+### 🖥️ Étape 1 : Application Windows autonome (32-bit et 64-bit)
 
-Deux options au choix selon le PC de l'église :
+La distribution est un exécutable Windows x86 autonome qui fonctionne sur Windows 32-bit comme 64-bit. Il embarque Python, RapidOCR, ONNX Runtime et les modèles OCR. **Le PC de caisse n'a besoin ni de Python, ni d'un moteur OCR à installer, ni d'Internet.**
 
-#### Option A : Clé USB 100% Autonome "Zero-Install" (Recommandé pour Windows 32-bit & 64-bit)
-Aucune installation de Python ni droits administrateur requis sur le PC hôte :
-1. Le dossier `runtime_win32/` contient un environnement Python 32-bit portable complet préconfiguré.
-2. Copiez simplement l'intégralité du dossier `librairie` sur votre clé USB (avec `runtime_win32/` et votre dossier `data/`).
-3. Branchez la clé sur le PC de l'église et double-cliquez directement sur **`Lancer_Librairie.bat`** (ou utilisez **`dist/Librairie.exe`**). Le lanceur détecte automatiquement le moteur 32-bit embarqué !
-
-#### Option B : Installation classique avec Python
-- **Si le PC est en Windows 10 32-bit** : Téléchargez impérativement l'installateur **32-bit (x86)** :
-  👉 [Télécharger Python 3.13.2 (32-bit / x86)](https://www.python.org/ftp/python/3.13.2/python-3.13.2.exe)
-  *(Ne cliquez pas sur le bouton jaune par défaut sur python.org car il télécharge la version 64-bit incompatible !)*
-- **Si le PC est en Windows 64-bit** : Téléchargez Python 3.13+ 64-bit standard.
-- **IMPORTANT** : Cochez impérativement la case **☑ Add python.exe to PATH** en bas lors de l'installation !
-
-Puis dans PowerShell / Invite de commandes :
+#### Construire la distribution (mainteneur uniquement)
+RapidOCR x86 nécessite une chaîne de versions compatible : Python 3.10 32-bit, RapidOCR 1.4.4 et ONNX Runtime 1.16.3. Installez Python 3.10 **32-bit (x86)** sur le PC de développement (il peut coexister avec Python 64-bit), puis depuis PowerShell à la racine du projet, lancez :
 ```powershell
-pip install -r requirements.txt
+py -3.10-32 tools\build_windows_x86.py
 ```
+Le script installe les dépendances binaires épinglées et construit `dist_win32\Librairie.exe`. Les bibliothèques natives, les modèles OCR et Python sont intégrés dans l'exécutable. Les utilisateurs finaux n'ont besoin d'aucun de ces outils.
+
+**Note de maintenance :** la roue ONNX Runtime Windows x86 disponible est ancienne et le projet ONNX Runtime ne prend plus en charge les builds 32-bit actuels. Ces versions sont épinglées pour maintenir la compatibilité x86 et doivent être réévaluées si un runtime x86 plus récent devient disponible.
+
+#### Utiliser la distribution (utilisateurs)
+Copiez `dist_win32\Librairie.exe` sur le PC de caisse et lancez-le. L'application crée son dossier `data` à côté de l'exécutable. Pour transférer un catalogue existant, copiez aussi son dossier `data`. Un exécutable x86 fonctionne également sur Windows 64-bit.
 
 #### 3. Transférer la base de données réelle (si nouveau PC)
 Si vous installez le projet sur un autre ordinateur que celui-ci :
@@ -115,11 +109,11 @@ Ce script automatique :
 
 ### 🚀 Étape 3 : Lancement de la Caisse
 
-Double-cliquez simplement sur :
+Pour la distribution compilée, lancez directement `dist_win32\Librairie.exe`. Si vous lancez le projet depuis ses sources, double-cliquez sur :
 ```text
 Lancer_Librairie.bat
 ```
-*(Ou en ligne de commande : `python run.py`)*
+*(Ou en ligne de commande, avec Python 3.10 32-bit et les dépendances installées : `python run.py`)*
 
 1. L'application démarre le serveur local et s'ouvre dans une fenêtre dédiée (ou votre navigateur sur `http://127.0.0.1:8765`).
 2. L'écoute HTTPS locale pour les smartphones est active automatiquement sur le port 8766.
@@ -175,5 +169,4 @@ L'interface d'atelier dédiée s'ouvre sur `http://127.0.0.1:8769` avec les 14 v
 - `run.py` : Point d'entrée avec double liaison réseau (HTTP 127.0.0.1 + HTTPS LAN sécurisé).
 - `Lancer_Librairie.bat` : Lanceur double-clic pour la caisse principale.
 - `Lancer_Atelier_Scission.bat` : Lanceur de l'atelier de scission et gestion des codes-barres.
-- `requirements.txt` : Dépendances Python (FastAPI, Uvicorn, Pillow, OpenPyXL, etc.).
-
+- `requirements.txt` : Dépendances Python, dont les versions x86 épinglées de RapidOCR et ONNX Runtime.

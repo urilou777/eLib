@@ -1,17 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
+import os
+import struct
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-hiddenimports = ['webview', 'cryptography', 'segno']
+if struct.calcsize("P") != 4:
+    raise RuntimeError("La version distribuée doit être construite avec Python Windows 32 bits.")
+
+project_dir = os.path.abspath(SPECPATH)
+rapid_datas, rapid_bins, rapid_hidden = collect_all('rapidocr_onnxruntime')
+hiddenimports = [
+    'webview',
+    'cryptography',
+    'segno',
+    'numpy',
+    'onnxruntime',
+    'cv2',
+    'rapidocr_onnxruntime',
+] + rapid_hidden
 hiddenimports += collect_submodules('uvicorn')
 hiddenimports += collect_submodules('cryptography')
 
-
-
 a = Analysis(
     ['run.py'],
-    pathex=[],
-    binaries=[],
-    datas=[('app/static', 'app/static')],
+    pathex=[project_dir],
+    binaries=rapid_bins,
+    datas=[('app/static', 'app/static')] + rapid_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
