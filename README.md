@@ -102,7 +102,7 @@ Pour produire la distribution portable (`eLib-Portable-<version>.zip` : exécuta
 ```powershell
 python tools\package_portable_win32.py
 ```
-L'archive est aussi publiée automatiquement en même temps que `eLib.exe` lors d'un tag de version. Le dossier `data/` local n'est jamais inclus dans l'archive.
+La distribution portable se construit à la demande, en local uniquement (elle n'est pas publiée sur les releases GitHub, qui contiennent `eLib.exe` et l'installateur). Le dossier `data/` local n'est jamais inclus dans l'archive.
 
 **Important :** `dist_win32\` est un dossier de sortie de compilation, pas un dossier d'exécution. Ne lancez jamais `eLib.exe` depuis `dist_win32\` : l'application créerait son dossier `data/` de travail à côté de l'exécutable et polluerait les artefacts de distribution. Pour tester un build, copiez `eLib.exe` dans un dossier de test séparé (par exemple `C:\eLib_test\`) et lancez-le de là.
 
@@ -119,7 +119,7 @@ Requiert Inno Setup 6 ou 7. Points propres à la version installée :
 **Note de maintenance :** la roue ONNX Runtime Windows x86 disponible est ancienne et le projet ONNX Runtime ne prend plus en charge les builds 32-bit actuels. Ces versions sont épinglées pour maintenir la compatibilité x86 et doivent être réévaluées si un runtime x86 plus récent devient disponible.
 
 #### Releases et mises à jour
-Les versions publiées sous un tag `vX.Y.Z` sont construites automatiquement par GitHub Actions avec Python 3.10 x86 et publiées comme `eLib.exe` avec un fichier SHA-256. Pour publier une version, fusionnez-la dans la branche de référence, puis créez et poussez un tag de version, par exemple `git tag v1.0.0` puis `git push origin v1.0.0`. Une application distribuée vérifie les versions stables au démarrage puis une fois par jour ; elle ne télécharge qu'après confirmation et ne remplace/redémarre l'application qu'après une seconde confirmation. La connexion Internet est nécessaire pour vérifier et télécharger une version, mais pas pour utiliser eLib. Le SHA-256 détecte les téléchargements altérés ; il ne remplace pas une signature Authenticode de l'éditeur.
+Les versions publiées sous un tag `vX.Y.Z` sont construites automatiquement par GitHub Actions avec Python 3.10 x86 et publiées comme `eLib.exe` et `eLib-Setup-<version>.exe`, chacune avec son fichier SHA-256. Pour publier une version, fusionnez-la dans la branche de référence, puis créez et poussez un tag de version, par exemple `git tag v1.0.0` puis `git push origin v1.0.0`. Une application distribuée vérifie les versions stables au démarrage puis une fois par jour ; elle ne télécharge qu'après confirmation et ne remplace/redémarre l'application qu'après une seconde confirmation. La connexion Internet est nécessaire pour vérifier et télécharger une version, mais pas pour utiliser eLib. Le SHA-256 détecte les téléchargements altérés ; il ne remplace pas une signature Authenticode de l'éditeur.
 
 Avant la première migration d'une base existante, eLib en crée une copie vérifiée sous `data\sauvegardes\librairie_pre_migration_*.db` ; la base séparée des appareils appairés est aussi sauvegardée sous `devices_pre_migration_*.db` si son schéma doit évoluer. Les migrations sont exécutées au démarrage et la version de la base métier est conservée dans `PRAGMA user_version`. Toute nouvelle évolution de schéma doit incrémenter `LATEST_SCHEMA_VERSION` et ajouter une migration correspondante dans `app/db.py`.
 

@@ -40,9 +40,6 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 dist_win32/eLib.exe).Hash.ToLowerInvariant()
           Set-Content -Path dist_win32/eLib.exe.sha256 -Value "$hash  eLib.exe" -Encoding ascii -NoNewline
 
-      - name: Package portable distribution
-        run: python tools/package_portable_win32.py
-
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
@@ -56,13 +53,21 @@ jobs:
         run: |
           $tag = $env:GITHUB_REF_NAME
           $version = $tag -replace '^v', ''
-          $portable = "dist_win32/eLib-Portable-$version.zip"
           $setup = "dist_win32/eLib-Setup-$version.exe"
+          $notes = @"
+          eLib $version - quelle version telecharger ?
+
+          - Nouveau PC (installation classique, Program Files, desinstalleur Windows) : eLib-Setup-$version.exe
+          - Cle USB / sans installation : eLib.exe seul - il cree son dossier data/ a cote de lui
+          - Mise a jour : les installations existantes se mettent a jour automatiquement (aucun telechargement manuel)
+
+          Verifiez l'integrite avec les fichiers .sha256 correspondants si vous savez les utiliser.
+          "@
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $portable "$portable.sha256" $setup "$setup.sha256" --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload release assets." }
           } else {
-            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $portable "$portable.sha256" $setup "$setup.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --generate-notes
+            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --notes "$notes"
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release." }
           }
