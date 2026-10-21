@@ -1,13 +1,31 @@
 """Build the self-contained RapidOCR Windows x86 application."""
 
 import os
+import hashlib
 import struct
 import subprocess
 import sys
+import urllib.request
 
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUTPUT_DIR = os.path.join(PROJECT_DIR, "dist_win32")
 WORK_DIR = os.path.join(PROJECT_DIR, "build_win32")
+WEBVIEW2_VERSION = "155.0.4283.62"
+WEBVIEW2_CAB_URL = (
+    "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/"
+    "ec2d24c3-2248-48cc-8198-76201ff04abd/"
+    f"Microsoft.WebView2.FixedVersionRuntime.{WEBVIEW2_VERSION}.x86.cab"
+)
+WEBVIEW2_CAB_SHA256 = "866dfe6c1f525d9026413b41a6863da53ad5c8ea9d3142ca54d8e09b36cb183a"
+WEBVIEW2_CAB_SIZE = 268595207
+WEBVIEW2_CAB = os.path.join(
+    WORK_DIR, f"Microsoft.WebView2.FixedVersionRuntime.{WEBVIEW2_VERSION}.x86.cab"
+)
+WEBVIEW2_RUNTIME_DIR = os.path.join(WORK_DIR, "webview2_runtime")
+WEBVIEW2_EXTRACTED_DIR = os.path.join(
+    WEBVIEW2_RUNTIME_DIR,
+    f"Microsoft.WebView2.FixedVersionRuntime.{WEBVIEW2_VERSION}.x86",
+)
 
 
 def pe_machine(path):
@@ -25,6 +43,56 @@ def pe_machine(path):
     return machine
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def ensure_webview2_runtime():
+    os.makedirs(WORK_DIR, exist_ok=True)
+    if (
+        not os.path.isfile(WEBVIEW2_CAB)
+        or os.path.getsize(WEBVIEW2_CAB) != WEBVIEW2_CAB_SIZE
+        or file_sha256(WEBVIEW2_CAB) != WEBVIEW2_CAB_SHA256
+    ):
+        partial_path = WEBVIEW2_CAB + ".download"
+        print(
+            f"[Windows x86 build] Downloading WebView2 Fixed Runtime {WEBVIEW2_VERSION} "
+            f"({WEBVIEW2_CAB_SIZE // (1024 * 1024)} MB).",
+            flush=True,
+        )
+        try:
+            with urllib.request.urlopen(WEBVIEW2_CAB_URL, timeout=60) as response:
+                with open(partial_path, "wb") as destination:
+                    while chunk := response.read(1024 * 1024):
+                        destination.write(chunk)
+            if os.path.getsize(partial_path) != WEBVIEW2_CAB_SIZE:
+                raise RuntimeError("Downloaded WebView2 runtime package has an unexpected size.")
+            if file_sha256(partial_path) != WEBVIEW2_CAB_SHA256:
+                raise RuntimeError("Downloaded WebView2 runtime package failed SHA-256 verification.")
+            os.replace(partial_path, WEBVIEW2_CAB)
+        finally:
+            if os.path.exists(partial_path):
+                os.remove(partial_path)
+
+    os.makedirs(WEBVIEW2_EXTRACTED_DIR, exist_ok=True)
+    runtime_executable = os.path.join(WEBVIEW2_EXTRACTED_DIR, "msedgewebview2.exe")
+    if not os.path.isfile(runtime_executable):
+        print("[Windows x86 build] Extracting WebView2 Fixed Runtime.", flush=True)
+        subprocess.run(
+            ["expand.exe", WEBVIEW2_CAB, "-F:*", WEBVIEW2_RUNTIME_DIR],
+            cwd=PROJECT_DIR,
+            check=True,
+        )
+    if not os.path.isfile(runtime_executable):
+        raise RuntimeError(
+            f"WebView2 runtime extraction did not produce {runtime_executable}."
+        )
+
+
 def build():
     if struct.calcsize("P") != 4:
         raise RuntimeError(
@@ -34,6 +102,8 @@ def build():
         raise RuntimeError(
             f"Use Python 3.10 32-bit for RapidOCR x86; found Python {sys.version.split()[0]}."
         )
+
+    ensure_webview2_runtime()
 
     print("[Windows x86 build] Installing pinned, prebuilt project dependencies.", flush=True)
     subprocess.run(
@@ -68,12 +138,12 @@ def build():
         check=True,
     )
 
-    executable = os.path.join(OUTPUT_DIR, "Librairie.exe")
+    executable = os.path.join(OUTPUT_DIR, "eLib.exe")
     if pe_machine(executable) != 0x014C:
         raise RuntimeError(f"PyInstaller produced a non-x86 executable: {executable}")
     print(f"[Windows x86 build] Ready to distribute: {executable}", flush=True)
     print(
-        "[Windows x86 build] Users need no Python, OCR engine, models, or internet connection.",
+        "[Windows x86 build] Python, OCR, models, and WebView2 are bundled; users need no internet.",
         flush=True,
     )
 

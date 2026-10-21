@@ -5,7 +5,7 @@ try:
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     bat_path = os.path.abspath("Lancer_Librairie.bat")
     working_dir = os.path.abspath(".")
-    ico_path = os.path.abspath(os.path.join("app", "static", "favicon.ico"))
+    ico_path = os.path.abspath(os.path.join("app", "static", "app-icon.ico"))
 
     vbs_content = f'''Set oWS = WScript.CreateObject("WScript.Shell")
 sLinkFile = "{desktop}\\Librairi-E.lnk"

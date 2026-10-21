@@ -71,6 +71,49 @@ class TestLiveHub(unittest.TestCase):
         self.assertEqual(close_res, {"ok": True})
         self.assertEqual(len(get_live_baskets()["baskets"]), 0)
 
+    def test_only_one_active_basket_per_user_or_physical_device(self):
+        live_hub.update_basket("device-1", {
+            "device_id": "device-1",
+            "device_name": "Phone A",
+            "device_key": "physical-device-1",
+            "user_name": "Sophie",
+            "qty": 1,
+            "items": [{"title": "Livre A"}],
+        })
+        live_hub.update_basket("device-2", {
+            "device_id": "device-2",
+            "device_name": "Phone B",
+            "device_key": "physical-device-2",
+            "user_name": "sophie",
+            "qty": 1,
+            "items": [{"title": "Livre B"}],
+        })
+        baskets = live_hub.get_active_baskets()
+        self.assertEqual(len(baskets), 1)
+        self.assertEqual(baskets[0]["device_id"], "device-2")
+
+        live_hub.update_basket("device-3", {
+            "device_id": "device-3",
+            "device_name": "PHONE A",
+            "device_key": "physical-device-2",
+            "user_name": "Marc",
+            "qty": 1,
+            "items": [{"title": "Livre C"}],
+        })
+        baskets = live_hub.get_active_baskets()
+        self.assertEqual(len(baskets), 1)
+        self.assertEqual(baskets[0]["device_id"], "device-3")
+
+        live_hub.update_basket("device-4", {
+            "device_id": "device-4",
+            "device_name": "Phone A",
+            "device_key": "physical-device-3",
+            "user_name": "Alex",
+            "qty": 1,
+            "items": [{"title": "Livre D"}],
+        })
+        self.assertEqual(len(live_hub.get_active_baskets()), 2)
+
     def test_out_of_stock_rejected(self):
         from app import db
         from app.main import AllocIn

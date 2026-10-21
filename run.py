@@ -9,6 +9,7 @@ import ctypes
 import os
 import socket
 import sys
+import subprocess
 import threading
 import time
 import webbrowser
@@ -80,6 +81,37 @@ def restore_sleep():
         except Exception:
             pass
 
+
+def configure_webview_runtime():
+    import webview
+
+    if not getattr(sys, "frozen", False):
+        return webview
+
+    runtime_dir = os.path.join(sys._MEIPASS, "webview2")
+    if not os.path.isfile(os.path.join(runtime_dir, "msedgewebview2.exe")):
+        raise RuntimeError(f"The bundled WebView2 runtime is missing: {runtime_dir}")
+
+    webview.settings["WEBVIEW2_RUNTIME_PATH"] = runtime_dir
+
+    windows_version = sys.getwindowsversion()
+    if windows_version.major == 10 and windows_version.build < 22000:
+        for package_sid in ("*S-1-15-2-2:(OI)(CI)(RX)", "*S-1-15-2-1:(OI)(CI)(RX)"):
+            result = subprocess.run(
+                ["icacls.exe", runtime_dir, "/grant", package_sid],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode:
+                raise RuntimeError(
+                    "Could not set required WebView2 runtime permissions: "
+                    f"{result.stderr.strip() or result.stdout.strip()}"
+                )
+
+    return webview
+
+
 HTTPS_PREFERRED = 8766
 TLS_CIPHERS = "ECDHE+AESGCM:ECDHE+CHACHA20"   # TLS 1.3 reste actif ; TLS 1.2 limité aux suites AEAD à confidentialité persistante
 
@@ -146,7 +178,7 @@ def main():
             while t.is_alive():
                 time.sleep(1)
         else:
-            import webview
+            webview = configure_webview_runtime()
             webview.create_window(
                 "eLib – Chrétienne et impactante",
                 url,
@@ -155,16 +187,34 @@ def main():
                 min_size=(960, 580),
                 maximized=True
             )
-            webview.start()
+            static_dir = os.path.join(
+                getattr(sys, "_MEIPASS", _ROOT),
+                "app",
+                "static",
+            )
+            window_icon = os.path.join(static_dir, "favicon.ico")
+            if not os.path.isfile(window_icon):
+                raise FileNotFoundError(f"The desktop window icon is missing: {window_icon}")
+            webview.start(icon=window_icon)
     except KeyboardInterrupt:
         pass
-    except Exception:
-        webbrowser.open(url)
-        try:
-            while t.is_alive():
-                time.sleep(1)
-        except KeyboardInterrupt:
-            pass
+    except Exception as error:
+        if getattr(sys, "frozen", False):
+            message = (
+                "eLib could not start its bundled application window.\n\n"
+                f"Details: {error}"
+            )
+            if sys.platform == "win32":
+                ctypes.windll.user32.MessageBoxW(None, message, "eLib startup error", 0x10)
+            else:
+                print(message, file=sys.stderr)
+        else:
+            webbrowser.open(url)
+            try:
+                while t.is_alive():
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
     finally:
         restore_sleep()
         server.should_exit = True

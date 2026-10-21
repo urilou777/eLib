@@ -72,7 +72,13 @@ def mobile_pairing():
 @router.post("/api/mobile/pair")
 def mobile_pair(body: PairIn, request: Request):
     ip = request.client.host if request.client else "?"
-    token = security.redeem_pairing(body.code, body.name, ip)
+    token = security.redeem_pairing(
+        body.code,
+        body.name,
+        ip,
+        body.device_key,
+        body.previous_token,
+    )
     if not token:
         raise HTTPException(401, "Code d'appairage invalide ou expiré : affichez un nouveau QR code sur le poste")
     with db.tx() as c:
@@ -95,9 +101,12 @@ def update_active_basket(b: ActiveBasketIn, request: Request):
     dev = security.device_from_request(request)
     dev_id = str(dev["id"]) if dev else (request.client.host if request.client else "local")
     dev_name = dev["name"] if dev else (b.user_name or "Mobile")
+    if dev and b.user_name:
+        security.update_device_cashier(dev["id"], b.user_name)
     data = {
         "device_id": dev_id,
         "device_name": dev_name,
+        "device_key": b.device_key,
         "user_name": b.user_name or dev_name,
         "total": round(b.total, 2),
         "qty": b.qty,

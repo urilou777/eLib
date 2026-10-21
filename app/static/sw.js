@@ -1,5 +1,5 @@
 // Service Worker Librairi-E – Anti-écran blanc & App Shell hors-ligne
-const CACHE_NAME = 'librairie-shell-v16';
+const CACHE_NAME = 'librairie-shell-v20';
 const SHELL_ASSETS = [
   '/mobile',
   '/static/mobile.js',
@@ -20,8 +20,13 @@ const SHELL_ASSETS = [
   '/static/fonts.css',
   '/static/vendor/zxing.min.js',
   '/static/manifest.webmanifest',
-  '/static/favicon-192.png',
-  '/static/icon.svg'
+  '/static/favicon.ico?v=20261021_e_v1',
+  '/static/favicon-16.png?v=20261021_e_v1',
+  '/static/favicon-32.png?v=20261021_e_v1',
+  '/static/favicon-48.png?v=20261021_e_v1',
+  '/static/favicon-64.png?v=20261021_e_v1',
+  '/static/favicon-192.png?v=20261021_e_v1',
+  '/static/favicon-512.png?v=20261021_e_v1'
 ];
 
 self.addEventListener('install', event => {

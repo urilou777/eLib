@@ -43,6 +43,11 @@ def _dev():
         c.execute("""CREATE TABLE IF NOT EXISTS devices(
             id INTEGER PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL, last_seen TEXT, last_ip TEXT, revoked INTEGER NOT NULL DEFAULT 0)""")
+        columns = {row["name"] for row in c.execute("PRAGMA table_info(devices)")}
+        if "device_key" not in columns:
+            c.execute("ALTER TABLE devices ADD COLUMN device_key TEXT")
+        if "cashier_name" not in columns:
+            c.execute("ALTER TABLE devices ADD COLUMN cashier_name TEXT")
         yield c
         c.commit()
     except Exception:
@@ -153,16 +158,35 @@ def _hash(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def redeem_pairing(code, name, ip):
+def redeem_pairing(code, name, ip, device_key=None, previous_token=None):
     """Échange un code d'appairage contre un jeton d'appareil. Retourne le jeton ou None."""
     if _blocked(ip) or not code or not _consume_code(code):
         register_failure(ip)
         return None
     token = secrets.token_urlsafe(32)
     clean = re.sub(r"[\x00-\x1f<>\"']", "", (name or "Téléphone"))[:60].strip() or "Téléphone"
+    clean_device_key = re.sub(r"[^A-Za-z0-9_-]", "", device_key or "")[:80]
     with _dev() as c:
-        c.execute("INSERT INTO devices(name,token_hash,created_at,last_ip) VALUES(?,?,?,?)",
-                  (clean, _hash(token), datetime.now().isoformat(timespec="seconds"), ip))
+        if len(clean_device_key) >= 16:
+            c.execute(
+                "UPDATE devices SET revoked=1 WHERE device_key=? AND revoked=0",
+                (clean_device_key,),
+            )
+        if previous_token and 20 <= len(previous_token) <= 100:
+            c.execute(
+                "UPDATE devices SET revoked=1 WHERE token_hash=? AND revoked=0",
+                (_hash(previous_token),),
+            )
+        c.execute(
+            "INSERT INTO devices(name,token_hash,created_at,last_ip,device_key) VALUES(?,?,?,?,?)",
+            (
+                clean,
+                _hash(token),
+                datetime.now().isoformat(timespec="seconds"),
+                ip,
+                clean_device_key or None,
+            ),
+        )
     return token
 
 
@@ -191,7 +215,20 @@ def device_from_request(request: Request):
 def list_devices():
     with _dev() as c:
         return [dict(r) for r in c.execute(
-            "SELECT id,name,created_at,last_seen,last_ip FROM devices WHERE revoked=0 ORDER BY id DESC")]
+            "SELECT id,name,cashier_name,created_at,last_seen,last_ip "
+            "FROM devices WHERE revoked=0 ORDER BY id DESC")]
+
+
+def update_device_cashier(device_id, cashier_name):
+    clean_name = re.sub(r"[\x00-\x1f\x7f<>]", "", cashier_name or "").strip()[:60]
+    if not clean_name:
+        return
+    with _dev() as c:
+        c.execute(
+            "UPDATE devices SET cashier_name=? WHERE id=? AND revoked=0 "
+            "AND COALESCE(cashier_name,'')!=?",
+            (clean_name, device_id, clean_name),
+        )
 
 
 def revoke_device(did):
@@ -227,6 +264,7 @@ MOBILE = [
     ("POST", re.compile(r"^/api/mobile/active-cart$")),
     ("DELETE", re.compile(r"^/api/mobile/active-cart$")),
     ("POST", re.compile(r"^/api/books$")),
+    ("POST", re.compile(r"^/api/books/\d+/enrich$")),
     ("POST", re.compile(r"^/api/lots$")),
     ("POST", re.compile(r"^/api/sales$")),
     ("POST", re.compile(r"^/api/ocr/scan$")),

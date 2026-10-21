@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Scanner mobile — Aide eLib</title><link rel="stylesheet" href="help.css"></head>
+<body>
+  <header><p class="eyebrow">Aide eLib / Réseau</p><h1>Scanner mobile et sécurité</h1><p>Le téléphone dialogue directement avec le PC central sur le Wi-Fi local ; aucun serveur cloud n’est requis.</p></header>
+  <nav><a href="index.html">Accueil</a><a href="architecture.html">Architecture</a><a href="mobile.html">Scanner mobile</a><a href="data.html">Données</a><a href="build.html">Installation et build</a><a href="maintenance.html">Maintenance</a></nav>
+  <main>
+    <section><h2>Pourquoi HTTPS ?</h2>
+      <p>Les navigateurs mobiles demandent un contexte sécurisé pour autoriser l’accès à la caméra. Le scanner est donc servi par HTTPS sur le réseau local. Le certificat est créé et renouvelé par l’application ; le téléphone peut demander de faire confiance à l’autorité locale.</p>
+    </section>
+    <section><h2>Deux accès distincts</h2>
+      <table><thead><tr><th>Écoute</th><th>Usage</th><th>Règle</th></tr></thead><tbody>
+        <tr><td>HTTP, loopback (8765 par défaut)</td><td>Interface de caisse du PC</td><td>Accessible seulement depuis la machine centrale.</td></tr>
+        <tr><td>HTTPS, LAN (8766)</td><td>Scanner mobile</td><td>Accès réseau local avec règles spécifiques aux routes et appairage.</td></tr>
+      </tbody></table>
+      <p>Le pare-feu doit rester limité au profil réseau privé et au sous-réseau local. L’application ne requiert pas de redirection de ports depuis Internet ni de DMZ.</p>
+    </section>
+    <section><h2>Appairage d’un téléphone</h2>
+      <ol><li>Le poste central génère un QR code temporaire.</li><li>Le téléphone le scanne sur le même réseau local.</li><li>Le serveur échange le code à durée limitée contre un jeton d’appareil.</li><li>Le profil du libraire est choisi séparément sur le téléphone.</li></ol>
+      <p>Les appareils et jetons sont conservés dans <code>data/devices.db</code>, séparément de la base métier. La liste permet d’afficher le profil associé ou de révoquer un appareil.</p>
+    </section>
+    <section><h2>En cas de problème</h2>
+      <ul><li>Vérifier que le PC et le téléphone utilisent le même réseau.</li><li>Vérifier que le réseau Windows est défini comme privé.</li><li>Relancer la configuration mobile après changement de réseau ou de PC.</li><li>Si la caméra ne démarre pas, vérifier que le certificat local est accepté par le navigateur.</li></ul>
+      <p>La conception détaillée se trouve dans le document source <code>ARCHITECTURE_MOBILE.md</code> ; l’implémentation se trouve dans <code>app/security.py</code>, <code>app/certs.py</code> et <code>app/routers/sync.py</code>.</p>
+    </section>
+  </main>
+  <footer><a href="index.html">Retour à l’accueil</a></footer>
+</body>
+</html>

@@ -1,11 +1,12 @@
 """Books API routes."""
 
-from fastapi import APIRouter
 import json
-from fastapi import HTTPException, Request
+import sqlite3
+
+from fastapi import APIRouter, HTTPException, Request
 from .. import db, ocr
 from ..api_common import dump_model as _dump, get_current_user
-from ..schemas import BookIn
+from ..schemas import BookEnrichIn, BookIn
 from ..services import _books, _mobile_book
 
 router = APIRouter()
@@ -39,6 +40,69 @@ def book_upd(bid: int, b: BookIn, request: Request):
                                                            b.publisher, b.category, b.type, b.location, b.price, b.min_stock, bid))
         db.log_audit(c, get_current_user(request), "UPDATE", "book", bid, f"Modification fiche « {b.title} »", snapshot_before=dict(old), snapshot_after=_dump(b) | {"id": bid})
     return {"ok": True}
+
+
+@router.post("/api/books/{bid}/enrich")
+def book_enrich(bid: int, patch: BookEnrichIn, request: Request):
+    """Complète les champs absents d'une fiche existante sans écraser ses données."""
+    with db.tx(immediate=True) as c:
+        old = c.execute("SELECT * FROM books WHERE id=? AND active=1", (bid,)).fetchone()
+        if not old:
+            raise HTTPException(404, "Livre introuvable")
+
+        updates = {}
+        incoming = _dump(patch)
+        incoming_title = (incoming.get("title") or "").strip()
+        if not (old["title"] or "").strip() and not incoming_title:
+            raise HTTPException(422, "Le titre est requis pour compléter cette fiche")
+
+        new_code = (incoming.get("code") or "").strip()
+        old_code = (old["code"] or "").strip()
+        if new_code:
+            if old_code and old_code != new_code:
+                raise HTTPException(
+                    409,
+                    "Cette fiche possède déjà un autre code-barres. "
+                    "Le remplacement automatique est refusé.",
+                )
+            if not old_code:
+                updates["code"] = new_code
+
+        for field in ("title", "series", "volume", "author", "publisher"):
+            value = incoming.get(field)
+            if value is not None and str(value).strip() and not str(old[field] or "").strip():
+                updates[field] = str(value).strip()
+
+        price = incoming.get("price")
+        if price is not None and float(old["price"] or 0) <= 0 and price > 0:
+            updates["price"] = price
+
+        before = dict(old)
+        if updates:
+            assignments = ", ".join(f"{field}=?" for field in updates)
+            try:
+                c.execute(
+                    f"UPDATE books SET {assignments} WHERE id=?",
+                    (*updates.values(), bid),
+                )
+            except sqlite3.IntegrityError as error:
+                raise HTTPException(409, "Ce code-barres est déjà associé à un autre livre") from error
+            after = dict(c.execute("SELECT * FROM books WHERE id=?", (bid,)).fetchone())
+            db.log_audit(
+                c,
+                get_current_user(request),
+                "UPDATE",
+                "book",
+                bid,
+                f"Complément de la fiche « {after['title']} » : {', '.join(updates)}",
+                snapshot_before=before,
+                snapshot_after=after,
+            )
+        else:
+            after = before
+
+        return {"ok": True, "id": bid, "updated": list(updates), "book": after}
+
 
 @router.post("/api/ocr/scan")
 async def ocr_scan(request: Request):

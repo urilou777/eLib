@@ -1,0 +1,12 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML><HEAD><meta name="GENERATOR" content="eLib Help"></HEAD><BODY>
+<OBJECT type="text/site properties"><param name="Window Styles" value="0x800025"></OBJECT>
+<UL>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Accueil"><param name="Local" value="index.html"></OBJECT>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Architecture et parcours des données"><param name="Local" value="architecture.html"></OBJECT>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Scanner mobile et sécurité"><param name="Local" value="mobile.html"></OBJECT>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Données, sauvegarde et restauration"><param name="Local" value="data.html"></OBJECT>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Version portable Windows"><param name="Local" value="build.html"></OBJECT>
+  <LI><OBJECT type="text/sitemap"><param name="Name" value="Maintenance et tests"><param name="Local" value="maintenance.html"></OBJECT>
+</UL>
+</BODY></HTML>

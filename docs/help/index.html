@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>eLib — Aide technique</title>
+  <link rel="stylesheet" href="help.css">
+</head>
+<body>
+  <header><p class="eyebrow">Aide locale eLib</p><h1>Comprendre l’application</h1>
+    <p>Architecture, parcours des données, sécurité, sauvegardes et maintenance du logiciel.</p></header>
+  <nav><a href="index.html">Accueil</a><a href="architecture.html">Architecture</a><a href="mobile.html">Scanner mobile</a><a href="data.html">Données</a><a href="build.html">Installation et build</a><a href="maintenance.html">Maintenance</a></nav>
+  <main>
+    <section><h2>À qui s’adresse cette aide ?</h2>
+      <p>Ce guide explique comment les composants techniques d’eLib s’articulent. Il complète le README destiné à l’installation et à l’utilisation quotidienne.</p>
+      <div class="cards">
+        <article><h3>Pour les utilisateurs</h3><p>Comprendre les deux écrans, le scanner mobile, les sauvegardes et les fichiers de données.</p></article>
+        <article><h3>Pour les mainteneurs</h3><p>Repérer les modules responsables, tester une modification et reconstruire la version Windows portable.</p></article>
+      </div>
+    </section>
+    <section><h2>En bref</h2>
+      <ul>
+        <li>Le PC central héberge le serveur FastAPI et la base SQLite locale.</li>
+        <li>L’interface de caisse reste sur le PC ; le téléphone accède au scanner par HTTPS sur le réseau local.</li>
+        <li>Le build x86 embarque Python, RapidOCR, ONNX Runtime, ses modèles et WebView2.</li>
+        <li>Les ventes validées sont stockées dans SQLite. Les paniers live sont un état temporaire de suivi.</li>
+      </ul>
+    </section>
+    <section><h2>Par où commencer ?</h2>
+      <ul>
+        <li><a href="architecture.html">Architecture et flux de données</a></li>
+        <li><a href="mobile.html">Appairage, réseau local et scanner mobile</a></li>
+        <li><a href="data.html">Base SQLite, sauvegardes et restauration</a></li>
+        <li><a href="build.html">Application portable Windows et chaîne de build</a></li>
+        <li><a href="maintenance.html">Structure du code, tests et limites à surveiller</a></li>
+      </ul>
+    </section>
+    <aside class="notice">Le code source et les tests restent la référence si cette aide n’est plus synchronisée avec l’application.</aside>
+  </main>
+  <footer>eLib · Aide technique hors-ligne</footer>
+</body>
+</html>

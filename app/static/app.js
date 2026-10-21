@@ -1796,6 +1796,7 @@ VIEWS.pos = async () => {
             <div class="row" style="justify-content:space-between;padding:6px 10px;background:var(--panel2);border-radius:6px;margin-bottom:6px;font-size:12px">
               <div>
                 <b>${esc(d.name || 'Téléphone')}</b> 
+                <span class="muted">· Profil : ${esc(d.cashier_name || 'non sélectionné')}</span>
                 <span class="muted">(vu ${esc(d.last_seen ? d.last_seen.slice(0, 16) : d.created_at ? d.created_at.slice(0, 10) : 'jamais')})</span>
               </div>
               <button class="btn ghost sm" style="color:var(--bad)" onclick="revokeDevice('${esc(d.id)}')">Révoquer</button>
@@ -2710,6 +2711,9 @@ function bookForm(b = {}) {
         📋 Remplir les champs
       </button>
     </div>
+    <button type="button" id="f_btn_enrich_book" class="btn sm" style="width:100%;margin-top:6px;padding:5px 10px;font-size:11px">
+      🔗 Compléter la fiche / lier ce code-barres
+    </button>
   </div>
 
   <div style="background:rgba(143,22,173,0.15);border:1px dashed var(--a2);border-radius:10px;padding:9px 12px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -2743,6 +2747,7 @@ function bookForm(b = {}) {
 
     const dbAuthors = Array.from(new Set(S.books.map(x => x.author).filter(Boolean)));
     const dbPubs = pubs.map(p => p.label);
+    let currentMatchedBook = null;
 
     function calcSim(s1, s2) {
       if (!s1 || !s2) return 0;
@@ -2812,6 +2817,7 @@ function bookForm(b = {}) {
     }
 
     function showBookExists(existing) {
+      currentMatchedBook = existing;
       const banner = $('#f_exists_banner', m);
       const title = $('#f_exists_title', m);
       const stock = $('#f_exists_stock', m);
@@ -2839,20 +2845,40 @@ function bookForm(b = {}) {
         toast('Champs remplis depuis la fiche officielle', 'ok');
         checkAll();
       };
+
+      $('#f_btn_enrich_book', m).onclick = safe(async () => {
+        const g = key => $('#f_' + key, m).value.trim();
+        const price = Number(g('price'));
+        const payload = {
+          code: g('code') || undefined,
+          title: g('title') || undefined,
+          series: g('series') || undefined,
+          volume: g('volume') || undefined,
+          author: g('author') || undefined,
+          publisher: g('publisher') || undefined,
+          price: Number.isFinite(price) && price > 0 ? price : undefined
+        };
+        const result = await api(`/api/books/${existing.id}/enrich`, 'POST', payload);
+        toast(result.updated.length ? `Fiche complétée : ${result.updated.join(', ')}` : 'Aucune information manquante à compléter', 'ok');
+        closeModal();
+        go('catalog');
+      });
     }
 
     function checkCodeExists(code) {
       const banner = $('#f_exists_banner', m);
       const codeBadge = $('#b_f_code', m);
       if (!code) {
-        if (banner) banner.style.display = 'none';
-        if (codeBadge) codeBadge.style.display = 'none';
+        if (!currentMatchedBook) {
+          if (banner) banner.style.display = 'none';
+          if (codeBadge) codeBadge.style.display = 'none';
+        }
         return;
       }
       const existing = S.books.find(x => x.code === code && (!b.id || x.id !== b.id));
       if (existing) {
         showBookExists(existing);
-      } else {
+      } else if (!currentMatchedBook) {
         if (banner) banner.style.display = 'none';
         if (codeBadge) codeBadge.style.display = 'none';
       }
@@ -4327,5 +4353,3 @@ initLiveStream();
 const initialHash = location.hash.replace(/^#/, '');
 const startView = isFocusMode() ? 'pos' : (VIEWS[initialHash] ? initialHash : 'dashboard');
 go(startView, true);
-
-

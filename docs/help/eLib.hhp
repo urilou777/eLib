@@ -1,0 +1,20 @@
+[OPTIONS]
+Compatibility=1.1 or later
+Compiled file=..\eLib.chm
+Contents file=toc.hhc
+Index file=index.hhk
+Default topic=index.html
+Title=eLib — Aide technique
+Language=0x40c French (France)
+Full-text search=Yes
+Binary TOC=Yes
+Display compile progress=No
+
+[FILES]
+index.html
+architecture.html
+mobile.html
+data.html
+build.html
+maintenance.html
+help.css

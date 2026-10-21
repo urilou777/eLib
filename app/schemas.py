@@ -30,6 +30,16 @@ class BookIn(BaseModel):
     is_pack: int = 0
 
 
+class BookEnrichIn(BaseModel):
+    code: Optional[str] = Field(None, max_length=100)
+    title: Optional[str] = Field(None, max_length=300)
+    series: Optional[str] = Field(None, max_length=200)
+    volume: Optional[str] = Field(None, max_length=100)
+    author: Optional[str] = Field(None, max_length=200)
+    publisher: Optional[str] = Field(None, max_length=200)
+    price: Optional[float] = Field(None, ge=0, le=100000)
+
+
 class PackItem(BaseModel):
     book_id: int
     qty: int = 1
@@ -127,6 +137,8 @@ class UserIn(BaseModel):
 class PairIn(BaseModel):
     code: str = Field(min_length=8, max_length=64)
     name: Optional[str] = Field(None, max_length=60)
+    device_key: Optional[str] = Field(None, min_length=16, max_length=80)
+    previous_token: Optional[str] = Field(None, min_length=20, max_length=100)
 
 
 class ActiveBasketItem(BaseModel):
@@ -137,6 +149,7 @@ class ActiveBasketItem(BaseModel):
 
 class ActiveBasketIn(BaseModel):
     user_name: Optional[str] = "Libraire"
+    device_key: Optional[str] = Field(None, min_length=16, max_length=80)
     total: float = 0.0
     qty: int = 0
     items: List[ActiveBasketItem] = Field(default_factory=list)

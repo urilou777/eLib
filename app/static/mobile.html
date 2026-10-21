@@ -12,9 +12,11 @@
 <title>eLib – Chrétienne et impactante (Mobile)</title>
 <meta name="description" content="Scanner de codes-barres et encaissement rapide pour les libraires de la librairie.">
 <link rel="manifest" href="/static/manifest.webmanifest">
-<link rel="icon" href="/static/favicon.ico" sizes="any">
-<link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32">
-<link rel="apple-touch-icon" href="/static/favicon-192.png">
+<link rel="icon" href="/static/favicon.ico?v=20261021_e_v1" sizes="any">
+<link rel="icon" href="/static/favicon-16.png?v=20261021_e_v1" type="image/png" sizes="16x16">
+<link rel="icon" href="/static/favicon-32.png?v=20261021_e_v1" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/favicon-48.png?v=20261021_e_v1" type="image/png" sizes="48x48">
+<link rel="apple-touch-icon" href="/static/favicon-192.png?v=20261021_e_v1">
 <link rel="stylesheet" href="/static/fonts.css">
 <style>
 :root { 
@@ -85,6 +87,7 @@ button, select, input { font:inherit; color:inherit; }
   background: rgba(29,11,40,.92); 
   border-bottom: 1px solid var(--line); 
   display: flex;
+  gap: 8px;
   justify-content: space-between; 
   align-items: center; 
   flex-shrink: 0; 
@@ -94,14 +97,30 @@ button, select, input { font:inherit; color:inherit; }
   max-width: 100%;
   box-sizing: border-box;
 }
+.m-head > div:first-child { min-width: 0; }
+.m-head > div:last-child { flex: 1; min-width: 0; justify-content: flex-end; }
+.m-head picture img { max-width: clamp(80px, 28vw, 140px) !important; }
 .logo { font-weight:800; font-size:16px; font-family:'Playfair Display',serif; color:#faf7f2; letter-spacing:.5px; }
 .mode-switch { display:inline-flex; background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:18px; padding:2px; flex-shrink:0; }
 .mode-btn { background:none; border:0; color:var(--mut); font-size:11.5px; font-weight:700; padding:5px 9px; border-radius:15px; cursor:pointer; transition:.2s; white-space:nowrap; }
 .mode-btn.on { background:var(--a1); color:#fff; }
 .mode-btn#btnModeRecv.on { background:linear-gradient(135deg, #b452d3, #8f16ad); color:#fff; }
 .user-chip { display:inline-flex; align-items:center; gap:6px; background:var(--card2); border:1px solid var(--line);
-  padding:6px 10px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; }
+  min-width:0; max-width:clamp(72px, 28vw, 180px); flex:0 1 auto; padding:6px 10px; border-radius:20px;
+  font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.user-chip span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .user-chip i { width:8px; height:8px; border-radius:50%; background:var(--good); flex-shrink:0; }
+#btnFullscreen { flex:0 0 auto; }
+@media (max-width: 380px) {
+  .m-head { gap:4px; padding:8px; }
+  .m-head > div:first-child { max-width:22vw; overflow:hidden; }
+  .m-head > div:last-child { gap:4px !important; }
+  .m-head picture img { max-width:22vw !important; }
+  .mode-btn { padding:4px 5px; font-size:10px; }
+  .user-chip { max-width:25vw; gap:4px; padding:5px 6px; font-size:10px; }
+  .user-chip i { width:6px; height:6px; }
+  #btnFullscreen { padding:5px 6px !important; }
+}
 
 #app {
   display: flex;
@@ -1175,6 +1194,9 @@ button, select, input { font:inherit; color:inherit; }
             📋 Remplir fiche
           </button>
         </div>
+        <button type="button" id="nbBtnEnrichMatch" class="btn sm" style="width:100%;margin-top:6px;padding:6px 10px;font-size:11px">
+          🔗 Compléter la fiche / lier ce code-barres
+        </button>
       </div>
 
       <!-- Conteneur de chips pour les lignes détectées par l'OCR -->
@@ -1368,7 +1390,7 @@ button, select, input { font:inherit; color:inherit; }
 <div id="toasts" aria-live="polite"></div>
 
 <script src="/static/vendor/zxing.min.js"></script>
-<script src="/static/mobile.js?v=20261018_v12"></script>
+<script src="/static/mobile.js?v=20261021_catalog_enrich_v1"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

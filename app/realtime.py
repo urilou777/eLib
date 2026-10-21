@@ -42,6 +42,19 @@ class LiveHub:
             basket_data["status"] = "connected"
 
         with self.lock:
+            user_name = (basket_data.get("user_name") or "").strip().casefold()
+            device_key = basket_data.get("device_key") or ""
+            for active_id, active in list(self.active_baskets.items()):
+                if active_id == device_id:
+                    continue
+                same_user = user_name and (
+                    (active.get("user_name") or "").strip().casefold() == user_name
+                )
+                same_device = device_key and (
+                    active.get("device_key") == device_key
+                )
+                if same_user or same_device:
+                    del self.active_baskets[active_id]
             self.active_baskets[device_id] = basket_data
             self._cleanup_expired()
             active_list = self._prepare_baskets()

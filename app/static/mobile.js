@@ -3,6 +3,7 @@
 const $ = s => document.querySelector(s);
 const eur = n => (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 const TOKEN_KEY = 'librairie_device_token', USER_KEY = 'librairie_user';
+const DEVICE_KEY = 'librairie_device_key';
 let currentMode = 'sale'; // 'sale' | 'recv'
 
 /* ---------- Gestion dynamique de la hauteur visible du viewport (non-fullscreen / plein écran) ---------- */
@@ -113,6 +114,7 @@ async function api(url, { method = 'GET', body, auth = true, timeoutMs = 4000 } 
     }
     throw err;
   }
+
 }
 
 /* ---------- Surveillance Réseau & Heartbeat (/api/ping) ---------- */
@@ -241,6 +243,7 @@ function syncLiveCart(action = null) {
         method: 'POST',
         body: {
           user_name: currentUser || 'Libraire Mobile',
+          device_key: localStorage.getItem(DEVICE_KEY) || undefined,
           total,
           qty: count,
           items,
@@ -348,7 +351,23 @@ async function pairFromHash() {
   if (!m) return;
   history.replaceState(null, '', location.pathname);        // le code disparaît de la barre d'adresse et de l'historique
   try {
-    const r = await api('/api/mobile/pair', { method: 'POST', body: { code: m[1], name: deviceLabel() }, auth: false });
+    let deviceKey = localStorage.getItem(DEVICE_KEY);
+    if (!deviceKey) {
+      const bytes = new Uint8Array(24);
+      crypto.getRandomValues(bytes);
+      deviceKey = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem(DEVICE_KEY, deviceKey);
+    }
+    const r = await api('/api/mobile/pair', {
+      method: 'POST',
+      body: {
+        code: m[1],
+        name: deviceLabel(),
+        device_key: deviceKey,
+        previous_token: localStorage.getItem(TOKEN_KEY) || undefined
+      },
+      auth: false
+    });
     localStorage.setItem(TOKEN_KEY, r.token);
     toast('Téléphone appairé avec succès');
   } catch (e) { toast(e.message, 'err'); }
@@ -2057,7 +2076,7 @@ function triggerAllBddChecks() {
   checkFieldBdd('#nbPublisher', '#nbPublisherBddBadge', '#nbPublisherTypoSuggestion', dbPublishers);
   const codeVal = $('#nbCode') ? $('#nbCode').value.trim() : '';
   if (codeVal) checkCodeInCatalog(codeVal);
-  else hideExistingBookBanner();
+  else if (!currentMatchedBook) hideExistingBookBanner();
 }
 
 async function checkCodeInCatalog(code) {
@@ -2070,10 +2089,10 @@ async function checkCodeInCatalog(code) {
     if (book && book.id) {
       showExistingBookBanner(book);
     } else {
-      hideExistingBookBanner();
+      if (!currentMatchedBook) hideExistingBookBanner();
     }
   } catch (e) {
-    hideExistingBookBanner();
+    if (!currentMatchedBook) hideExistingBookBanner();
   }
 }
 
@@ -2084,7 +2103,7 @@ function showExistingBookBanner(b) {
   const badge = $('#nbExistsStockBadge');
   const codeBadge = $('#nbCodeBddBadge');
   if (!banner) return;
-  title.textContent = `${b.title}${b.author ? ' · ' + b.author : ''} (${eur(b.price)})`;
+  title.textContent = `${b.title || 'Fiche sans titre'}${b.author ? ' · ' + b.author : ''} (${eur(b.price)})`;
   if (badge) badge.textContent = `Stock actuel : ${b.stock ?? 0} ex.`;
   if (codeBadge) {
     codeBadge.textContent = `✓ En base (${b.stock ?? 0} ex.)`;
@@ -2118,6 +2137,31 @@ function showExistingBookBanner(b) {
       banner.style.display = 'none';
       toast('Fiche officielle du livre appliquée !', 'ok');
       triggerAllBddChecks();
+    };
+  }
+
+  const enrichBtn = $('#nbBtnEnrichMatch');
+  if (enrichBtn) {
+    enrichBtn.onclick = async () => {
+      const code = $('#nbCode').value.trim();
+      const price = parseFloat($('#nbPrice').value);
+      const payload = {
+        code: code || undefined,
+        title: $('#nbTitle').value.trim() || undefined,
+        author: $('#nbAuthor').value.trim() || undefined,
+        publisher: $('#nbPublisher') ? $('#nbPublisher').value.trim() || undefined : undefined,
+        price: Number.isFinite(price) && price > 0 ? price : undefined
+      };
+      try {
+        const result = await api(`/api/books/${b.id}/enrich`, { method: 'POST', body: payload });
+        toast(result.updated.length ? `Fiche complétée : ${result.updated.join(', ')}` : 'Aucune information manquante à compléter', 'ok');
+        closeNewBookModal();
+        const lookupCode = code || result.book.code;
+        const book = await api('/api/books/scan/' + encodeURIComponent(lookupCode));
+        if (currentMode === 'recv') addToRecv(book); else addToCart(book);
+      } catch (err) {
+        toast(err.message, 'err');
+      }
     };
   }
 }
@@ -2190,18 +2234,19 @@ function toTitleCase(str) {
 
 function openNewBookModal(code = '', prefill = {}) {
   pendingNewCode = code || '';
-  $('#nbCode').value = pendingNewCode;
-  $('#nbTitle').value = prefill.matched_book ? (prefill.matched_book.title || '') : toSentenceCase(prefill.title || '');
-  $('#nbAuthor').value = prefill.matched_book ? (prefill.matched_book.author || '') : toTitleCase(prefill.author || '');
-  if ($('#nbPublisher')) $('#nbPublisher').value = prefill.matched_book ? (prefill.matched_book.publisher || '') : (prefill.publisher || '');
-  $('#nbPrice').value = (prefill.price != null && prefill.price > 0) ? prefill.price : (prefill.matched_book && prefill.matched_book.price > 0 ? prefill.matched_book.price : '');
+  const existing = prefill.existing_book || prefill.matched_book || null;
+  $('#nbCode').value = pendingNewCode || (existing && existing.code) || '';
+  $('#nbTitle').value = existing ? (existing.title || toSentenceCase(prefill.title || '')) : toSentenceCase(prefill.title || '');
+  $('#nbAuthor').value = existing ? (existing.author || toTitleCase(prefill.author || '')) : toTitleCase(prefill.author || '');
+  if ($('#nbPublisher')) $('#nbPublisher').value = existing ? (existing.publisher || prefill.publisher || '') : (prefill.publisher || '');
+  $('#nbPrice').value = (prefill.price != null && prefill.price > 0) ? prefill.price : (existing && existing.price > 0 ? existing.price : '');
   
   const badge = $('#nbOcrBadge');
   if (badge) badge.style.display = prefill.lines ? 'inline-flex' : 'none';
 
   // Si le livre existe déjà en base, proposer immédiatement l'ajout au stock
-  if (prefill.matched_book) {
-    showExistingBookBanner(prefill.matched_book);
+  if (existing) {
+    showExistingBookBanner(existing);
   } else if (pendingNewCode) {
     checkCodeInCatalog(pendingNewCode);
   } else {
@@ -2861,7 +2906,7 @@ async function applyOcrResultToRecv(res) {
   updateViewportHeight();
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   if (res) {
-    if (res.matched_book) {
+    if (res.matched_book && res.matched_book.code) {
       try {
         const book = await api('/api/books/scan/' + encodeURIComponent(res.matched_book.code));
         addToRecv(book);
@@ -2952,7 +2997,7 @@ async function handleRecvOcrFile(file) {
     window.scrollTo(0, 0);
     updateViewportHeight();
     if (res) {
-      if (res.matched_book) {
+      if (res.matched_book && res.matched_book.code) {
         try {
           const book = await api('/api/books/scan/' + encodeURIComponent(res.matched_book.code));
           addToRecv(book);
@@ -3032,6 +3077,14 @@ async function lookupCode(code) {
           codeCache.delete(firstKey);
         }
       }
+    }
+    if (!book.title || !book.title.trim()) {
+      toast('Fiche sans titre : complétez-la avec la photo de couverture', 'warn');
+      openNewBookModal(code, { existing_book: book });
+      if (currentMode === 'recv') {
+        setTimeout(() => openOcrCameraModal('modal'), 200);
+      }
+      return;
     }
     if (currentMode === 'sale') {
       addToCart(book);

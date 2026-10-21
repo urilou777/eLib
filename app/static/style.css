@@ -860,6 +860,9 @@ html {
   filter: brightness(1.12);
   box-shadow: 0 6px 20px rgba(143, 22, 173, 0.45);
 }
+#topActions .btn:hover {
+  transform: none;
+}
 .btn.ghost {
   background: var(--panel2);
   box-shadow: none;
@@ -2653,6 +2656,5 @@ textarea:focus-visible {
     opacity: 0.8 !important;
   }
 }
-
 
 

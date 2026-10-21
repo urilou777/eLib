@@ -4,9 +4,23 @@ Application locale (100% hors-ligne) pour la gestion d'une librairie, avec synch
 
 Dépôt GitHub : [https://github.com/urilou777/eLib](https://github.com/urilou777/eLib)
 
+## Documentation technique
+
+Les pages ci-dessous sont aussi disponibles hors ligne dans le dossier `docs\help\` :
+
+- [Accueil de l’aide technique](docs/help/index.html)
+- [Architecture et parcours des données](docs/help/architecture.html)
+- [Scanner mobile et sécurité réseau](docs/help/mobile.html)
+- [Données, sauvegardes et restauration](docs/help/data.html)
+- [Application portable et compilation Windows](docs/help/build.html)
+- [Code, tests et maintenance](docs/help/maintenance.html)
+- [Sources et génération du fichier CHM](docs/help/eLib.hhp)
+
 ---
 
 ## 🚀 Fonctionnalités principales
+
+Pour une présentation technique hors-ligne, le projet inclut les sources d’aide CHM dans `docs\help\`. Après installation de HTML Help Workshop, générez `docs\eLib.chm` avec `.\tools\build_chm.ps1`.
 
 1. **Tableau de bord dynamique & Visualisations** :
    - Évolution mensuelle du Chiffre d'Affaires par origine (Maison mère vs Église locale).
@@ -28,6 +42,7 @@ Dépôt GitHub : [https://github.com/urilou777/eLib](https://github.com/urilou77
 
 4. **Catalogue & Packs** :
    - Fiches livres complètes (ISBN, titre, série, volume, auteur, éditeur, prix, seuil d'alerte).
+   - L'OCR peut reconnaître un titre déjà au catalogue et proposer de compléter sa fiche ou de lui rattacher le code-barres scanné ; les informations existantes ne sont pas écrasées.
    - Création et composition visuelle de packs par glisser-déposer de livres existants.
 
 5. **Réservations / Commandes clients** :
@@ -68,21 +83,19 @@ Ce guide détaille la mise en service complète de la librairie le jour du culte
 
 ### 🖥️ Étape 1 : Application Windows autonome (32-bit et 64-bit)
 
-La distribution est un exécutable Windows x86 autonome qui fonctionne sur Windows 32-bit comme 64-bit. Il embarque Python, RapidOCR, ONNX Runtime et les modèles OCR. **Le PC de caisse n'a besoin ni de Python, ni d'un moteur OCR à installer, ni d'Internet.**
+La distribution est un exécutable Windows x86 autonome nommé `eLib.exe`, qui fonctionne sur Windows 32-bit comme 64-bit. Il embarque Python, RapidOCR, ONNX Runtime, les modèles OCR et le runtime WebView2. **Le PC de caisse n'a besoin ni de Python, ni d'un moteur OCR, ni de WebView2 à installer, ni d'Internet.**
 
 #### Construire la distribution (mainteneur uniquement)
 RapidOCR x86 nécessite une chaîne de versions compatible : Python 3.10 32-bit, RapidOCR 1.4.4 et ONNX Runtime 1.16.3. Installez Python 3.10 **32-bit (x86)** sur le PC de développement (il peut coexister avec Python 64-bit), puis depuis PowerShell à la racine du projet, lancez :
 ```powershell
 py -3.10-32 tools\build_windows_x86.py
 ```
-Le script installe les dépendances binaires épinglées et construit `dist_win32\Librairie.exe`. Les bibliothèques natives, les modèles OCR et Python sont intégrés dans l'exécutable. Les utilisateurs finaux n'ont besoin d'aucun de ces outils.
+Le script installe les dépendances binaires épinglées, télécharge et vérifie le package Microsoft WebView2 Fixed Version x86, puis construit `dist_win32\eLib.exe`. Les bibliothèques natives, le runtime WebView2, les modèles OCR et Python sont intégrés dans l'exécutable. Le runtime WebView2 est volumineux (plus de 250 Mo décompressé) et doit être mis à jour périodiquement avec l'application pour recevoir les correctifs de sécurité. Les utilisateurs finaux n'ont besoin d'aucun de ces outils ni d'une connexion Internet.
 
 **Note de maintenance :** la roue ONNX Runtime Windows x86 disponible est ancienne et le projet ONNX Runtime ne prend plus en charge les builds 32-bit actuels. Ces versions sont épinglées pour maintenir la compatibilité x86 et doivent être réévaluées si un runtime x86 plus récent devient disponible.
 
 #### Utiliser la distribution (utilisateurs)
-Copiez `dist_win32\Librairie.exe` sur le PC de caisse et lancez-le. L'application crée son dossier `data` à côté de l'exécutable. Pour transférer un catalogue existant, copiez aussi son dossier `data`. Un exécutable x86 fonctionne également sur Windows 64-bit.
-
-**Affichage natif :** la fenêtre intégrée utilise Microsoft Edge WebView2 Runtime, qui n'est pas inclus dans l'exécutable. S'il n'est pas disponible sur le PC, le lanceur ouvre automatiquement l'application dans le navigateur par défaut. Le serveur local et l'OCR restent intégrés et fonctionnent hors ligne.
+Copiez `dist_win32\eLib.exe` sur le PC de caisse et lancez-le. L'application crée son dossier `data` à côté de l'exécutable. Pour transférer un catalogue existant, copiez aussi son dossier `data`. Un exécutable x86 fonctionne également sur Windows 64-bit. La fenêtre native utilise la version WebView2 embarquée ; elle ne dépend pas d'une installation WebView2 préexistante et ne bascule pas silencieusement vers le navigateur.
 
 #### 3. Transférer la base de données réelle (si nouveau PC)
 Si vous installez le projet sur un autre ordinateur que celui-ci :
@@ -111,7 +124,7 @@ Ce script automatique :
 
 ### 🚀 Étape 3 : Lancement de la Caisse
 
-Pour la distribution compilée, lancez directement `dist_win32\Librairie.exe`. Si vous lancez le projet depuis ses sources, double-cliquez sur :
+Pour la distribution compilée, lancez directement `dist_win32\eLib.exe`. Si vous lancez le projet depuis ses sources, double-cliquez sur :
 ```text
 Lancer_Librairie.bat
 ```
