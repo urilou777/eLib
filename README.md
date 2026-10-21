@@ -97,6 +97,11 @@ Le script installe les dépendances binaires épinglées, télécharge et vérif
 #### Utiliser la distribution (utilisateurs)
 Copiez `dist_win32\eLib.exe` sur le PC de caisse et lancez-le. L'application crée son dossier `data` à côté de l'exécutable. Pour transférer un catalogue existant, copiez aussi son dossier `data`. Un exécutable x86 fonctionne également sur Windows 64-bit. La fenêtre native utilise la version WebView2 embarquée ; elle ne dépend pas d'une installation WebView2 préexistante et ne bascule pas silencieusement vers le navigateur.
 
+#### Releases et mises à jour
+Les versions publiées sous un tag `vX.Y.Z` sont construites automatiquement par GitHub Actions avec Python 3.10 x86 et publiées comme `eLib.exe` avec un fichier SHA-256. Pour publier une version, fusionnez-la dans la branche de référence, puis créez et poussez un tag de version, par exemple `git tag v1.0.0` puis `git push origin v1.0.0`. Une application distribuée vérifie les versions stables au démarrage puis une fois par jour ; elle ne télécharge qu'après confirmation et ne remplace/redémarre l'application qu'après une seconde confirmation. La connexion Internet est nécessaire pour vérifier et télécharger une version, mais pas pour utiliser eLib. Le SHA-256 détecte les téléchargements altérés ; il ne remplace pas une signature Authenticode de l'éditeur.
+
+Avant la première migration d'une base existante, eLib en crée une copie vérifiée sous `data\sauvegardes\librairie_pre_migration_*.db` ; la base séparée des appareils appairés est aussi sauvegardée sous `devices_pre_migration_*.db` si son schéma doit évoluer. Les migrations sont exécutées au démarrage et la version de la base métier est conservée dans `PRAGMA user_version`. Toute nouvelle évolution de schéma doit incrémenter `LATEST_SCHEMA_VERSION` et ajouter une migration correspondante dans `app/db.py`.
+
 #### 3. Transférer la base de données réelle (si nouveau PC)
 Si vous installez le projet sur un autre ordinateur que celui-ci :
 1. Sur votre PC actuel, copiez le dossier `data/` (qui contient `librairie.db` et vos sauvegardes).

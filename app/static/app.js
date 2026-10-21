@@ -483,6 +483,7 @@ async function go(v, updateHash = true) {
   $('#view').innerHTML = '<div class="empty">Chargement…</div>';
   try { await loadRef(); await VIEWS[v](); } catch (e) { toast(e.message, 'err'); }
 }
+window.navigateToView = go;
 
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace(/^#/, '');
@@ -1791,15 +1792,25 @@ VIEWS.pos = async () => {
           return;
         }
 
+        const deviceDescription = name => {
+          const label = String(name || '');
+          if (/·/.test(label)) return label;
+          const android = label.match(/Android\s+([\d.]+)/i);
+          if (android) return `Téléphone · Android ${android[1]}`;
+          const ios = label.match(/(?:iPhone|iPad|iPod).*?OS\s+([\d_]+)/i);
+          if (ios) return `${/iPad/i.test(label) ? 'iPad' : 'iPhone'} · iOS ${ios[1].replace(/_/g, '.')}`;
+          return label || 'Téléphone';
+        };
+
         const renderModalContent = (pairingUrl = null) => {
           const devList = (minfo.devices || []).map(d => `
-            <div class="row" style="justify-content:space-between;padding:6px 10px;background:var(--panel2);border-radius:6px;margin-bottom:6px;font-size:12px">
-              <div>
-                <b>${esc(d.name || 'Téléphone')}</b> 
-                <span class="muted">· Profil : ${esc(d.cashier_name || 'non sélectionné')}</span>
-                <span class="muted">(vu ${esc(d.last_seen ? d.last_seen.slice(0, 16) : d.created_at ? d.created_at.slice(0, 10) : 'jamais')})</span>
+            <div class="paired-device">
+              <div class="paired-device-info">
+                <b class="paired-device-profile">${esc(d.cashier_name || 'Profil non sélectionné')}</b>
+                <span class="paired-device-description">${esc(deviceDescription(d.name))}</span>
+                <span class="paired-device-seen">Vu ${esc(d.last_seen ? d.last_seen.slice(0, 16) : d.created_at ? d.created_at.slice(0, 10) : 'jamais')}</span>
               </div>
-              <button class="btn ghost sm" style="color:var(--bad)" onclick="revokeDevice('${esc(d.id)}')">Révoquer</button>
+              <button class="btn ghost sm paired-device-revoke" onclick="revokeDevice('${esc(d.id)}')">Révoquer</button>
             </div>
           `).join('') || '<div class="muted" style="font-size:12px;font-style:italic">Aucun smartphone appairé pour le moment.</div>';
 

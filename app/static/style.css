@@ -2522,6 +2522,42 @@ body.focus-mode-on #userBadge { opacity: 0.6; }
 .feed-pill.age { background: rgba(102, 126, 234, 0.2); color: #a3bffa; border: 1px solid rgba(163, 191, 250, 0.35); }
 .feed-pill.star { background: rgba(246, 224, 94, 0.25); color: #faf089; border: 1px solid rgba(250, 240, 137, 0.5); text-shadow: 0 0 6px rgba(250, 240, 137, 0.6); }
 .feed-pill.pay { background: rgba(72, 187, 120, 0.2); color: #68d391; border: 1px solid rgba(104, 211, 145, 0.35); }
+
+.paired-device {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 7px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.paired-device-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.paired-device-profile {
+  color: var(--a2);
+  font-size: 14px;
+  font-weight: 800;
+}
+.paired-device-description {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.paired-device-seen {
+  color: var(--mut);
+  font-size: 11px;
+}
+.paired-device-revoke {
+  flex: 0 0 auto;
+  color: var(--bad);
+}
 .feed-pill.split { background: rgba(49, 151, 149, 0.25); color: #81e6d9; border: 1px solid rgba(129, 230, 217, 0.4); }
 .feed-pill.standby { background: rgba(237, 137, 54, 0.2); color: #fbd38d; border: 1px solid rgba(251, 211, 141, 0.35); }
 .feed-pill.resume { background: rgba(66, 153, 225, 0.2); color: #90cdf4; border: 1px solid rgba(144, 205, 244, 0.35); }
@@ -2656,5 +2692,4 @@ textarea:focus-visible {
     opacity: 0.8 !important;
   }
 }
-
 

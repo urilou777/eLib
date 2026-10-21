@@ -7,9 +7,17 @@ const DEVICE_KEY = 'librairie_device_key';
 let currentMode = 'sale'; // 'sale' | 'recv'
 
 /* ---------- Gestion dynamique de la hauteur visible du viewport (non-fullscreen / plein écran) ---------- */
+let manualSearchFocused = false;
+let stableViewportHeight = window.innerHeight;
+let searchViewportBlurTimer = null;
+let searchViewportBlurStarted = 0;
 function updateViewportHeight() {
   const vv = window.visualViewport;
-  const h = vv ? vv.height : window.innerHeight;
+  const layoutHeight = window.innerHeight;
+  if (!manualSearchFocused) stableViewportHeight = layoutHeight;
+  const h = manualSearchFocused
+    ? Math.max(stableViewportHeight, layoutHeight)
+    : vv ? vv.height : layoutHeight;
   document.documentElement.style.setProperty('--vvh', `${Math.round(h)}px`);
 }
 updateViewportHeight();
@@ -17,9 +25,31 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', updateViewportHeight);
 }
 window.addEventListener('resize', updateViewportHeight);
-window.addEventListener('orientationchange', () => setTimeout(updateViewportHeight, 100));
+window.addEventListener('orientationchange', () => setTimeout(() => {
+  if (manualSearchFocused) stableViewportHeight = window.innerHeight;
+  updateViewportHeight();
+}, 100));
 window.addEventListener('pageshow', updateViewportHeight);
 window.addEventListener('focus', updateViewportHeight);
+$('#manualCode').addEventListener('focus', () => {
+  manualSearchFocused = true;
+  stableViewportHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--vvh')) || window.innerHeight;
+  updateViewportHeight();
+});
+$('#manualCode').addEventListener('blur', () => {
+  searchViewportBlurStarted = Date.now();
+  const releaseViewportLock = () => {
+    const visibleHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    if (visibleHeight < stableViewportHeight - 120 && Date.now() - searchViewportBlurStarted < 1500) {
+      searchViewportBlurTimer = setTimeout(releaseViewportLock, 80);
+      return;
+    }
+    manualSearchFocused = false;
+    updateViewportHeight();
+  };
+  clearTimeout(searchViewportBlurTimer);
+  searchViewportBlurTimer = setTimeout(releaseViewportLock, 80);
+});
 
 const SVG_TAGS = new Set(['svg', 'path', 'line', 'circle', 'polyline', 'polygon', 'rect', 'g']);
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -342,9 +372,27 @@ window.addEventListener('pagehide', () => {
 });
 
 /* ---------- appairage ---------- */
-function deviceLabel() {
-  const m = navigator.userAgent.match(/\(([^)]+)\)/);
-  return (m ? m[1] : 'Téléphone').replace(/[;]\s*wv/i, '').slice(0, 50);
+async function deviceLabel() {
+  if (navigator.userAgentData?.getHighEntropyValues) {
+    try {
+      const details = await navigator.userAgentData.getHighEntropyValues(['model', 'platformVersion']);
+      const model = (details.model || '').trim();
+      const platform = details.platform || '';
+      const version = (details.platformVersion || '').split('.').slice(0, 2).join('.');
+      if (model || platform) {
+        return `${model || 'Téléphone'}${version ? ` · ${platform} ${version}` : platform ? ` · ${platform}` : ''}`.slice(0, 60);
+      }
+    } catch (error) {
+      console.debug('Detailed device information is unavailable:', error);
+    }
+  }
+
+  const agent = navigator.userAgent;
+  const android = agent.match(/Android\s+([\d.]+)/i);
+  if (android) return `Téléphone · Android ${android[1]}`.slice(0, 60);
+  const ios = agent.match(/(?:iPhone|iPad|iPod).*?OS\s+([\d_]+)/i);
+  if (ios) return `${/iPad/i.test(agent) ? 'iPad' : 'iPhone'} · iOS ${ios[1].replace(/_/g, '.')}`.slice(0, 60);
+  return 'Téléphone';
 }
 async function pairFromHash() {
   const m = location.hash.match(/pair=([A-Za-z0-9_-]{8,64})/);
@@ -362,7 +410,7 @@ async function pairFromHash() {
       method: 'POST',
       body: {
         code: m[1],
-        name: deviceLabel(),
+        name: await deviceLabel(),
         device_key: deviceKey,
         previous_token: localStorage.getItem(TOKEN_KEY) || undefined
       },
@@ -3110,27 +3158,61 @@ async function lookupCode(code) {
   }
 }
 
-async function manualSearch() {
+let manualSearchTimer = null;
+let manualSearchRequest = 0;
+
+async function manualSearch(requestId = ++manualSearchRequest) {
   const q = $('#manualCode').value.trim();
   const box = $('#results'); box.replaceChildren();
   if (!q) return;
-  if (/^[0-9][0-9\- ]{7,}$/.test(q)) { await lookupCode(q); $('#manualCode').value = ''; return; }
+  const normalizedCode = q.replace(/[\s-]/g, '');
+  if (isValidBarcode(normalizedCode)) {
+    await lookupCode(normalizedCode);
+    if (requestId === manualSearchRequest && $('#manualCode').value.trim() === q) $('#manualCode').value = '';
+    return;
+  }
   try {
     const found = await api('/api/books/search?q=' + encodeURIComponent(q));
-    if (!found.length) return toast('Aucun résultat', 'warn');
+    if (requestId !== manualSearchRequest || $('#manualCode').value.trim() !== q) return;
+    if (!found.length) {
+      box.replaceChildren(el('div', { class: 'muted', text: 'Aucun résultat' }));
+      return;
+    }
     box.replaceChildren(...found.map(b => el('button', {
       class: 'result', type: 'button',
       onclick: () => { 
         if (currentMode === 'sale') addToCart(b); else addToRecv(b);
+        manualSearchRequest++;
+        clearTimeout(manualSearchTimer);
         box.replaceChildren(); 
         $('#manualCode').value = ''; 
       }
     }, el('div', { class: 'ci-title', text: b.title + (b.volume ? ' · Vol. ' + b.volume : '') }),
        el('div', { class: 'muted', text: `${b.code} · ${eur(b.price)} · stock ${b.stock}` }))));
-  } catch (e) { toast(e.message, 'err'); }
+  } catch (e) {
+    if (requestId === manualSearchRequest) toast(e.message, 'err');
+  }
 }
-$('#btnSearch').addEventListener('click', manualSearch);
-$('#manualCode').addEventListener('keydown', e => { if (e.key === 'Enter') manualSearch(); });
+function scheduleManualSearch() {
+  clearTimeout(manualSearchTimer);
+  const q = $('#manualCode').value.trim();
+  const requestId = ++manualSearchRequest;
+  const box = $('#results');
+  box.replaceChildren();
+  if (!q || (q.length < 2 && !isValidBarcode(q.replace(/[\s-]/g, '')))) return;
+  manualSearchTimer = setTimeout(() => manualSearch(requestId), 320);
+}
+$('#manualCode').addEventListener('input', scheduleManualSearch);
+$('#btnSearch').addEventListener('click', () => {
+  clearTimeout(manualSearchTimer);
+  manualSearch();
+});
+$('#manualCode').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    clearTimeout(manualSearchTimer);
+    manualSearch();
+  }
+});
 
 /* ---------- moteur de scan tolérant aux conditions dégradées (flou, reflets, faible éclairage) ---------- */
 let stream = null, scanTimer = null, isScanning = false, lastCode = '', lastTime = 0;

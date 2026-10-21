@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -27,6 +28,42 @@ class TestDevicePairing(unittest.TestCase):
                 device_key,
                 previous_token,
             )
+
+    def test_legacy_device_database_is_backed_up_before_column_migration(self):
+        database_path = os.path.join(self.temp_dir.name, "devices.db")
+        connection = sqlite3.connect(database_path)
+        try:
+            connection.execute(
+                "CREATE TABLE devices(id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+                "token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, "
+                "last_seen TEXT, last_ip TEXT, revoked INTEGER NOT NULL DEFAULT 0)"
+            )
+            connection.execute(
+                "INSERT INTO devices(name, token_hash, created_at) VALUES('Phone', 'hash', 'today')"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        with patch.object(security, "DEVICES_DB", database_path), patch.object(
+            security.db, "DATA_DIR", self.temp_dir.name
+        ):
+            with security._dev() as migrated:
+                columns = {row["name"] for row in migrated.execute("PRAGMA table_info(devices)")}
+                self.assertIn("device_key", columns)
+                self.assertIn("cashier_name", columns)
+            backups = [
+                name
+                for name in os.listdir(os.path.join(self.temp_dir.name, "sauvegardes"))
+                if name.startswith("devices_pre_migration_") and name.endswith(".db")
+            ]
+            self.assertEqual(len(backups), 1)
+            backup = sqlite3.connect(os.path.join(self.temp_dir.name, "sauvegardes", backups[0]))
+            try:
+                row = backup.execute("SELECT name, token_hash FROM devices").fetchone()
+                self.assertEqual(row, ("Phone", "hash"))
+            finally:
+                backup.close()
 
     def test_repairing_device_revokes_previous_token(self):
         key = "device-key-0123456789abcdef"

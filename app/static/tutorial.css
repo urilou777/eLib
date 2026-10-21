@@ -1,0 +1,107 @@
+/* Visite guidée eLib – s'appuie sur les variables de style.css (thème clair/sombre) */
+
+#tut-root { position: fixed; inset: 0; z-index: 9998; font-family: var(--font-body, system-ui, sans-serif); }
+
+#tut-root .tut-block { position: fixed; inset: 0; background: transparent; }
+#tut-root.tut-nospot .tut-block { background: rgba(8, 2, 12, 0.72); }
+
+.tut-spot {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(8, 2, 12, 0.72),
+              0 0 0 2px var(--icc-light, #ca88e3),
+              0 0 24px rgba(202, 136, 227, 0.55);
+  pointer-events: none;
+  z-index: 9999;
+  transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease;
+}
+
+.tut-card {
+  position: fixed;
+  z-index: 10000;
+  width: min(340px, calc(100vw - 24px));
+  background: var(--modal-bg, #1d0a28);
+  color: var(--text, #faf7f2);
+  border: 1px solid var(--line-strong, rgba(202, 136, 227, 0.3));
+  border-radius: 16px;
+  padding: 18px 18px 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  transition: left .25s ease, top .25s ease;
+}
+.tut-card.tut-center { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); }
+
+.tut-count {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: var(--a2, #ca88e3);
+}
+.tut-card h3 {
+  font-family: var(--font-display, inherit);
+  font-size: 17px;
+  font-weight: 800;
+  margin: 4px 0 6px;
+  color: var(--text-title, #fff);
+  text-transform: none;
+}
+.tut-card p {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mut, #b8a6c8);
+  margin: 0;
+}
+
+.tut-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+.tut-spacer { flex: 1; }
+
+.tut-btn {
+  background: var(--panel2, rgba(255, 255, 255, 0.085));
+  color: var(--text, #faf7f2);
+  border: 1px solid var(--line, rgba(226, 192, 242, 0.14));
+  border-radius: 10px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tut-btn:hover { border-color: var(--icc-purple, #8f16ad); color: var(--icc-purple, #8f16ad); }
+.tut-primary {
+  background: linear-gradient(135deg, var(--icc-purple, #8f16ad), var(--icc-deep, #5e0b75));
+  border-color: transparent;
+  color: #fff;
+}
+.tut-primary:hover { color: #fff; filter: brightness(1.12); }
+
+.tut-skip {
+  background: none;
+  border: 0;
+  color: var(--mut, #b8a6c8);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 4px;
+}
+.tut-skip:hover { color: var(--text-title, #fff); }
+
+#tut-help-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9000;
+  background: var(--panel2, rgba(255, 255, 255, 0.085));
+  color: var(--text, #faf7f2);
+  border: 1px solid var(--line-strong, rgba(202, 136, 227, 0.3));
+  border-radius: 999px;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+#tut-help-btn:hover { border-color: var(--icc-purple, #8f16ad); color: var(--icc-purple, #8f16ad); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tut-spot, .tut-card { transition: none; }
+}

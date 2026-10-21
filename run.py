@@ -21,7 +21,7 @@ if _ROOT not in sys.path:
 
 import uvicorn
 
-from app import security
+from app import db, security
 from app.main import app
 
 # Constantes Windows pour empêcher la mise en veille du système pendant l'activité de caisse
@@ -179,7 +179,7 @@ def main():
                 time.sleep(1)
         else:
             webview = configure_webview_runtime()
-            webview.create_window(
+            window = webview.create_window(
                 "eLib – Chrétienne et impactante",
                 url,
                 width=1280,
@@ -187,6 +187,10 @@ def main():
                 min_size=(960, 580),
                 maximized=True
             )
+            if getattr(sys, "frozen", False) and sys.platform == "win32":
+                from app.updater import start_update_monitor
+
+                start_update_monitor(sys.executable, db.DATA_DIR, window)
             static_dir = os.path.join(
                 getattr(sys, "_MEIPASS", _ROOT),
                 "app",

@@ -40,6 +40,13 @@ def _dev():
     c = sqlite3.connect(DEVICES_DB, timeout=15)
     c.row_factory = sqlite3.Row
     try:
+        table_exists = c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='devices'"
+        ).fetchone()
+        if table_exists:
+            columns = {row["name"] for row in c.execute("PRAGMA table_info(devices)")}
+            if not {"device_key", "cashier_name"}.issubset(columns):
+                db.backup_before_migration(c, "devices")
         c.execute("""CREATE TABLE IF NOT EXISTS devices(
             id INTEGER PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL, last_seen TEXT, last_ip TEXT, revoked INTEGER NOT NULL DEFAULT 0)""")

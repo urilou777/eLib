@@ -2,6 +2,7 @@
 import sqlite3
 import os
 import sys
+import tempfile
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
@@ -13,9 +14,13 @@ def base_dir():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-DATA_DIR = os.path.join(base_dir(), "data")
+DATA_DIR = os.path.abspath(
+    os.environ.get("ELIB_DATA_DIR", os.path.join(base_dir(), "data"))
+)
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "librairie.db")
+LATEST_SCHEMA_VERSION = 1
+SCHEMA_MIGRATIONS = {}
 
 SCHEMA = """
 PRAGMA foreign_keys=ON;
@@ -179,7 +184,45 @@ def safe_backup_db(target_path):
         src.close()
 
 
+def backup_before_migration(source, database_name="librairie"):
+    backup_dir = os.path.join(DATA_DIR, "sauvegardes")
+    os.makedirs(backup_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    target = os.path.join(backup_dir, f"{database_name}_pre_migration_{timestamp}.db")
+    fd, temporary = tempfile.mkstemp(prefix=".migration-", suffix=".db", dir=backup_dir)
+    os.close(fd)
+    try:
+        backup = sqlite3.connect(temporary)
+        try:
+            source.backup(backup)
+            result = backup.execute("PRAGMA quick_check").fetchone()[0]
+            if result != "ok":
+                raise RuntimeError(f"Database migration backup failed integrity check: {result}")
+        finally:
+            backup.close()
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
 def init():
+    database_existed = os.path.isfile(DB_PATH) and os.path.getsize(DB_PATH) > 0
+    current_version = 0
+    if database_existed:
+        source = connect()
+        try:
+            current_version = source.execute("PRAGMA user_version").fetchone()[0]
+            if current_version > LATEST_SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Database schema version {current_version} is newer than this eLib build "
+                    f"supports ({LATEST_SCHEMA_VERSION})."
+                )
+            if current_version < LATEST_SCHEMA_VERSION:
+                backup_before_migration(source, "librairie")
+        finally:
+            source.close()
+
     with tx() as c:
         c.executescript(SCHEMA)
         # Migration dynamique pour tables existantes
@@ -238,6 +281,15 @@ def init():
         # Initialisation d'un premier profil utilisateur si vide
         if not c.execute("SELECT 1 FROM users").fetchone():
             c.execute("INSERT OR IGNORE INTO users(name) VALUES('Responsable')")
+        if current_version < 1:
+            current_version = 1
+        for target_version in range(max(2, current_version + 1), LATEST_SCHEMA_VERSION + 1):
+            migration = SCHEMA_MIGRATIONS.get(target_version)
+            if migration is None:
+                raise RuntimeError(f"Missing database migration for schema version {target_version}.")
+            migration(c)
+            current_version = target_version
+        c.execute(f"PRAGMA user_version={current_version}")
 
 
 def rows(c, sql, args=()):

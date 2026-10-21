@@ -1,0 +1,56 @@
+name: Windows x86 release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-2022
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up 32-bit Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.11"
+          architecture: x86
+
+      - name: Validate tag and embed release version
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Release tags must use vMAJOR.MINOR.PATCH (for example v1.2.3)."
+          }
+          Set-Content -Path app/version.py -Value "VERSION = `"$version`"" -Encoding ascii
+          python -c "import struct; assert struct.calcsize('P') == 4, 'Expected 32-bit Python'"
+
+      - name: Build self-contained x86 executable
+        run: python tools/build_windows_x86.py
+
+      - name: Create SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 dist_win32/eLib.exe).Hash.ToLowerInvariant()
+          Set-Content -Path dist_win32/eLib.exe.sha256 -Value "$hash  eLib.exe" -Encoding ascii -NoNewline
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 --repo $env:GITHUB_REPOSITORY --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Failed to upload release assets." }
+          } else {
+            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --generate-notes
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release." }
+          }
