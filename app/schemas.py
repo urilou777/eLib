@@ -107,6 +107,10 @@ class SettleIn(BaseModel):
     note: Optional[str] = Field(None, max_length=300)
 
 
+class LocalCardSettingIn(BaseModel):
+    enabled: bool
+
+
 class ResIn(BaseModel):
     name: Optional[str] = Field(None, max_length=120)
     phone: Optional[str] = Field(None, max_length=40)

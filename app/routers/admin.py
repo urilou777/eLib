@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import HTTPException, Request
 from .. import db
 from ..api_common import get_current_user
-from ..schemas import DropdownItemIn, DropdownItemRenameIn, OwnerIn, UserIn
+from ..schemas import DropdownItemIn, DropdownItemRenameIn, LocalCardSettingIn, OwnerIn, UserIn
 from ..services import (
     BACKUPS,
     FIXED_OWNERS,
@@ -133,6 +133,13 @@ def undo_audit(log_id: int, request: Request):
             if act == "INSERT" and sa:
                 c.execute("DELETE FROM settlements WHERE id=?", (sa.get("id"),))
 
+        elif ttype == "setting":
+            if act == "UPDATE" and sb:
+                c.execute(
+                    "INSERT OR REPLACE INTO app_settings(key, value) VALUES(?,?)",
+                    (sb["key"], sb["value"]),
+                )
+
         elif ttype == "option":
             if act == "INSERT" and sa:
                 c.execute("DELETE FROM dropdown_options WHERE id=?", (sa.get("id"),))
@@ -153,11 +160,43 @@ def get_options():
     with db.tx() as c:
         rows = db.rows(c, "SELECT id, group_key, label FROM dropdown_options ORDER BY group_key, label")
         db_authors = [r[0] for r in c.execute("SELECT DISTINCT author FROM books WHERE author IS NOT NULL AND TRIM(author) != '' ORDER BY author").fetchall()]
-        res = {"category": [], "type": [], "payment": [], "publisher": [], "service_moment": [], "authors": db_authors}
+        local_owner_names = [
+            r["name"] for r in db.rows(
+                c, "SELECT name FROM owners WHERE LOWER(TRIM(kind))='locale' ORDER BY name"
+            )
+        ]
+        res = {
+            "category": [], "type": [], "payment": [], "publisher": [],
+            "service_moment": [], "authors": db_authors,
+            "local_card_enabled": db.get_setting(c, "local_card_enabled", "0") == "1",
+            "local_owner_names": local_owner_names,
+        }
         for r in rows:
             if r["group_key"] in res:
                 res[r["group_key"]].append({"id": r["id"], "label": r["label"]})
         return res
+
+
+@router.put("/api/settings/local-card")
+def set_local_card_setting(setting: LocalCardSettingIn, request: Request):
+    actor = get_current_user(request)
+    value = "1" if setting.enabled else "0"
+    with db.tx() as c:
+        old_value = db.get_setting(c, "local_card_enabled", "0")
+        c.execute(
+            "INSERT OR REPLACE INTO app_settings(key, value) VALUES('local_card_enabled', ?)",
+            (value,),
+        )
+        if old_value != value:
+            db.log_audit(
+                c, actor, "UPDATE", "setting", None,
+                "Activation des paiements CB pour le stock local" if setting.enabled
+                else "Désactivation des paiements CB pour le stock local",
+                snapshot_before={"key": "local_card_enabled", "value": old_value},
+                snapshot_after={"key": "local_card_enabled", "value": value},
+            )
+    return {"local_card_enabled": setting.enabled}
+
 
 @router.post("/api/options")
 def add_option(opt: DropdownItemIn, request: Request):

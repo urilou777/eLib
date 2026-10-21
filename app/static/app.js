@@ -1413,7 +1413,7 @@ VIEWS.dashboard = async () => {
     ['Chiffre d\'affaires', eur(k.revenue), `${nf(k.qty)} livres vendus`, '#7c5cff'],
     ['Marge conservée', eur(k.margin), k.revenue ? Math.round(k.margin / k.revenue * 100) + ' % du CA' : '', '#27d3c3'],
     ['Panier moyen caisse', eur(k.pos_avg_basket), k.pos_sales ? `${k.pos_sales} ticket${k.pos_sales > 1 ? 's' : ''} (moy. ${eur(k.avg_book_price)} / livre)` : `${nf(k.qty)} livres vendus`, '#5a9bff'],
-    ['À reverser', eur(k.due_open), 'reste à régler aux dépôts', '#ffb454'],
+    ['À reverser', eur(k.due_open), 'reversements encore dus aux dépôts', '#ffb454'],
     ['Valeur du stock', eur(k.stock_value), `${nf(k.stock_units)} exemplaires en rayon`, '#c77dff']
   ];
 
@@ -2264,12 +2264,28 @@ VIEWS.pos = async () => {
     };
   }
 
+  const isCardPayment = payment => /cb|paypal|carte|card|visa|mastercard|credit|debit/i.test(payment || '');
+  const cartHasLocalStock = () => {
+    const localOwners = new Set((S.options.local_owner_names || []).map(name => name.trim().toLowerCase()));
+    return S.cart.some(line => comps(line).some(component =>
+      Object.entries(line.alloc || {}).some(([key, qty]) => {
+        if (qty <= 0 || key.endsWith('|none')) return false;
+        const lotId = Number(key.split('|')[1]);
+        const lot = (component.lots || []).find(item => item.id === lotId);
+        return !!lot && localOwners.has((lot.owner || '').trim().toLowerCase());
+      })
+    ));
+  };
+
   const updatePayDropdown = () => {
     const paySel = $('#pay');
     if (!paySel) return;
     const curVal = paySel.value;
     const allPayOpts = S.options.payment || [];
-    paySel.innerHTML = allPayOpts.map(p => `<option value="${esc(p.label)}" ${p.label === curVal ? 'selected' : ''}>${esc(p.label)}</option>`).join('') || '<option value="Espèces">Espèces</option><option value="CB">CB</option>';
+    const canPayByCard = S.options.local_card_enabled || !cartHasLocalStock();
+    const allowedPayOpts = allPayOpts.filter(p => canPayByCard || !isCardPayment(p.label));
+    paySel.innerHTML = allowedPayOpts.map(p => `<option value="${esc(p.label)}" ${p.label === curVal ? 'selected' : ''}>${esc(p.label)}</option>`).join('') || '<option value="Espèces">Espèces</option>';
+    if (!allowedPayOpts.some(p => p.label === curVal)) paySel.value = allowedPayOpts[0]?.label || 'Espèces';
   };
 
   const renderCartItem = (l, i) => {
@@ -2574,6 +2590,9 @@ VIEWS.pos = async () => {
     const bad = S.cart.find(l => !complete(l));
     if (bad) return toast('Indiquez l\'origine en stock de chaque exemplaire avant de valider (cadres orange).', 'warn');
     const payVal = $('#pay').value;
+    if (!S.options.local_card_enabled && cartHasLocalStock() && isCardPayment(payVal)) {
+      return toast('Le paiement CB est désactivé pour le stock local.', 'err');
+    }
     const r = await api('/api/sales', 'POST', {
       date: $('#sdate').value,
       payment: payVal,
@@ -3055,14 +3074,14 @@ VIEWS.treasury = async () => {
         <div class="muted" style="font-size:11px;margin-top:4px">Espèces directes ICC (${eur(tr.sales_cash)}) + Dépôts (${eur(tr.deposits_cash)}) - Sorties (${eur(tr.withdrawals_cash)})</div>
       </div>
       <div class="card" style="border-top:4px solid #ffb454">
-        <div class="muted">Borne PayPal POS (Cité Royale 100%)</div>
-        <div class="big" style="color:#ffb454;margin-top:6px">${eur(tr.cr_paypal_total || 0)}</div>
-        <div class="muted" style="font-size:11px;margin-top:4px">100% encaissé directement chez Cité Royale (exclu de la caisse)</div>
+        <div class="muted">Ventes Cité Royale (hors caisse locale)</div>
+        <div class="big" style="color:#ffb454;margin-top:6px">${eur(tr.cr_sales_total || 0)}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Chiffre d'affaires visible; les paiements CB sont reçus directement par Cité Royale</div>
       </div>
       <div class="card" style="border-top:4px solid var(--warn)">
-        <div class="muted">À régulariser sur PayPal POS (Cité Royale)</div>
-        <div class="big" style="color:${(tr.cr_non_paypal_total || 0) > 0.005 ? 'var(--warn)' : 'var(--good)'};margin-top:6px">${eur(tr.cr_non_paypal_total || 0)}</div>
-        <div class="muted" style="font-size:11px;margin-top:4px">Cité Royale payée hors PayPal : le libraire doit payer sur la borne</div>
+        <div class="muted">Cité Royale à régler sur PayPal</div>
+        <div class="big" style="color:${(tr.cr_due_to_paypal_total || 0) > 0.005 ? 'var(--warn)' : 'var(--good)'};margin-top:6px">${eur(tr.cr_due_to_paypal_total || 0)}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Uniquement les ventes Cité Royale encaissées autrement que par CB</div>
       </div>
       <div class="card" style="border-top:4px solid var(--a2)">
         <div class="muted">À déposer en caisse locale (ICC Rennes)</div>
@@ -3077,7 +3096,7 @@ VIEWS.treasury = async () => {
     <div class="card" style="margin-bottom:16px">
       <h3>Balance &amp; Traçabilité par Libraire</h3>
       <p class="muted" style="font-size:12px;margin-bottom:12px;line-height:1.6">
-        <b>1. Cité Royale</b> : 100% du produit revient à Cité Royale via PayPal POS (CB). Si un client a payé un livre Cité Royale autrement (espèces ou Wero), le libraire connecté <b>doit régulariser en payant lui-même sur la borne PayPal POS (CB)</b>.<br>
+        <b>1. Cité Royale</b> : ses ventes restent comptabilisées. Une CB est reçue directement par Cité Royale et ne crée pas de dette locale. Si un autre mode de paiement est choisi, le libraire qui a encaissé doit régulariser ce montant sur PayPal POS.<br>
         <b>2. ICC Rennes (Wero)</b> : Les paiements Wero arrivent directement sur le compte personnel du <b>libraire connecté lors de la vente</b>. Ce dernier doit <b>déposer les fonds en espèces dans le tiroir-caisse physique</b> pour régulariser sa balance.<br>
         <span style="color:var(--a1)">Sécurité &amp; Intégrité : La balance Wero est automatiquement attribuée au libraire connecté (<b>${esc(getCurrentUser())}</b>).</span>
       </p>
@@ -3086,7 +3105,7 @@ VIEWS.treasury = async () => {
         <thead>
           <tr>
             <th>Libraire</th>
-            <th class="num">À régulariser sur PayPal POS<br><span class="muted" style="font-size:10px">(Cité Royale)</span></th>
+            <th class="num">À régler sur PayPal<br><span class="muted" style="font-size:10px">(Cité Royale, hors CB)</span></th>
             <th class="num">Wero perçus sur compte<br><span class="muted" style="font-size:10px">(ICC Rennes)</span></th>
             <th class="num">Déjà déposé en tiroir<br><span class="muted" style="font-size:10px">(Caisse ICC)</span></th>
             <th class="num">Remboursé / Retiré</th>
@@ -3103,8 +3122,8 @@ VIEWS.treasury = async () => {
                 <b><span class="chip"><i style="background:${isMe ? 'var(--good)' : 'var(--a1)'}"></i>${esc(u.user_name)} ${isMe ? '(Vous)' : ''}</span></b>
               </td>
               <td class="num">
-                <b style="color:${u.cr_due_to_paypal > 0.005 ? '#ffb454' : 'var(--good)'}">
-                  ${u.cr_due_to_paypal > 0.005 ? `Payer ${eur(u.cr_due_to_paypal)} sur borne` : 'À jour (0 €)'}
+                <b style="color:${u.cr_due_to_paypal > 0.005 ? 'var(--warn)' : 'var(--good)'}">
+                  ${u.cr_due_to_paypal > 0.005 ? `Régler ${eur(u.cr_due_to_paypal)}` : 'À jour (0 €)'}
                 </b>
               </td>
               <td class="num">${eur(u.icc_wero_received)}</td>
@@ -3210,7 +3229,9 @@ VIEWS.treasury = async () => {
             <div class="tl" style="align-items:center">
               <span><span class="chip"><i style="background:${o.color}"></i>${esc(o.name)}</span></span>
               <span class="muted" style="font-size:12px">Ventes: ${eur(o.revenue)} · Part origine: ${eur(o.due)}</span>
-              <b>Reste réglé: ${eur(o.remaining)}</b>
+              <b>${o.name.trim().toLowerCase() === 'cité royale'
+                ? `Reste à régler sur PayPal: ${eur(o.remaining)}`
+                : `Reste à reverser: ${eur(o.remaining)}`}</b>
             </div>
           `).join('')}
         </div>
@@ -3370,6 +3391,19 @@ VIEWS.data = async () => {
   }).join('')}</tbody></table></div>
 
   <p class="muted" style="margin-top:10px;font-size:12px;line-height:1.6"><b>Cité Royale</b> et <b>ICC Rennes</b> sont les 2 origines fondamentales fixes et non modifiables. <b>% reversé</b> = part du prix de vente rendue à l'origine (100 = Cité Royale 100% de reversement ; 0 = stock acquis ICC Rennes). En caisse, <b>PayPal POS</b> est réservé exclusivement aux ouvrages de Cité Royale.</p></div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Paiements par carte pour le stock local</h3>
+    <label class="row" style="align-items:flex-start;gap:10px;cursor:pointer">
+      <input type="checkbox" id="localCardEnabled" ${S.options.local_card_enabled ? 'checked' : ''} style="margin-top:3px">
+      <span>
+        <b>Autoriser la CB pour les livres du stock local</b>
+        <span class="muted" style="display:block;font-size:12px;margin-top:4px;line-height:1.5">
+          Désactivé par défaut tant que le TPE local n'est pas disponible. La caisse desktop masque la CB dès qu'un panier contient du stock local; l'API refuse aussi les ventes CB interdites. Les ventes Cité Royale payées par CB restent visibles sans dette locale; les autres modes sont à régulariser sur PayPal.
+        </span>
+      </span>
+    </label>
+  </div>
   
   <div class="card" style="margin-top:16px">
     <h3>Listes &amp; Paramètres personnalisables (Catégories, Types, Paiements, Cultes, Éditeurs)</h3>
@@ -3431,6 +3465,22 @@ VIEWS.data = async () => {
   });
   const noBtn = $('#no');
   if (noBtn) noBtn.onclick = () => ownerForm(); 
+  const localCardEnabled = $('#localCardEnabled');
+  if (localCardEnabled) {
+    localCardEnabled.onchange = safe(async () => {
+      const previous = S.options.local_card_enabled;
+      try {
+        const result = await api('/api/settings/local-card', 'PUT', { enabled: localCardEnabled.checked });
+        S.options.local_card_enabled = result.local_card_enabled;
+        toast(result.local_card_enabled
+          ? 'Paiement CB activé pour le stock local.'
+          : 'Paiement CB désactivé pour le stock local.');
+      } catch (err) {
+        localCardEnabled.checked = previous;
+        throw err;
+      }
+    });
+  }
 
   // Modal interactif de renommage / fusion avec calcul d'impact
   const renameOptionModal = async (optId, grpKey, currentLabel) => {

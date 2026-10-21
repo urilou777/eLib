@@ -11,12 +11,39 @@ from ..services import get_current_moment
 
 router = APIRouter()
 
+
 @router.post("/api/sales")
 def sale_add(s: SaleIn, request: Request):
     user = require_known_user(request)
 
     with db.tx(immediate=True) as c:
         payments_list = [_dump(p) for p in s.payments] if s.payments else None
+        if db.get_setting(c, "local_card_enabled", "0") != "1":
+            allocation_lot_ids = [
+                allocation.lot_id
+                for line in s.lines
+                for allocation in line.allocations
+            ]
+            has_local_stock = False
+            if allocation_lot_ids:
+                placeholders = ",".join("?" for _ in allocation_lot_ids)
+                has_local_stock = c.execute(
+                    f"""SELECT 1 FROM lots l JOIN owners o ON o.id=l.owner_id
+                        WHERE l.id IN ({placeholders})
+                          AND LOWER(TRIM(o.kind))='locale' LIMIT 1""",
+                    allocation_lot_ids,
+                ).fetchone() is not None
+            payment_labels = (
+                [part.payment for part in s.payments]
+                if s.payments
+                else [s.payment or ""]
+            )
+            if has_local_stock and any(db.is_card_payment(label) for label in payment_labels):
+                raise HTTPException(
+                    400,
+                    "Le paiement CB est désactivé pour le stock local. "
+                    "Vous pourrez l'activer dans Données & Excel quand le TPE sera disponible.",
+                )
         sid, warns = db.create_sale(c, s.date, s.payment, s.note, [_dump(l) for l in s.lines],
                                     manual=True, user_name=user,
                                     customer_gender=s.customer_gender,
@@ -130,33 +157,22 @@ def treasury_summary():
 
         cash_in_drawer = sales_cash + deposits_cash - withdrawals_cash
 
-        # Total Cité Royale payé directement sur CB / PayPal POS
-        cr_paypal_total = c.execute("""
-            SELECT COALESCE(SUM(sp.amount), 0) s
-            FROM sale_payments sp
-            JOIN sales s ON s.id = sp.sale_id
-            WHERE (sp.payment = 'CB' OR sp.payment LIKE '%CB%' OR sp.payment LIKE '%PayPal%')
-              AND s.id IN (
-                  SELECT l.sale_id FROM sale_lines l
-                  JOIN allocations a ON a.line_id = l.id
-                  JOIN owners o ON o.id = a.owner_id
-                  WHERE LOWER(TRIM(o.name)) = 'cité royale'
-              )
+        cr_owner = c.execute("SELECT id FROM owners WHERE LOWER(TRIM(name))='cité royale'").fetchone()
+        cr_sales_total = c.execute("""
+            SELECT COALESCE(SUM(a.revenue), 0) s
+            FROM allocations a
+            JOIN owners o ON o.id = a.owner_id
+            WHERE LOWER(TRIM(o.name)) = 'cité royale'
         """).fetchone()["s"]
-
-        # Total Cité Royale encaissé hors CB (que les libraires doivent passer sur CB / PayPal POS)
-        cr_non_paypal_total = c.execute("""
-            SELECT COALESCE(SUM(sp.amount), 0) s
-            FROM sale_payments sp
-            JOIN sales s ON s.id = sp.sale_id
-            WHERE (sp.payment != 'CB' AND sp.payment NOT LIKE '%CB%' AND sp.payment NOT LIKE '%PayPal%')
-              AND s.id IN (
-                  SELECT l.sale_id FROM sale_lines l
-                  JOIN allocations a ON a.line_id = l.id
-                  JOIN owners o ON o.id = a.owner_id
-                  WHERE LOWER(TRIM(o.name)) = 'cité royale'
-              )
-        """).fetchone()["s"]
+        cr_due_to_paypal_total = 0
+        if cr_owner:
+            cr_paid = c.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM settlements WHERE owner_id=?",
+                (cr_owner["id"],),
+            ).fetchone()[0]
+            cr_due_to_paypal_total = max(
+                0, db.owner_payable_due(c, cr_owner["id"]) - cr_paid
+            )
 
         # 4. Solde & Dettes par utilisateur / libraire
         users = [u["name"] for u in db.rows(c, "SELECT name FROM users ORDER BY name")]
@@ -165,22 +181,9 @@ def treasury_summary():
 
         user_balances = []
         for uname in all_user_names:
-            # Ventes totales encaissées par ce libraire pour Cité Royale hors CB / PayPal POS
-            # (Le libraire doit payer lui-même ce montant sur la borne CB / PayPal POS pour régulariser Cité Royale)
-            cr_due_to_paypal = c.execute("""
-                SELECT COALESCE(SUM(sp.amount), 0) s
-                FROM sale_payments sp
-                JOIN sales s ON s.id = sp.sale_id
-                WHERE s.user_name = ?
-                  AND (sp.payment != 'CB' AND sp.payment NOT LIKE '%CB%' AND sp.payment NOT LIKE '%PayPal%')
-                  AND s.id IN (
-                      SELECT l.sale_id FROM sale_lines l
-                      JOIN allocations a ON a.line_id = l.id
-                      JOIN owners o ON o.id = a.owner_id
-                      WHERE LOWER(TRIM(o.name)) = 'cité royale'
-                  )
-            """, (uname,)).fetchone()["s"]
-
+            cr_due_to_paypal = (
+                db.owner_payable_due(c, cr_owner["id"], uname) if cr_owner else 0
+            )
             # Ventes ICC Rennes encaissées sur compte personnel (Wero / virement perso)
             # (Le libraire doit régulariser et déposer ce montant dans la caisse physique)
             icc_wero_received = c.execute("""
@@ -240,7 +243,7 @@ def treasury_summary():
 
             user_balances.append({
                 "user_name": uname,
-                "cr_due_to_paypal": cr_due_to_paypal,       # À régulariser sur PayPal POS (Cité Royale)
+                "cr_due_to_paypal": cr_due_to_paypal,
                 "icc_wero_received": icc_wero_received,     # Wero ICC Rennes
                 "wero_received": wero_received,
                 "cash_received": cash_received,
@@ -255,8 +258,8 @@ def treasury_summary():
             "sales_cash": sales_cash,
             "deposits_cash": deposits_cash,
             "withdrawals_cash": withdrawals_cash,
-            "cr_paypal_total": cr_paypal_total,
-            "cr_non_paypal_total": cr_non_paypal_total,
+            "cr_sales_total": cr_sales_total,
+            "cr_due_to_paypal_total": cr_due_to_paypal_total,
             "sales_by_pay": sales_by_pay,
             "user_balances": user_balances,
             "movements": movements
@@ -307,7 +310,13 @@ def settlements():
         for o in db.rows(c, "SELECT * FROM owners ORDER BY priority"):
             a = c.execute("SELECT COALESCE(SUM(revenue),0) r,COALESCE(SUM(due),0) d,COALESCE(SUM(qty),0) q FROM allocations WHERE owner_id=?", (o["id"],)).fetchone()
             p = c.execute("SELECT COALESCE(SUM(amount),0) s FROM settlements WHERE owner_id=?", (o["id"],)).fetchone()["s"]
-            o.update(revenue=a["r"], due=a["d"], qty=a["q"], paid=p, remaining=a["d"] - p, margin=a["r"] - a["d"],
+            payable_due = db.owner_payable_due(c, o["id"])
+            remaining = payable_due - p
+            if o["name"].strip().lower() == "cité royale":
+                remaining = max(0, remaining)
+            o.update(revenue=a["r"], due=a["d"], qty=a["q"], paid=p,
+                     payable_due=payable_due, remaining=remaining,
+                     margin=a["r"] - a["d"],
                      history=db.rows(c, "SELECT * FROM settlements WHERE owner_id=? ORDER BY date DESC", (o["id"],)))
             out.append(o)
         return out
@@ -315,12 +324,14 @@ def settlements():
 @router.post("/api/settlements")
 def settle(s: SettleIn, request: Request):
     with db.tx() as c:
+        owner = c.execute("SELECT name FROM owners WHERE id=?", (s.owner_id,)).fetchone()
+        if not owner:
+            raise HTTPException(404, "Origine introuvable")
         cur = c.execute("INSERT INTO settlements(owner_id,date,amount,note) VALUES(?,?,?,?)",
                         (s.owner_id, s.date or date.today().isoformat(), s.amount, s.note))
         sid = cur.lastrowid
-        ow = c.execute("SELECT name FROM owners WHERE id=?", (s.owner_id,)).fetchone()
         db.log_audit(c, get_current_user(request), "INSERT", "settlement", sid,
-                     f"Règlement {s.amount:.2f} € à « {ow['name'] if ow else s.owner_id} »",
+                     f"Règlement {s.amount:.2f} € à « {owner['name']} »",
                      snapshot_after=_dump(s) | {"id": sid})
     return {"ok": True}
 

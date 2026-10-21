@@ -23,7 +23,13 @@ class TestDatabaseMigrationBackup(unittest.TestCase):
                 db.init()
                 connection = sqlite3.connect(database_path)
                 try:
-                    self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+                    self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+                    self.assertEqual(
+                        connection.execute(
+                            "SELECT value FROM app_settings WHERE key='local_card_enabled'"
+                        ).fetchone()[0],
+                        "0",
+                    )
                 finally:
                     connection.close()
                 backups = [

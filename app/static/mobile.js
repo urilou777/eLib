@@ -463,12 +463,33 @@ if (userModalEl) userModalEl.addEventListener('click', e => {
 let cart = [];            // { book, qty, lot }  lot: undefined = pas encore choisi | id de lot
 let payOptions = ['Espèces', 'CB', 'Wero'];
 let originPayments = {};  // { [ownerName]: { method: 'CB'|'Espèces'|'Wero'|'Multi', parts: [{payment, amount}]|null } }
+let localCardEnabled = false;
+let localOwnerNames = [];
+let activeMpPayments = null;
+
+function isCardPayment(payment) {
+  return /cb|paypal|carte|card|visa|mastercard|credit|debit/i.test(payment || '');
+}
+
+function isLocalOwner(owner) {
+  const normalized = (owner || '').trim().toLowerCase();
+  return localOwnerNames.some(name => name.trim().toLowerCase() === normalized);
+}
 
 function getItemOwner(item) {
   if (item.book.is_pack) return 'Cité Royale';
   if (item.lot === undefined || item.lot === null || item.lot === 'none') return 'À préciser';
   const l = (item.book.lots || []).find(x => x.id === item.lot);
   return (l && l.owner) ? l.owner.trim() : 'Autre';
+}
+
+function itemUsesLocalStock(item) {
+  if (!item.book.is_pack) return isLocalOwner(getItemOwner(item));
+  return (item.book.items || []).some(component => {
+    const lots = (component.lots || []).filter(lot => lot.remaining > 0);
+    const selected = lots.find(lot => (lot.owner || '').trim().toLowerCase() === 'cité royale') || lots[0];
+    return selected ? isLocalOwner(selected.owner) : false;
+  });
 }
 
 function getCartByOrigin() {
@@ -483,6 +504,9 @@ function getCartByOrigin() {
     groups[owner].count += item.qty;
   }
   const list = Object.values(groups);
+  list.forEach(group => {
+    group.includesLocalStock = group.items.some(itemUsesLocalStock);
+  });
   list.sort((a, b) => {
     const aIsCR = a.owner.toLowerCase() === 'cité royale' ? 1 : 0;
     const bIsCR = b.owner.toLowerCase() === 'cité royale' ? 1 : 0;
@@ -492,6 +516,13 @@ function getCartByOrigin() {
     return bIsICC - aIsICC;
   });
   return list;
+}
+
+function getPaymentOptions(owner, includesLocalStock = false) {
+  const available = payOptions.length ? payOptions : ['Espèces', 'CB', 'Wero'];
+  return !localCardEnabled && includesLocalStock
+    ? available.filter(payment => !isCardPayment(payment))
+    : available;
 }
 
 function getDefaultPaymentForOwner(owner) {
@@ -599,21 +630,25 @@ let mpMode2 = 'CB';
 function openMultiPayModal(owner, total) {
   activeMpOwner = owner;
   activeMpTotal = total;
+  const group = getCartByOrigin().find(item => item.owner === owner);
+  activeMpPayments = getPaymentOptions(owner, group ? group.includesLocalStock : false);
   const badge = $('#mpOriginBadge');
   if (badge) badge.textContent = owner;
   const tVal = $('#mpTotalVal');
   if (tVal) tVal.textContent = eur(total);
   
-  if ((owner || '').toLowerCase() === 'cité royale') {
+  if ((owner || '').toLowerCase() === 'cité royale' && activeMpPayments.includes('CB')) {
     mpMode1 = 'CB';
-    mpMode2 = 'Espèces';
+    mpMode2 = activeMpPayments.find(payment => payment !== 'CB') || 'Espèces';
   } else {
-    mpMode1 = 'Espèces';
-    mpMode2 = 'CB';
+    mpMode1 = activeMpPayments.includes('Espèces') ? 'Espèces' : activeMpPayments[0];
+    mpMode2 = activeMpPayments.find(payment => payment !== mpMode1) || activeMpPayments[0];
   }
 
   const existing = originPayments[owner]?.parts;
-  if (existing && existing.length >= 2) {
+  if (existing && existing.length >= 2 &&
+      activeMpPayments.includes(existing[0].payment) &&
+      activeMpPayments.includes(existing[1].payment)) {
     mpMode1 = existing[0].payment;
     mpMode2 = existing[1].payment;
     $('#mpAmount1').value = existing[0].amount.toFixed(2);
@@ -638,7 +673,7 @@ function renderMpModes() {
   const m1El = $('#mpModes1');
   const m2El = $('#mpModes2');
   if (!m1El || !m2El) return;
-  const available = payOptions.length ? payOptions : ['Espèces', 'CB', 'Wero'];
+  const available = activeMpPayments || getPaymentOptions(activeMpOwner);
   
   m1El.replaceChildren(...available.map(p => el('button', {
     type: 'button',
@@ -842,8 +877,6 @@ function renderCart() {
   const singleRow = $('#singleOriginRow');
   const splitCont = $('#splitOriginsContainer');
   const payChipsEl = $('#payChips');
-  const availablePays = payOptions.length ? payOptions : ['Espèces', 'CB', 'Wero'];
-
   // Nettoyer originPayments des origines qui ne sont plus dans le panier
   const validOwners = new Set(origins.map(o => o.owner));
   for (const k of Object.keys(originPayments)) {
@@ -865,6 +898,13 @@ function renderCart() {
       originPayments[currentOwner] = { method: getDefaultPaymentForOwner(currentOwner), parts: null };
     }
     const currentPay = originPayments[currentOwner];
+    const currentGroup = origins[0];
+    const availablePays = getPaymentOptions(currentOwner, currentGroup?.includesLocalStock || false);
+    if (currentPay.parts?.some(part => !availablePays.includes(part.payment)) ||
+        (currentPay.method && !availablePays.includes(currentPay.method))) {
+      currentPay.method = availablePays[0] || 'Espèces';
+      currentPay.parts = null;
+    }
 
     // Invalidation si le total a changé
     if (currentPay.parts && currentPay.parts.length >= 2) {
@@ -933,6 +973,12 @@ function renderCart() {
           originPayments[g.owner] = { method: getDefaultPaymentForOwner(g.owner), parts: null };
         }
         const payState = originPayments[g.owner];
+        const availablePays = getPaymentOptions(g.owner, g.includesLocalStock);
+        if (payState.parts?.some(part => !availablePays.includes(part.payment)) ||
+            (payState.method && !availablePays.includes(payState.method))) {
+          payState.method = availablePays[0] || 'Espèces';
+          payState.parts = null;
+        }
         if (payState.parts && payState.parts.length >= 2) {
           const sumParts = payState.parts.reduce((s, p) => s + p.amount, 0);
           if (Math.abs(sumParts - g.total) > 0.01) {
@@ -1170,6 +1216,8 @@ async function loadPayOptions() {
   try {
     const o = await api('/api/options');
     payOptions = (o.payment || []).map(p => (p.label === 'PayPal POS (CB)' || p.label.toLowerCase().includes('paypal') ? 'CB' : p.label));
+    localCardEnabled = o.local_card_enabled === true;
+    localOwnerNames = o.local_owner_names || [];
     dbPublishers = (o.publisher || []).map(p => p.label);
     dbAuthors = o.authors || [];
     const dl = $('#dl_nb_publishers');

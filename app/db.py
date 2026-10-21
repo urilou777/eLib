@@ -19,8 +19,16 @@ DATA_DIR = os.path.abspath(
 )
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "librairie.db")
-LATEST_SCHEMA_VERSION = 1
-SCHEMA_MIGRATIONS = {}
+LATEST_SCHEMA_VERSION = 2
+
+
+def _migrate_v2(c):
+    c.execute(
+        "INSERT OR IGNORE INTO app_settings(key, value) VALUES('local_card_enabled', '0')"
+    )
+
+
+SCHEMA_MIGRATIONS = {2: _migrate_v2}
 
 SCHEMA = """
 PRAGMA foreign_keys=ON;
@@ -77,6 +85,9 @@ CREATE TABLE IF NOT EXISTS dropdown_options(
   group_key TEXT NOT NULL, -- 'category' | 'type' | 'payment' | 'publisher'
   label TEXT NOT NULL,
   UNIQUE(group_key, label));
+CREATE TABLE IF NOT EXISTS app_settings(
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS users(
   id INTEGER PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
@@ -294,6 +305,82 @@ def init():
 
 def rows(c, sql, args=()):
     return [dict(r) for r in c.execute(sql, args).fetchall()]
+
+
+def get_setting(c, key, default=None):
+    row = c.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def is_card_payment(payment):
+    label = (payment or "").strip().lower()
+    return any(token in label for token in ("cb", "paypal", "carte", "card", "visa", "mastercard", "credit", "debit"))
+
+
+def owner_payable_due(c, owner_id, user_name=None):
+    """Return the amount payable from the local till, based on recorded payment channels."""
+    owner = c.execute("SELECT name FROM owners WHERE id=?", (owner_id,)).fetchone()
+    if not owner:
+        return 0
+
+    user_filter = " AND s.user_name=?" if user_name is not None else ""
+    args = (owner_id, user_name) if user_name is not None else (owner_id,)
+    if owner["name"].strip().lower() != "cité royale":
+        return c.execute(
+            f"""SELECT COALESCE(SUM(a.due), 0)
+                FROM allocations a
+                JOIN sale_lines sl ON sl.id=a.line_id
+                JOIN sales s ON s.id=sl.sale_id
+                WHERE a.owner_id=?{user_filter}""",
+            args,
+        ).fetchone()[0]
+
+    due_by_sale = {
+        row["sale_id"]: row["due"]
+        for row in c.execute(
+            f"""SELECT sl.sale_id, COALESCE(SUM(a.due), 0) due
+                FROM allocations a
+                JOIN sale_lines sl ON sl.id=a.line_id
+                JOIN sales s ON s.id=sl.sale_id
+                WHERE a.owner_id=?{user_filter}
+                GROUP BY sl.sale_id""",
+            args,
+        ).fetchall()
+    }
+    if not due_by_sale:
+        return 0
+    sale_ids = list(due_by_sale)
+    placeholders = ",".join("?" for _ in sale_ids)
+    sale_totals = {
+        row["sale_id"]: row["total"]
+        for row in c.execute(
+            f"""SELECT sale_id, COALESCE(SUM(qty * unit_price), 0) total
+                FROM sale_lines WHERE sale_id IN ({placeholders}) GROUP BY sale_id""",
+            sale_ids,
+        ).fetchall()
+    }
+    payment_args = (user_name,) if user_name is not None else ()
+    payment_user_filter = " AND s.user_name=?" if user_name is not None else ""
+    non_card_by_sale = {}
+    for row in c.execute(
+        f"""SELECT sp.sale_id, sp.payment, sp.amount
+            FROM sale_payments sp
+            JOIN sales s ON s.id=sp.sale_id
+            WHERE 1=1{payment_user_filter}""",
+        payment_args,
+    ).fetchall():
+        if not is_card_payment(row["payment"]):
+            non_card_by_sale[row["sale_id"]] = non_card_by_sale.get(row["sale_id"], 0) + row["amount"]
+    return sum(
+        min(
+            due,
+            non_card_by_sale.get(sale_id, 0)
+            * min(1, due / sale_totals[sale_id])
+            if sale_totals.get(sale_id, 0) > 0
+            else 0,
+        )
+        for sale_id, due in due_by_sale.items()
+    )
 
 
 def log_audit(c, user_name, action, target_type, target_id, summary, snapshot_before=None, snapshot_after=None):

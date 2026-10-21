@@ -41,10 +41,13 @@ def stats(start: Optional[str] = None, end: Optional[str] = None, moment: Option
         sv = c.execute(f"""SELECT COALESCE(SUM(({db.LOT_REMAINING})*b.price),0) v, COALESCE(SUM({db.LOT_REMAINING}),0) u
             FROM lots l JOIN books b ON b.id=l.book_id""").fetchone()
         due_open = 0
-        for o in db.rows(c, "SELECT id FROM owners"):
-            d = c.execute("SELECT COALESCE(SUM(due),0) s FROM allocations WHERE owner_id=?", (o["id"],)).fetchone()["s"]
+        for o in db.rows(c, "SELECT id, name FROM owners"):
+            d = db.owner_payable_due(c, o["id"])
             p = c.execute("SELECT COALESCE(SUM(amount),0) s FROM settlements WHERE owner_id=?", (o["id"],)).fetchone()["s"]
-            due_open += d - p
+            remaining = d - p
+            if o["name"].strip().lower() == "cité royale":
+                remaining = max(0, remaining)
+            due_open += remaining
         monthly = db.rows(c, f"""SELECT strftime('%Y-%m',a.date) m, SUM(revenue) revenue, SUM(due) due, SUM(qty) qty
             FROM allocations a WHERE {W} GROUP BY m ORDER BY m""", A)
         by_owner_month = db.rows(c, f"""SELECT strftime('%Y-%m',a.date) m, COALESCE(o.name,'Sans stock') owner, COALESCE(o.color,'#8892b0') color, SUM(revenue) revenue

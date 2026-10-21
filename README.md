@@ -37,8 +37,9 @@ Pour une présentation technique hors-ligne, le projet inclut les sources d’ai
 
 3. **Multi-origines & Reversements** :
    - Gestion des stocks en dépôt (ex. Maison mère Cité Royale) et des stocks acquis (Église locale ICC Rennes).
-   - Suivi en temps réel des montants dus à la maison mère et de la marge conservée par la librairie locale.
-   - Enregistrement des règlements partiels ou totaux avec historique d'écritures.
+   - Les ventes Cité Royale restent visibles dans les chiffres. Un paiement CB est reçu directement par Cité Royale et ne crée pas de dette locale; tout autre mode encaissé par un libraire reste à régulariser sur PayPal POS.
+   - Suivi des reversements réellement dus aux autres origines et historique des règlements partiels ou totaux.
+   - La CB du stock local est désactivée par défaut et peut être activée dans *Données & Excel* lorsque le TPE local sera disponible.
 
 4. **Catalogue & Packs** :
    - Fiches livres complètes (ISBN, titre, série, volume, auteur, éditeur, prix, seuil d'alerte).
@@ -72,20 +73,25 @@ Ce guide détaille la mise en service complète de la librairie le jour du culte
 
 ---
 
-### 📋 Checklist Rapide avant le Culte
+### 📋 Choisir votre parcours
 
-- [ ] **Code à jour** : Dépôt GitHub cloné ou `git pull` effectué.
-- [ ] **Base de données transférée** (si changement de PC) : Le fichier `data/librairie.db` contient tous les livres, stocks et ventes. **Attention : ce dossier est dans `.gitignore` (zéro cloud). Si vous changez de PC, copiez impérativement le dossier `data/` sur clé USB !**
-- [ ] **Réseau Wi-Fi commun** : Le PC de caisse et les smartphones des bénévoles doivent être connectés au **même réseau** (Wi-Fi de l'église ou Partage de connexion 4G/5G).
-- [ ] **Profil Réseau Windows en "Privé"** : Ne laissez pas Windows en "Réseau Public", sinon le pare-feu bloque l'accès des téléphones.
+- **Obligatoire pour utiliser la caisse :** récupérer et lancer `eLib.exe`. Aucun Python, WebView2 ou moteur OCR séparé n'est à installer sur le PC.
+- **Seulement si vous migrez vers un autre PC :** copier le dossier `data/` de l'ancien PC avant le premier démarrage, afin de conserver le catalogue, le stock et les ventes.
+- **Optionnel :** configurer le scanner mobile. Le réseau commun, le profil Windows privé, les certificats et la règle de pare-feu ne sont nécessaires que pour cette fonction.
+- **Mainteneur uniquement :** compiler depuis les sources avec Python Windows x86 (voir ci-dessous).
 
 ---
 
-### 🖥️ Étape 1 : Application Windows autonome (32-bit et 64-bit)
+### 🖥️ Parcours A — Utiliser l'application distribuée (recommandé)
 
-La distribution est un exécutable Windows x86 autonome nommé `eLib.exe`, qui fonctionne sur Windows 32-bit comme 64-bit. Il embarque Python, RapidOCR, ONNX Runtime, les modèles OCR et le runtime WebView2. **Le PC de caisse n'a besoin ni de Python, ni d'un moteur OCR, ni de WebView2 à installer, ni d'Internet.**
+La distribution est un exécutable Windows x86 autonome nommé `eLib.exe`, qui fonctionne sur Windows 32-bit comme 64-bit. Il embarque Python, RapidOCR, ONNX Runtime, les modèles OCR et le runtime WebView2. **Le PC de caisse n'a besoin ni de Python, ni d'un moteur OCR, ni d'une installation WebView2.** Internet n'est pas requis pour encaisser; il est nécessaire pour vérifier et télécharger les mises à jour.
 
-#### Construire la distribution (mainteneur uniquement)
+1. Copiez `eLib.exe` sur le PC de caisse et lancez-le.
+2. Pour reprendre une installation existante sur un nouveau PC, copiez également le dossier `data/` de l'ancien PC à côté de `eLib.exe` avant le lancement. Pour une nouvelle installation, l'application crée ce dossier automatiquement.
+
+La fenêtre native utilise le runtime WebView2 Fixed Version embarqué ; elle ne dépend donc pas d'un runtime préinstallé et ne bascule pas silencieusement vers le navigateur.
+
+### 🛠️ Parcours B — Compiler depuis les sources (mainteneur uniquement)
 RapidOCR x86 nécessite une chaîne de versions compatible : Python 3.10 32-bit, RapidOCR 1.4.4 et ONNX Runtime 1.16.3. Installez Python 3.10 **32-bit (x86)** sur le PC de développement (il peut coexister avec Python 64-bit), puis depuis PowerShell à la racine du projet, lancez :
 ```powershell
 py -3.10-32 tools\build_windows_x86.py
@@ -94,24 +100,16 @@ Le script installe les dépendances binaires épinglées, télécharge et vérif
 
 **Note de maintenance :** la roue ONNX Runtime Windows x86 disponible est ancienne et le projet ONNX Runtime ne prend plus en charge les builds 32-bit actuels. Ces versions sont épinglées pour maintenir la compatibilité x86 et doivent être réévaluées si un runtime x86 plus récent devient disponible.
 
-#### Utiliser la distribution (utilisateurs)
-Copiez `dist_win32\eLib.exe` sur le PC de caisse et lancez-le. L'application crée son dossier `data` à côté de l'exécutable. Pour transférer un catalogue existant, copiez aussi son dossier `data`. Un exécutable x86 fonctionne également sur Windows 64-bit. La fenêtre native utilise la version WebView2 embarquée ; elle ne dépend pas d'une installation WebView2 préexistante et ne bascule pas silencieusement vers le navigateur.
-
 #### Releases et mises à jour
 Les versions publiées sous un tag `vX.Y.Z` sont construites automatiquement par GitHub Actions avec Python 3.10 x86 et publiées comme `eLib.exe` avec un fichier SHA-256. Pour publier une version, fusionnez-la dans la branche de référence, puis créez et poussez un tag de version, par exemple `git tag v1.0.0` puis `git push origin v1.0.0`. Une application distribuée vérifie les versions stables au démarrage puis une fois par jour ; elle ne télécharge qu'après confirmation et ne remplace/redémarre l'application qu'après une seconde confirmation. La connexion Internet est nécessaire pour vérifier et télécharger une version, mais pas pour utiliser eLib. Le SHA-256 détecte les téléchargements altérés ; il ne remplace pas une signature Authenticode de l'éditeur.
 
 Avant la première migration d'une base existante, eLib en crée une copie vérifiée sous `data\sauvegardes\librairie_pre_migration_*.db` ; la base séparée des appareils appairés est aussi sauvegardée sous `devices_pre_migration_*.db` si son schéma doit évoluer. Les migrations sont exécutées au démarrage et la version de la base métier est conservée dans `PRAGMA user_version`. Toute nouvelle évolution de schéma doit incrémenter `LATEST_SCHEMA_VERSION` et ajouter une migration correspondante dans `app/db.py`.
 
-#### 3. Transférer la base de données réelle (si nouveau PC)
-Si vous installez le projet sur un autre ordinateur que celui-ci :
-1. Sur votre PC actuel, copiez le dossier `data/` (qui contient `librairie.db` et vos sauvegardes).
-2. Collez-le à la racine du projet sur le nouveau PC : `chemin/vers/librairie/data/librairie.db`.
-
 ---
 
-### 📱 Étape 2 : Configuration du Réseau & Scanner Mobile (1 seule fois par lieu)
+### 📱 Parcours optionnel — Configurer le Scanner Mobile (une fois par lieu)
 
-Pour permettre aux bénévoles d'utiliser l'appareil photo de leur smartphone comme douchette :
+Ignorez toute cette section si la caisse est utilisée uniquement sur le PC. Pour permettre aux bénévoles d'utiliser l'appareil photo de leur smartphone comme douchette :
 
 #### 1. Régler le réseau Windows en "Réseau Privé"
 1. Connectez le PC au Wi-Fi de l'église (ou au partage de connexion 4G).
@@ -127,20 +125,20 @@ Ce script automatique :
 
 ---
 
-### 🚀 Étape 3 : Lancement de la Caisse
+### 🚀 Lancer la caisse
 
-Pour la distribution compilée, lancez directement `dist_win32\eLib.exe`. Si vous lancez le projet depuis ses sources, double-cliquez sur :
+Pour la version distribuée, lancez directement `eLib.exe`. Si vous êtes mainteneur et lancez le projet depuis ses sources, double-cliquez sur :
 ```text
 Lancer_Librairie.bat
 ```
 *(Ou en ligne de commande, avec Python 3.10 32-bit et les dépendances installées : `python run.py`)*
 
 1. L'application démarre le serveur local et s'ouvre dans une fenêtre dédiée (ou votre navigateur sur `http://127.0.0.1:8765`).
-2. L'écoute HTTPS locale pour les smartphones est active automatiquement sur le port 8766.
+2. Pour le parcours mobile seulement, l'écoute HTTPS utilise le port 8766.
 
 ---
 
-### 📲 Étape 4 : Connexion des Smartphones des Bénévoles
+### 📲 Scanner Mobile — Appairer les smartphones
 
 1. Sur le PC de caisse, rendez-vous dans l'onglet **Caisse**.
 2. Cliquez sur le bouton bleu **📱 Ouvrir Scanner Mobile** : le QR code d'appairage s'affiche à l'écran.
