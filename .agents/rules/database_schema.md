@@ -1,7 +1,7 @@
 # Règle Métier : Schéma de Données & Invariants SQLite
 
 Avant toute modification de la base de données, ajout d'endpoint ou modification de la logique d'encaissement et de stock, consulter le schéma de référence complet :
-👉 [SCHEMA.md](file:///c:/Users/uriel/.gemini/antigravity-ide/scratch/librairie/SCHEMA.md)
+👉 [SCHEMA.md](../../SCHEMA.md) (à la racine du dépôt)
 
 ### Invariants Clés :
 1. **Traçabilité des Lots** : Tout exemplaire vendu (`sale_lines`) doit être alloué (`allocations`) à un lot réel (`lots`).

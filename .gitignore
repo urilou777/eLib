@@ -1,6 +1,10 @@
 # Données personnelles de la librairie (base, Excel miroir, sauvegardes)
 data/
 
+# Environnements virtuels
+.venv/
+venv/
+
 # Build
 build/
 build_win32/

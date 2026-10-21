@@ -194,15 +194,26 @@ L'interface d'atelier dédiée s'ouvre sur `http://127.0.0.1:8769` avec les 14 v
 
 ## 📁 Structure du projet
 
+- `run.py` : Point d'entrée avec double liaison réseau (HTTP 127.0.0.1 + HTTPS LAN sécurisé) et démarrage non bloquant de la fenêtre.
 - `app/` :
-  - `db.py` : Schéma SQLite, gestion atomique des lots, packs, trésorerie et transactions.
+  - `db.py` : Schéma SQLite, migrations versionnées, gestion atomique des lots, packs, trésorerie et transactions.
+  - `main.py` : Composition FastAPI, middleware (sécurité, requêtes lentes), tâches différées post-rendu.
+  - `startup.py` : Orchestrateur des tâches différées (purge sauvegardes, miroir Excel, échauffement OCR), libérées par `/api/ui/ready`.
+  - `routers/` : Routes API par domaine (books, sales, inventory, reports, admin, sync).
+  - `security.py` : Contrôle d'accès réseau (poste vs téléphones appairés), anti-spoofing Host, rate-limiting.
   - `certs.py` : PKI locale automatisée (CA racine, certificats serveurs dynamiques).
-  - `security.py` : Middleware de contrôle d'accès réseau, anti-spoofing Host, rate-limiting et gestion des tokens smartphones.
+  - `ocr.py` : OCR local RapidOCR (imports différés au premier scan).
   - `excel_io.py` : Moteur d'importation et d'exportation Excel.
-  - `main.py` : API FastAPI locale et sécurisée, boucle d'archivage miroir en arrière-plan.
-  - `static/` : Interface web moderne desktop et mobile (HTML5, Vanilla CSS, Vanilla JS, librairie ZXing embarquée hors-ligne).
+  - `updater.py` : Mise à jour automatique depuis les releases GitHub (SHA-256 vérifié, remplacement au redémarrage).
+  - `realtime.py` : LiveHub temps réel (régie des paniers mobiles via SSE).
+  - `static/` : Interface web desktop et mobile (HTML5, Vanilla CSS, Vanilla JS, librairie ZXing embarquée hors-ligne).
+- `installer/eLib.iss` : Script Inno Setup de la version installée (Program Files (x86), données dans ProgramData).
+- `Librairie.spec` : Spécification PyInstaller (onefile x86, UPX désactivé, garde-fous sur les dossiers de sortie).
+- `tools/` : Scripts de build et de packaging (`build_windows_x86.py`, `build_installer_win32.py`, `package_portable_win32.py`) ; `tools/oneoff/` : scripts de maintenance ponctuels.
+- `tests/` : Tests unitaires (exécutés contre une copie de la base de développement).
+- `docs/` : Documentation technique hors-ligne (sources CHM, rapport d'audit).
+- `SCHEMA.md` & `ARCHITECTURE_MOBILE.md` : Références de schéma et d'architecture.
 - `setup_mobile.py` & `Installer_Mobile.bat` : Outil de configuration automatique des certificats et du pare-feu.
-- `run.py` : Point d'entrée avec double liaison réseau (HTTP 127.0.0.1 + HTTPS LAN sécurisé).
-- `Lancer_Librairie.bat` : Lanceur double-clic pour la caisse principale.
+- `Lancer_Librairie.bat` : Lanceur double-clic pour la caisse principale (dev, runtime Python 32-bit requis).
 - `Lancer_Atelier_Scission.bat` : Lanceur de l'atelier de scission et gestion des codes-barres.
 - `requirements.txt` : Dépendances Python, dont les versions x86 épinglées de RapidOCR et ONNX Runtime.

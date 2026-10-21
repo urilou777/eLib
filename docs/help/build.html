@@ -14,6 +14,14 @@
       <pre><code>py -3.10-32 tools\build_windows_x86.py</code></pre>
       <p>Le script vérifie l’architecture, installe les dépendances binaires épinglées, télécharge et vérifie le package WebView2, puis lance PyInstaller. Le livrable est créé dans <code>dist_win32\eLib.exe</code>. C’est le seul dossier de distribution produit par ce build x86 ; <code>dist</code> est un ancien dossier et son exécutable ne doit pas être utilisé.</p>
     </section>
+    <section><h2>Les trois formes de distribution</h2>
+      <ul>
+        <li><b>eLib.exe</b> : exécutable autonome (clé USB, PC sans droits d’installation) ; ses données sont créées dans un dossier <code>data</code> à côté de lui.</li>
+        <li><b>eLib-Setup-&lt;version&gt;.exe</b> (Inno Setup, <code>python tools\build_installer_win32.py</code>) : installation classique dans Program Files (x86), raccourcis, entrée « Applications et fonctionnalités » ; les données vivent dans <code>C:\ProgramData\eLib</code> (Program Files n’est pas inscriptible) ; la désinstallation ne supprime jamais les données.</li>
+        <li><b>eLib-Portable-&lt;version&gt;.zip</b> (<code>python tools\package_portable_win32.py</code>) : archive locale (exécutable + LISEZ-MOI), construite à la demande, non publiée sur les releases.</li>
+      </ul>
+      <p><b>Important :</b> <code>dist_win32\</code> est un dossier de sortie de compilation, pas un dossier d’exécution. Ne jamais y lancer <code>eLib.exe</code> : l’application créerait son dossier <code>data</code> au milieu des artefacts. Tester depuis un dossier séparé.</p>
+    </section>
     <section><h2>Après le build</h2>
       <ul><li>Tester l’ouverture d’une fenêtre native sur une machine cible représentative.</li><li>Tester l’OCR avec l’image d’un livre réel.</li><li>Tester une vente et une sauvegarde/restauration dans un environnement de test.</li><li>Distribuer l’EXE avec le dossier <code>data</code> uniquement s’il s’agit de transférer une base existante.</li></ul>
       <p>Pour déplacer ou restaurer les données sans mélanger plusieurs copies, consulter <a href="data.html">Données, sauvegarde et restauration</a>.</p>

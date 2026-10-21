@@ -192,3 +192,21 @@ CREATE INDEX IF NOT EXISTS ix_sale_payments_sale ON sale_payments(sale_id);
 3. **Cas Cité Royale vs ICC Rennes** :
    - Cité Royale (maison mère) : `reverse_pct = 100%`, montant total dû reversé.
    - ICC Rennes (église locale) : `reverse_pct = 0%`, marge 100% conservée localement.
+
+### `app_settings` (Réglages applicatifs)
+
+```sql
+CREATE TABLE IF NOT EXISTS app_settings(
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL);
+```
+
+Clés connues : `local_card_enabled` (`0`/`1`, CB du stock local — désactivée par défaut), `service_moment`/options déroulantes pilotées via `/api/options`. Accès : `db.get_setting(c, key, default)` / écriture via les routers.
+
+## 5. Versionnement & migrations
+
+La version du schéma est stockée dans `PRAGMA user_version`. Toute évolution de schéma doit incrémenter `LATEST_SCHEMA_VERSION` dans `app/db.py` et ajouter la migration correspondante dans `SCHEMA_MIGRATIONS` :
+
+- **v2** : ajout du réglage `local_card_enabled` (`INSERT OR IGNORE` dans `app_settings`).
+
+Avant migration d'une base existante, une copie vérifiée est créée sous `data\sauvegardes\librairie_pre_migration_*.db`.
