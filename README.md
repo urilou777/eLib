@@ -104,6 +104,8 @@ python tools\package_portable_win32.py
 ```
 L'archive est aussi publiée automatiquement en même temps que `eLib.exe` lors d'un tag de version. Le dossier `data/` local n'est jamais inclus dans l'archive.
 
+**Important :** `dist_win32\` est un dossier de sortie de compilation, pas un dossier d'exécution. Ne lancez jamais `eLib.exe` depuis `dist_win32\` : l'application créerait son dossier `data/` de travail à côté de l'exécutable et polluerait les artefacts de distribution. Pour tester un build, copiez `eLib.exe` dans un dossier de test séparé (par exemple `C:\eLib_test\`) et lancez-le de là.
+
 Pour produire l'installateur Windows (`eLib-Setup-<version>.exe` : installation dans Program Files (x86), raccourcis du menu Démarrer, entrée gérée par Windows dans « Applications et fonctionnalités », désinstallation propre), lancez :
 ```powershell
 python tools\build_installer_win32.py

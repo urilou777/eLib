@@ -13,9 +13,12 @@ project_dir = os.path.abspath(SPECPATH)
 # toute sortie doit passer par tools/build_windows_x86.py (--distpath dist_win32,
 # --workpath build_win32). Un appel manuel « pyinstaller Librairie.spec » sans
 # ces drapeaux est refusé pour ne pas recréer ces dossiers.
-if os.path.abspath(DISTPATH).lower() == os.path.join(project_dir, "dist").lower():
+# WORKPATH n'est pas injecté par toutes les versions de PyInstaller : garde tolérante.
+_distpath = globals().get("DISTPATH", "")
+_workpath = globals().get("WORKPATH", "")
+if _distpath and os.path.abspath(_distpath).lower() == os.path.join(project_dir, "dist").lower():
     raise RuntimeError("Dossier de sortie « dist/ » interdit : lancez tools/build_windows_x86.py (sortie dist_win32).")
-if os.path.abspath(WORKPATH).lower() == os.path.join(project_dir, "build").lower():
+if _workpath and os.path.abspath(_workpath).lower() == os.path.join(project_dir, "build").lower():
     raise RuntimeError("Dossier de travail « build/ » interdit : lancez tools/build_windows_x86.py (travail build_win32).")
 
 webview_runtime_dir = os.path.join(
