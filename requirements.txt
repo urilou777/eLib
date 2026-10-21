@@ -1,12 +1,19 @@
-fastapi
-uvicorn
-python-multipart
-openpyxl
+# Versions épinglées pour un build x86 déterministe (Python 3.10 win32).
+# Toute montée de version doit être testée : py -3.10-32 tools\build_windows_x86.py
+# Note : proxy-tools n'est publié qu'en source (d'où --no-binary=proxy-tools
+# dans tools/build_windows_x86.py) ; pywebview >= 4 en dépend.
+fastapi==0.156.8
+uvicorn==0.54.0
+python-multipart==0.0.32
+openpyxl==3.1.5
 pywebview==6.2.1
-pyinstaller
+pythonnet==3.1.0
+bottle==0.13.4
+proxy-tools==0.1.0
+pyinstaller==6.22.3
 cryptography==48.0.1
-segno
-Pillow
+segno==1.6.6
+Pillow==12.3.0
 tzdata==2026.5
 numpy==1.26.4
 rapidocr_onnxruntime==1.4.4
