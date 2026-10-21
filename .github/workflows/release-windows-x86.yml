@@ -40,17 +40,22 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 dist_win32/eLib.exe).Hash.ToLowerInvariant()
           Set-Content -Path dist_win32/eLib.exe.sha256 -Value "$hash  eLib.exe" -Encoding ascii -NoNewline
 
+      - name: Package portable distribution
+        run: python tools/package_portable_win32.py
+
       - name: Publish GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = $env:GITHUB_REF_NAME
+          $version = $tag -replace '^v', ''
+          $portable = "dist_win32/eLib-Portable-$version.zip"
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $portable "$portable.sha256" --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload release assets." }
           } else {
-            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --generate-notes
+            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $portable "$portable.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --generate-notes
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release." }
           }

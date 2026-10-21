@@ -98,6 +98,12 @@ py -3.10-32 tools\build_windows_x86.py
 ```
 Le script installe les dépendances binaires épinglées, télécharge et vérifie le package Microsoft WebView2 Fixed Version x86, puis construit `dist_win32\eLib.exe`. Les bibliothèques natives, le runtime WebView2, les modèles OCR et Python sont intégrés dans l'exécutable. Le runtime WebView2 est volumineux (plus de 250 Mo décompressé) et doit être mis à jour périodiquement avec l'application pour recevoir les correctifs de sécurité. Les utilisateurs finaux n'ont besoin d'aucun de ces outils ni d'une connexion Internet.
 
+Pour produire la distribution portable (`eLib-Portable-<version>.zip` : exécutable + LISEZ-MOI.txt, sans installation), lancez ensuite :
+```powershell
+python tools\package_portable_win32.py
+```
+L'archive est aussi publiée automatiquement en même temps que `eLib.exe` lors d'un tag de version. Le dossier `data/` local n'est jamais inclus dans l'archive.
+
 **Note de maintenance :** la roue ONNX Runtime Windows x86 disponible est ancienne et le projet ONNX Runtime ne prend plus en charge les builds 32-bit actuels. Ces versions sont épinglées pour maintenir la compatibilité x86 et doivent être réévaluées si un runtime x86 plus récent devient disponible.
 
 #### Releases et mises à jour
