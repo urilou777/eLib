@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var KEY = 'librairie_tutorial_done_v6';
+  var KEY = 'librairie_tutorial_done_v7';
 
   var P = {
     cardigan: '#5e2f7d', cardiganDark: '#3f1f57', shirt: '#f4ead9',
@@ -104,12 +104,21 @@
          '<path d="M13 13 Q15.5 15 18 13" fill="none" stroke="' + P.dark + '" stroke-width="1.6" stroke-linecap="round"/>';
     /* joues */
     g += '<circle cx="8.5" cy="12" r="1.5" fill="' + P.blush + '" opacity="0.6"/><circle cx="22.5" cy="12" r="1.5" fill="' + P.blush + '" opacity="0.6"/>';
-    /* ailes */
+    /* ailes : éventail de plumes arrondies sur les CÔTÉS (jamais au-dessus : pas de cornes) */
     if (pose === 'fly') {
-      g += '<path d="M0 6 Q-9 2 -7 -6 Q-1 -3 1 4 Z" fill="' + P.paper + '"/>' +
-           '<path d="M28 6 Q37 2 35 -6 Q29 -3 27 4 Z" fill="' + P.paper + '"/>';
+      g += '<g fill="' + P.paper + '">' +
+           '<ellipse cx="-5" cy="14" rx="7" ry="3.2" transform="rotate(-12 -5 14)"/>' +
+           '<ellipse cx="-6.5" cy="10.5" rx="8" ry="3.4" transform="rotate(-30 -6.5 10.5)"/>' +
+           '<ellipse cx="-6" cy="7" rx="8" ry="3.6" transform="rotate(-48 -6 7)"/>' +
+           '</g>';
+      g += '<g fill="' + P.paper + '">' +
+           '<ellipse cx="33" cy="14" rx="7" ry="3.2" transform="rotate(12 33 14)"/>' +
+           '<ellipse cx="34.5" cy="10.5" rx="8" ry="3.4" transform="rotate(30 34.5 10.5)"/>' +
+           '<ellipse cx="34" cy="7" rx="8" ry="3.6" transform="rotate(48 34 7)"/>' +
+           '</g>';
     } else {
-      g += '<path d="M2 4 Q-4 6 -3 10 Q1 10 3 6 Z" fill="' + P.paper + '"/>';
+      g += '<path d="M1 8 Q-5 8.5 -6 13.5 Q-1 15.5 1.5 12 Z" fill="' + P.paper + '"/>' +
+           '<path d="M27 8 Q33 8.5 34 13.5 Q29 15.5 26.5 12 Z" fill="' + P.paper + '"/>';
     }
     if (pose === 'talk') g += '<path d="M14 -6 Q12 -11 16 -12.5 Q20 -11 18 -6" fill="none" stroke="' + P.gold + '" stroke-width="1.4"/>';
     g += '</g>';
