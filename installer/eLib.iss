@@ -22,6 +22,9 @@ AppVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}
 AppPublisher=eLib
 UninstallDisplayName=eLib
+; Sans DisplayIcon, « Applications et fonctionnalités » affiche une icône générique
+; (Inno ne l'écrit pas de lui-même) : on pointe sur l'icône de l'exécutable.
+UninstallDisplayIcon={app}\eLib.exe
 DefaultDirName={autopf}\eLib
 DefaultGroupName=eLib
 DisableProgramGroupPage=yes
