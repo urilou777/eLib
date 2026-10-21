@@ -91,6 +91,10 @@ La distribution est un exécutable Windows x86 autonome nommé `eLib.exe`, qui f
 
 La fenêtre native utilise le runtime WebView2 Fixed Version embarqué ; elle ne dépend donc pas d'un runtime préinstallé et ne bascule pas silencieusement vers le navigateur.
 
+**Avertissement Windows (Microsoft Defender) :** eLib n'est pas signé numériquement (pas de certificat éditeur payant). Au premier lancement, Windows peut afficher :
+- « Windows a protégé votre ordinateur » (SmartScreen) : cliquez sur **Informations complémentaires** puis **Exécuter quand même** ;
+- « Contrôle d'application intelligent » (Smart App Control, Windows 11) : il bloque les applications non signées sans contournement par application ; il doit être désactivé dans *Paramètres > Confidentialité et sécurité > Sécurité Windows > Contrôle des applications et du navigateur > Smart App Control*. **Attention : une fois désactivé, il ne peut être réactivé qu'en réinstallant Windows.**
+
 ### 🛠️ Parcours B — Compiler depuis les sources (mainteneur uniquement)
 RapidOCR x86 nécessite une chaîne de versions compatible : Python 3.10 32-bit, RapidOCR 1.4.4 et ONNX Runtime 1.16.3. Installez Python 3.10 **32-bit (x86)** sur le PC de développement (il peut coexister avec Python 64-bit), puis depuis PowerShell à la racine du projet, lancez :
 ```powershell
