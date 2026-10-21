@@ -1,3 +1,3 @@
 """Application version embedded in release builds."""
 
-VERSION = "0.0.0"
+VERSION = "1.0.0"
