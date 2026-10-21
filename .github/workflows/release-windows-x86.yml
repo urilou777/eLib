@@ -76,6 +76,10 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload release assets." }
+            # Après un re-tag (suppression de tag), GitHub passe la release en brouillon :
+            # la republier systématiquement (sans effet si déjà publiée).
+            gh release edit $tag --draft=false --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "Failed to publish the release." }
           } else {
             gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --notes "$notes"
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release." }
