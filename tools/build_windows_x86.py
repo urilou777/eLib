@@ -158,6 +158,13 @@ def build():
     executable = os.path.join(OUTPUT_DIR, "eLib.exe")
     if pe_machine(executable) != 0x014C:
         raise RuntimeError(f"PyInstaller produced a non-x86 executable: {executable}")
+
+    # Signature Authenticode si un certificat est configuré (supprime les
+    # avertissements SmartScreen / Smart App Control chez les utilisateurs).
+    from sign_binaries import sign_file
+
+    sign_file(executable)
+
     print(f"[Windows x86 build] Ready to distribute: {executable}", flush=True)
     print(
         "[Windows x86 build] Python, OCR, models, and WebView2 are bundled; users need no internet.",

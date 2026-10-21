@@ -40,18 +40,6 @@ Points importants :
 - Les mises à jour restent automatiques : si une nouvelle version est publiée,
   eLib.exe sera remplacé au redémarrez de l'application, sans toucher à vos
   données.
-
-Avertissement Windows (Microsoft Defender) :
-eLib n'est pas signé numériquement (pas de certificat éditeur payant). Windows
-peut donc afficher un avertissement au premier lancement :
-- « Windows a protégé votre ordinateur » (SmartScreen) : cliquez sur
-  « Informations complémentaires » puis « Exécuter quand même ».
-- « Contrôle d'application intelligent » (Smart App Control, Windows 11) :
-  il bloque les applications non signées sans contournement possible par
-  application. Il doit être désactivé dans Paramètres > Confidentialité et
-  sécurité > Sécurité Windows > Contrôle des applications et du navigateur >
-  Smart App Control. ATTENTION : une fois désactivé, il ne peut être réactivé
-  qu'en réinstallant Windows.
 """
 
 

@@ -107,6 +107,12 @@ def build_installer():
     if not os.path.isfile(offline_path):
         raise RuntimeError(f"Inno Setup n'a pas produit l'attendu : {offline_path}")
 
+    # Signature Authenticode si un certificat est configuré, AVANT les empreintes.
+    from sign_binaries import sign_file
+
+    for path in (web_path, offline_path):
+        sign_file(path)
+
     for path in (web_path, offline_path):
         print(f"[Installer-32bit] Installateur : {path}")
         print(f"[Installer-32bit] Empreinte : {_emit_sha(path)}")

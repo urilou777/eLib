@@ -32,6 +32,9 @@ jobs:
           python -c "import struct; assert struct.calcsize('P') == 4, 'Expected 32-bit Python'"
 
       - name: Build self-contained x86 executable
+        env:
+          ELIB_SIGN_PFX: ${{ secrets.ELIB_SIGN_PFX }}
+          ELIB_SIGN_PWD: ${{ secrets.ELIB_SIGN_PWD }}
         run: python tools/build_windows_x86.py
 
       - name: Create SHA-256 checksum
@@ -44,6 +47,9 @@ jobs:
         run: choco install innosetup -y --no-progress
 
       - name: Build installer
+        env:
+          ELIB_SIGN_PFX: ${{ secrets.ELIB_SIGN_PFX }}
+          ELIB_SIGN_PWD: ${{ secrets.ELIB_SIGN_PWD }}
         run: python tools/build_installer_win32.py
 
       - name: Publish GitHub Release
