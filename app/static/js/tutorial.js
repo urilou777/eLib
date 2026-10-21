@@ -1,21 +1,22 @@
-/* eLib – Visite guidée mise en scène avec Eli le libraire-guide et Céleste la colombe :
-   décors par étape, cadrages variés, disparition/triomphe d'Eli. 100 % local, aucun asset externe. */
+/* eLib – Visite guidée mise en scène avec Eli le libraire-guide et Céleste la colombe.
+   Décors concrets par étape, navigation réelle entre écrans, projecteur sur l'élément ciblé.
+   100 % local, aucun asset externe, aucun emoji. */
 (function () {
   'use strict';
 
-  var KEY = 'librairie_tutorial_done_v4';
+  var KEY = 'librairie_tutorial_done_v5';
 
-  /* ---------- Palette ---------- */
   var P = {
     cardigan: '#5e2f7d', cardiganDark: '#3f1f57', shirt: '#f4ead9',
     skin: '#c68d5e', skinDark: '#a56f45', hair: '#241626',
     glass: '#e6a73c', dark: '#2a1830', blush: '#d98a66',
     book: '#ca88e3', gold: '#f5d27a', cream: '#faf7f2',
     wood: '#7a4a2b', woodLight: '#9a6238', night: '#1a1030',
-    purple: '#8f16ad', deep: '#5e0b75', paper: '#efe6d4'
+    purple: '#8f16ad', deep: '#5e0b75', paper: '#efe6d4',
+    ok: '#4caf7d', low: '#e6a73c', out: '#d95f5f', excel: '#217346'
   };
 
-  /* ---------- Eli : visage et poses (composable) ---------- */
+  /* ---------- Eli : visage et poses (repère 120x120 ancré bas) ---------- */
 
   function eyes(kind) {
     var L = 50, R = 70, y = 53;
@@ -42,7 +43,6 @@
     if (kind === 'small') return '<path d="M55 68 L65 68" ' + a + '/>';
     if (kind === 'determined') return '<path d="M52 69 Q60 65 68 69" ' + a + '/>';
     if (kind === 'think') return '<path d="M53 68 Q60 72 67 67" ' + a + '/>';
-    if (kind === 'shout') return '<path d="M52 64 Q60 78 68 64 Q60 86 52 64 Z" fill="' + P.dark + '"/>';
     return '<path d="M52 66 Q60 73 68 66" ' + a + '/>';
   }
 
@@ -51,7 +51,6 @@
     return '<path d="M' + x1 + ' ' + y1 + ' Q' + mx + ' ' + my + ' ' + x2 + ' ' + y2 + '" fill="none" stroke="' + P.cardigan + '" stroke-width="9" stroke-linecap="round"/><circle cx="' + x2 + '" cy="' + y2 + '" r="5" fill="' + P.skin + '"/>';
   }
 
-  /* Poses d'Eli : bras gauche / bras droit (coordonnées dans le repère personnage 120x120, ancré bas) */
   var EMO = {
     wave:   { e: 'happy', b: 'raised', m: 'grin',  L: null, R: [98, 96, 102, 74, 12, -6] },
     present:{ e: 'open',  b: 'flat',  m: 'smile', L: [22, 100, 10, 96, -2, -8], R: [98, 100, 92, 112, 8, 2] },
@@ -66,11 +65,9 @@
     busy:   { e: 'happy', b: 'knit',  m: 'determined', L: [24, 100, 46, 114, 0, 0], R: [96, 100, 76, 114, 0, 0] },
     cheer:  { e: 'happy', b: 'raised',m: 'grin',  L: [26, 96, 20, 68, -8, -6],    R: [94, 96, 100, 68, 8, -6] },
     wink:   { e: 'wink',  b: 'one',   m: 'smile', L: [22, 104, 24, 116, -2, 4],  R: [98, 104, 92, 116, 2, 2] },
-    party:  { e: 'happy', b: 'raised',m: 'grin',  L: [26, 96, 18, 66, -8, -6],   R: [94, 96, 102, 66, 8, -6] },
-    shout:  { e: 'wide',  b: 'raised',m: 'shout', L: [24, 100, 52, 112, 2, -4], R: [96, 100, 76, 112, -2, -4] }
+    party:  { e: 'happy', b: 'raised',m: 'grin',  L: [26, 96, 18, 66, -8, -6],   R: [94, 96, 102, 66, 8, -6] }
   };
 
-  /* Eli complet, dans un <g> transposable ; origin = coin bas-gauche du personnage */
   function eliGroup(emo) {
     var cfg = EMO[emo] || EMO.present;
     var arms = '';
@@ -79,8 +76,7 @@
     var hair = '<g fill="' + P.hair + '"><circle cx="44" cy="36" r="10"/><circle cx="53" cy="30" r="11"/><circle cx="63" cy="28" r="12"/><circle cx="73" cy="31" r="10"/><circle cx="80" cy="39" r="8"/><circle cx="40" cy="43" r="8"/><circle cx="37" cy="50" r="5"/><circle cx="83" cy="50" r="5"/></g>';
     var glasses = '<g fill="rgba(255,255,255,0.05)" stroke="' + P.glass + '" stroke-width="2.2"><circle cx="50" cy="53" r="9"/><circle cx="70" cy="53" r="9"/></g><path d="M59 53 L61 53" stroke="' + P.glass + '" stroke-width="2.2"/><path d="M41 53 L35 50 M79 53 L85 50" stroke="' + P.glass + '" stroke-width="2.2" stroke-linecap="round"/>';
     return '<g>' +
-      '<rect x="54" y="76" width="12" height="10" fill="' + P.skinDark + '"/>' +
-      arms +
+      '<rect x="54" y="76" width="12" height="10" fill="' + P.skinDark + '"/>' + arms +
       '<path d="M26 120 C26 96 40 86 60 86 C80 86 94 96 94 120 Z" fill="' + P.cardigan + '"/>' +
       '<path d="M47 86 L60 104 L73 86 Z" fill="' + P.shirt + '"/>' +
       '<path d="M47 86 L52 93 L56 87 Z M73 86 L68 93 L64 87 Z" fill="' + P.cardiganDark + '"/>' +
@@ -91,23 +87,29 @@
       brows(cfg.b) + eyes(cfg.e) + glasses + mouth(cfg.m) + '</g>';
   }
 
-  /* ---------- Céleste, la colombe ---------- */
+  /* ---------- Céleste v2 : anatomie de colombe (tête fine, bec court, queue en éventail) ---------- */
   function dove(pose, x, y, s) {
     s = s || 1;
     var g = '<g transform="translate(' + x + ',' + y + ') scale(' + s + ')">';
-    var body = '<path d="M0 0 C6 -9 20 -10 26 -3 C30 2 26 8 18 8 C8 8 2 6 0 0 Z" fill="' + P.cream + '"/>' +
-      '<circle cx="24" cy="-5" r="5.5" fill="' + P.cream + '"/>' +
-      '<path d="M29 -5 L34 -3.5 L29 -2 Z" fill="' + P.glass + '"/>' +
-      '<circle cx="25.5" cy="-6.5" r="1.3" fill="' + P.dark + '"/>' +
-      '<path d="M2 2 L-6 8 L0 6 Z" fill="' + P.paper + '"/>';
-    if (pose === 'fly') g += '<path d="M8 -2 Q2 -12 12 -14" fill="none" stroke="' + P.paper + '" stroke-width="3.4" stroke-linecap="round"/>' + body;
-    else if (pose === 'talk') g += '<path d="M6 0 Q10 -8 16 -6" fill="none" stroke="' + P.paper + '" stroke-width="3.4" stroke-linecap="round"/>' + body + '<path d="M22 -10 Q20 -16 24 -18 Q28 -16 26 -10" fill="none" stroke="' + P.gold + '" stroke-width="1.6"/>';
-    else g += '<path d="M8 0 Q14 -8 20 -2" fill="none" stroke="' + P.paper + '" stroke-width="3.4" stroke-linecap="round"/>' + body;
+    /* queue en éventail (3 plumes) */
+    g += '<g stroke="' + P.paper + '" stroke-width="2.6" stroke-linecap="round"><path d="M2 2 L-9 -4"/><path d="M1 3 L-10 3"/><path d="M2 4 L-9 10"/></g>';
+    /* corps fuselé */
+    g += '<path d="M0 3 C3 -3 13 -7 20 -5 C25 -4 26 0 22 2 C17 5 6 5 0 3 Z" fill="' + P.cream + '" stroke="' + P.paper + '" stroke-width="1"/>';
+    /* aile repliée, plumes marquées */
+    g += '<path d="M7 0 Q13 -4 19 -1 Q14 3 7 0 Z" fill="' + P.paper + '"/>' +
+         '<path d="M9 -0.5 L17 -1 M9 1 L15 1.2" stroke="' + P.cream + '" stroke-width="0.8" stroke-linecap="round"/>';
+    /* petite tête + petit bec conique */
+    g += '<circle cx="22.5" cy="-6" r="3.4" fill="' + P.cream + '"/>' +
+         '<path d="M25.6 -6.4 L28.6 -5.6 L25.6 -4.9 Z" fill="' + P.glass + '"/>' +
+         '<circle cx="23.4" cy="-6.6" r="0.8" fill="' + P.dark + '"/>';
+    /* aile déployée si elle vole */
+    if (pose === 'fly') g += '<path d="M9 -2 Q3 -12 15 -13 Q19 -8 12 -2 Z" fill="' + P.paper + '"/>';
+    if (pose === 'talk') g += '<path d="M14 -12 Q12 -17 16 -18.5 Q20 -17 18 -12" fill="none" stroke="' + P.gold + '" stroke-width="1.4"/>';
     g += '</g>';
     return g;
   }
 
-  /* Bulle « voix hors-champ » : pointillés animés côté droit */
+  /* Voix hors-champ : pointillés animés côté droit */
   function offstageVoice(x, y) {
     return '<g transform="translate(' + x + ',' + y + ')">' +
       '<path d="M0 0 Q10 -6 16 0 Q10 6 0 0" fill="' + P.gold + '" opacity="0.9"/>' +
@@ -116,7 +118,7 @@
       '</g>';
   }
 
-  /* ---------- Décors ---------- */
+  /* ---------- Décors : mini-interfaces concrètes, pas des papiers abstraits ---------- */
 
   function bookRow(x, y, w) {
     var out = '', bw = 7, i = 0, cols = [P.book, P.gold, P.paper, P.purple, P.cream];
@@ -138,41 +140,71 @@
         '<text x="132" y="37" text-anchor="middle" font-family="Georgia, serif" font-size="12" font-weight="bold" fill="' + P.deep + '">eLib</text>' +
         '<path d="M108 56 q62 10 56 24" fill="none" stroke="' + P.gold + '" stroke-width="1.4" opacity="0.7"/>';
     },
+    catalog: function () {
+      return '<rect x="0" y="0" width="170" height="120" fill="#2c153f"/>' +
+        '<rect x="0" y="8" width="170" height="4" fill="' + P.wood + '"/>' + bookRow(2, 8, 164) +
+        '<rect x="0" y="42" width="170" height="4" fill="' + P.wood + '"/>' + bookRow(2, 42, 160) +
+        '<rect x="0" y="76" width="170" height="4" fill="' + P.wood + '"/>' + bookRow(2, 76, 158) +
+        '<g transform="translate(134,34) rotate(14)"><rect x="0" y="0" width="4" height="66" rx="2" fill="' + P.woodLight + '"/><rect x="-7" y="0" width="18" height="4" rx="2" fill="' + P.woodLight + '"/><rect x="-4" y="60" width="12" height="4" rx="2" fill="' + P.woodLight + '"/></g>';
+    },
     chart: function () {
       return '<rect x="0" y="0" width="170" height="120" fill="#1d0a28"/>' +
-        '<rect x="30" y="10" width="110" height="66" rx="6" fill="' + P.paper + '"/>' +
-        '<path d="M42 62 L58 48 L74 54 L90 36 L106 44 L122 28" fill="none" stroke="' + P.purple + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
-        '<path d="M42 62 L58 48 L74 54 L90 36 L106 44 L122 28 L122 68 L42 68 Z" fill="' + P.purple + '" opacity="0.14"/>' +
-        '<circle cx="122" cy="28" r="3.4" fill="' + P.gold + '"/>' +
-        '<rect x="46" y="80" width="78" height="8" rx="4" fill="' + P.cardiganDark + '" opacity="0.8"/>';
+        '<rect x="22" y="8" width="60" height="54" rx="5" fill="' + P.paper + '"/>' +
+        '<g fill="' + P.purple + '"><rect x="28" y="34" width="8" height="22" rx="1.6"/><rect x="40" y="26" width="8" height="30" rx="1.6"/><rect x="52" y="40" width="8" height="16" rx="1.6"/><rect x="64" y="20" width="8" height="36" rx="1.6"/></g>' +
+        '<rect x="92" y="8" width="60" height="54" rx="5" fill="' + P.paper + '"/>' +
+        '<path d="M98 48 L112 34 L126 40 L144 22" fill="none" stroke="' + P.purple + '" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="144" cy="22" r="3" fill="' + P.gold + '"/>' +
+        '<g stroke="' + P.deep + '" stroke-width="1.6" opacity="0.35"><path d="M98 56 L146 56 M98 48 L146 48 M98 40 L146 40 M98 32 L146 32"/></g>' +
+        '<rect x="46" y="78" width="78" height="8" rx="4" fill="' + P.cardiganDark + '" opacity="0.8"/>';
     },
     scanScene: function () {
       return '<rect x="0" y="0" width="170" height="120" fill="#251238"/>' +
         '<rect x="96" y="14" width="66" height="5" rx="2" fill="' + P.wood + '"/>' + bookRow(98, 14, 62) +
         '<rect x="96" y="48" width="66" height="5" rx="2" fill="' + P.wood + '"/>' + bookRow(98, 48, 58) +
         '<path d="M30 78 q-14 -30 22 -34" fill="none" stroke="' + P.paper + '" stroke-width="5" opacity="0.25" stroke-linecap="round"/>' +
-        '<g transform="translate(118,86)"><circle r="17" fill="none" stroke="' + P.gold + '" stroke-width="4" opacity="0.85"/><path d="M12 12 L22 22" stroke="' + P.gold + '" stroke-width="5" stroke-linecap="round"/></g>';
+        '<g transform="translate(120,88)"><circle r="16" fill="none" stroke="' + P.gold + '" stroke-width="4" opacity="0.85"/><path d="M11 11 L20 20" stroke="' + P.gold + '" stroke-width="5" stroke-linecap="round"/></g>';
     },
     counter: function () {
       return '<rect x="0" y="0" width="170" height="120" fill="#251238"/>' +
         '<rect x="0" y="78" width="170" height="42" fill="' + P.wood + '"/>' +
         '<rect x="0" y="78" width="170" height="7" fill="' + P.woodLight + '"/>' +
-        '<rect x="8" y="16" width="60" height="46" rx="5" fill="' + P.paper + '"/>' +
-        '<path d="M14 58 L38 58 M14 48 L48 48 M14 38 L44 38" stroke="' + P.wood + '" stroke-width="2.4" stroke-linecap="round" opacity="0.6"/>';
+        '<g transform="translate(108,42)"><rect x="0" y="0" width="42" height="34" rx="4" fill="' + P.cardiganDark + '"/><rect x="4" y="4" width="34" height="12" rx="2" fill="' + P.night + '"/><text x="21" y="13" text-anchor="middle" font-family="monospace" font-size="8" fill="' + P.ok + '">12,50€</text><g fill="' + P.gold + '"><rect x="4" y="20" width="6" height="5" rx="1"/><rect x="12" y="20" width="6" height="5" rx="1"/><rect x="20" y="20" width="6" height="5" rx="1"/><rect x="28" y="20" width="6" height="5" rx="1"/><rect x="8" y="27" width="6" height="5" rx="1"/><rect x="16" y="27" width="6" height="5" rx="1"/><rect x="24" y="27" width="6" height="5" rx="1"/></g></g>' +
+        '<g transform="translate(20,60)"><path d="M0 14 L4 2 L26 2 L30 14 Z" fill="none" stroke="' + P.gold + '" stroke-width="2.4" stroke-linejoin="round"/><rect x="9" y="-8" width="14" height="11" rx="1.6" fill="' + P.book + '" transform="rotate(-10 16 -3)"/></g>';
     },
-    emptyCounter: function () {
-      return '<rect x="0" y="0" width="170" height="120" fill="#251238"/>' +
+    warehouse: function () {
+      return '<rect x="0" y="0" width="170" height="120" fill="#2c153f"/>' +
         '<rect x="0" y="78" width="170" height="42" fill="' + P.wood + '"/>' +
         '<rect x="0" y="78" width="170" height="7" fill="' + P.woodLight + '"/>' +
-        '<g><rect x="58" y="96" width="36" height="9" rx="2" fill="' + P.gold + '"/><rect x="61" y="87" width="30" height="9" rx="2" fill="' + P.book + '"/><rect x="65" y="78" width="22" height="9" rx="2" fill="' + P.cream + '"/></g>' +
-        '<path d="M150 20 q8 40 -6 56" fill="none" stroke="' + P.cardigan + '" stroke-width="6" opacity="0.35" stroke-linecap="round"/>';
+        '<g><rect x="46" y="52" width="40" height="28" rx="2" fill="' + P.paper + '" stroke="' + P.wood + '" stroke-width="1.6"/><path d="M46 66 L86 66" stroke="' + P.wood + '" stroke-width="1.4" opacity="0.7"/><rect x="60" y="46" width="12" height="34" rx="1" fill="' + P.gold + '" opacity="0.5"/></g>' +
+        '<g><rect x="98" y="60" width="28" height="20" rx="2" fill="' + P.paper + '" stroke="' + P.wood + '" stroke-width="1.6"/><rect x="104" y="56" width="16" height="6" rx="1" fill="' + P.book + '" opacity="0.8"/></g>' +
+        '<rect x="128" y="8" width="40" height="72" rx="3" fill="' + P.night + '"/>' +
+        '<path d="M132 14 L164 14 M132 22 L164 22" stroke="' + P.cardigan + '" stroke-width="1.6" opacity="0.6"/>' +
+        '<g stroke="' + P.gold + '" stroke-width="2" stroke-linecap="round" opacity="0.9"><path d="M144 50 q14 -2 14 -14"/><path d="M144 50 q10 4 10 12"/></g>';
+    },
+    levels: function () {
+      return '<rect x="0" y="0" width="170" height="120" fill="#1d0a28"/>' +
+        '<g><rect x="12" y="14" width="44" height="40" rx="6" fill="' + P.cardiganDark + '"/><rect x="18" y="20" width="20" height="26" rx="2" fill="' + P.book + '" opacity="0.7"/><circle cx="46" cy="46" r="4.4" fill="' + P.ok + '"/><path d="M43.6 46 L45.4 48 L48.6 44" stroke="' + P.night + '" stroke-width="1.6" fill="none" stroke-linecap="round"/></g>' +
+        '<g><rect x="63" y="14" width="44" height="40" rx="6" fill="' + P.cardiganDark + '"/><rect x="69" y="26" width="20" height="20" rx="2" fill="' + P.book + '" opacity="0.55"/><circle cx="97" cy="46" r="4.4" fill="' + P.low + '"/><path d="M95 44 L99 48 M99 44 L95 48" stroke="' + P.night + '" stroke-width="1.6" stroke-linecap="round"/></g>' +
+        '<g><rect x="114" y="14" width="44" height="40" rx="6" fill="' + P.cardiganDark + '"/><rect x="120" y="34" width="20" height="12" rx="2" fill="' + P.book + '" opacity="0.25"/><circle cx="148" cy="46" r="4.4" fill="' + P.out + '"/><path d="M146 44 L150 48 M150 44 L146 48" stroke="' + P.night + '" stroke-width="1.6" stroke-linecap="round"/></g>' +
+        '<path d="M34 72 L34 92 M34 92 l-4 -6 M34 92 l4 -6" stroke="' + P.gold + '" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.7"/>' +
+        '<text x="85" y="98" text-anchor="middle" font-family="system-ui, sans-serif" font-size="7" fill="' + P.paper + '" opacity="0.75">disponibles · stock bas · rupture</text>';
     },
     ledger: function () {
       return '<rect x="0" y="0" width="170" height="120" fill="#1d0a28"/>' +
-        '<rect x="26" y="12" width="118" height="82" rx="6" fill="' + P.paper + '"/>' +
-        '<rect x="26" y="12" width="14" height="82" rx="6" fill="' + P.cardigan + '"/>' +
-        '<path d="M52 30 L118 30 M52 44 L110 44 M52 58 L122 58 M52 72 L96 72" stroke="' + P.deep + '" stroke-width="2" opacity="0.35" stroke-linecap="round"/>' +
-        '<rect x="96" y="50" width="34" height="20" rx="4" fill="' + P.gold + '" opacity="0.85" transform="rotate(-6 113 60)"/>';
+        '<rect x="16" y="10" width="138" height="88" rx="6" fill="' + P.paper + '"/>' +
+        '<rect x="16" y="10" width="138" height="14" rx="6" fill="' + P.purple + '"/>' +
+        '<text x="24" y="20" font-family="system-ui, sans-serif" font-size="7.5" font-weight="bold" fill="#fff">Livre</text>' +
+        '<text x="96" y="20" font-family="system-ui, sans-serif" font-size="7.5" font-weight="bold" fill="#fff" text-anchor="middle">Qté</text>' +
+        '<text x="140" y="20" font-family="system-ui, sans-serif" font-size="7.5" font-weight="bold" fill="#fff" text-anchor="end">Montant</text>' +
+        '<g font-family="system-ui, sans-serif" font-size="7" fill="' + P.deep + '" opacity="0.85">' +
+        '<text x="24" y="36">Ruth</text><text x="96" y="36" text-anchor="middle">1</text><text x="140" y="36" text-anchor="end">12,00€</text>' +
+        '<text x="24" y="48">Pack Ruth &amp; Marie</text><text x="96" y="48" text-anchor="middle">1</text><text x="140" y="48" text-anchor="end">35,00€</text>' +
+        '<text x="24" y="60">Les 7 armes de Dieu</text><text x="96" y="60" text-anchor="middle">2</text><text x="140" y="60" text-anchor="end">24,00€</text>' +
+        '<text x="24" y="72">Mariage</text><text x="96" y="72" text-anchor="middle">1</text><text x="140" y="72" text-anchor="end">5,00€</text></g>' +
+        '<g stroke="' + P.deep + '" stroke-width="0.8" opacity="0.2"><path d="M16 40 L154 40 M16 52 L154 52 M16 64 L154 64 M16 76 L154 76 M16 84 L154 84"/></g>' +
+        '<rect x="16" y="84" width="138" height="14" rx="0" fill="' + P.gold + '" opacity="0.9"/>' +
+        '<text x="24" y="94" font-family="system-ui, sans-serif" font-size="7.5" font-weight="bold" fill="' + P.deep + '">Total</text>' +
+        '<text x="140" y="94" font-family="system-ui, sans-serif" font-size="7.5" font-weight="bold" fill="' + P.deep + '" text-anchor="end">76,00€</text>';
     },
     vault: function () {
       return '<rect x="0" y="0" width="170" height="120" fill="#1d0a28"/>' +
@@ -189,12 +221,20 @@
         '<rect x="46" y="72" width="50" height="42" rx="6" fill="' + P.cardiganDark + '" stroke="' + P.gold + '" stroke-width="2.5"/>' +
         '<circle cx="71" cy="93" r="6" fill="' + P.gold + '"/><rect x="68" y="90" width="6" height="14" rx="2" fill="' + P.gold + '"/>';
     },
-    desk: function () {
-      return '<rect x="0" y="0" width="170" height="120" fill="#251238"/>' +
-        '<rect x="0" y="84" width="170" height="36" fill="' + P.wood + '"/>' +
-        '<rect x="0" y="84" width="170" height="6" fill="' + P.woodLight + '"/>' +
-        '<g transform="translate(96,66) rotate(-8)"><rect x="0" y="0" width="38" height="26" rx="3" fill="' + P.paper + '"/><path d="M6 8 L32 8 M6 14 L26 14 M6 20 L30 20" stroke="' + P.deep + '" stroke-width="1.8" opacity="0.5"/></g>' +
-        '<g transform="translate(22,58) rotate(10)"><rect x="0" y="0" width="30" height="24" rx="3" fill="' + P.paper + '"/><path d="M5 7 L25 7 M5 13 L20 13" stroke="' + P.deep + '" stroke-width="1.8" opacity="0.5"/></g>';
+    sheet: function () {
+      return '<rect x="0" y="0" width="170" height="120" fill="#1d0a28"/>' +
+        '<rect x="18" y="6" width="134" height="98" rx="5" fill="' + P.paper + '"/>' +
+        '<rect x="18" y="6" width="134" height="12" rx="5" fill="' + P.excel + '"/>' +
+        '<g font-family="system-ui, sans-serif" font-size="7" font-weight="bold" fill="' + P.paper + '" text-anchor="middle">' +
+        '<text x="30" y="15">A</text><text x="60" y="15">B</text><text x="90" y="15">C</text><text x="120" y="15">D</text></g>' +
+        '<g font-family="system-ui, sans-serif" font-size="6.5" font-weight="bold" fill="' + P.deep + '" text-anchor="middle" opacity="0.8">' +
+        '<text x="27" y="30">1</text><text x="27" y="50">2</text><text x="27" y="70">3</text></g>' +
+        '<g stroke="' + P.deep + '" stroke-width="0.7" opacity="0.25"><path d="M36 24 L152 24 M36 44 L152 44 M36 64 L152 64 M36 84 L152 84 M36 22 L36 98 M66 22 L66 98 M96 22 L96 98 M126 22 L126 98"/></g>' +
+        '<g font-family="system-ui, sans-serif" font-size="7" fill="' + P.deep + '" opacity="0.85">' +
+        '<text x="42" y="36">Ruth</text><text x="70" y="36">12</text><text x="100" y="36" fill="' + P.excel + '">12,00</text>' +
+        '<text x="42" y="56">Marie</text><text x="70" y="56">5</text><text x="100" y="56" fill="' + P.excel + '">5,00</text>' +
+        '<text x="42" y="76">David</text><text x="70" y="76">9</text><text x="100" y="76" fill="' + P.excel + '">9,00</text>' +
+        '<text x="42" y="92" font-weight="bold">Total</text><text x="100" y="92" font-weight="bold">26,00</text></g>';
     },
     stage: function () {
       return '<rect x="0" y="0" width="170" height="120" fill="#150a20"/>' +
@@ -221,58 +261,54 @@
     }
   };
 
-  /* Mise en scène : décor + cadrage + Eli (ou hors-champ) + Céleste */
   function stageSVG(step) {
     var scene = (SCENES[step.scene] || SCENES.shop)();
     var eli = '', celeste = '', voice = '';
-    var zoom = step.zoom || 'wide';
-
     if (step.off) {
       voice = offstageVoice(122, 96);
-      if (step.dove) celeste = dove(step.dove, 118, 60, 1.15);
+      if (step.dove) celeste = dove(step.dove, step.doveX || 118, step.doveY || 60, step.doveS || 1.2);
     } else {
-      /* cadrage : wide = personnage entier réduit ; close = plan rapproché */
-      var t = zoom === 'close' ? 'translate(28,44) scale(1.35)' : 'translate(25,14) scale(0.85)';
+      var t = step.zoom === 'close' ? 'translate(28,44) scale(1.35)' : 'translate(25,14) scale(0.85)';
       eli = '<g transform="' + t + '">' + eliGroup(step.emo) + '</g>';
-      if (step.dove) celeste = dove(step.dove, step.doveX || 116, step.doveY || 30, step.doveS || 1.1);
+      if (step.dove) celeste = dove(step.dove, step.doveX || 118, step.doveY || 24, step.doveS || 1.15);
     }
     return '<svg viewBox="0 0 170 120" width="170" height="120" role="img" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">' + scene + eli + celeste + voice + '</svg>';
   }
 
-  /* ---------- Étapes : décor + pose, avec la disparition et le retour d'Eli ---------- */
+  /* ---------- Étapes : navigation réelle + projecteur RESTAURÉS, décor et pose par étape ---------- */
 
   var STEPS = [
-    { scene: 'shop', emo: 'wave', dove: 'fly', doveX: 112, doveY: 22, title: 'Bienvenue dans eLib',
+    { scene: 'shop', emo: 'wave', dove: 'fly', doveX: 116, doveY: 22, title: 'Bienvenue dans eLib',
       text: "Bonjour, je suis Eli — et voici Céleste, notre colombe ! Suivez-nous, rien ne sera modifié. Échap pour quitter." },
-    { scene: 'chart', emo: 'present', title: 'Lire le tableau de bord',
+    { scene: 'chart', emo: 'present', view: 'dashboard', sel: '#dashTabSeg', pos: 'bottom', title: 'Lire le tableau de bord',
       text: "Voici l'activité d'un coup d'œil : la Synthèse et le Studio. Les filtres de période comparent ventes et stocks." },
-    { scene: 'scanScene', emo: 'scan', title: 'Trouver un livre',
+    { scene: 'scanScene', emo: 'scan', view: 'pos', sel: '#q', pos: 'bottom', title: 'Trouver un livre',
       text: "Je scrute les rayonnages : tapez un titre ou un ISBN. Un lecteur de code-barres remplit aussi ce champ." },
-    { scene: 'counter', emo: 'hold', title: 'Composer le panier',
+    { scene: 'counter', emo: 'hold', view: 'pos', sel: '#items', pos: 'left', title: 'Composer le panier',
       text: "On rassemble, on choisit l'origine de chaque exemplaire et le paiement. Rien n'est enregistré avant « Valider »." },
-    { scene: 'emptyCounter', emo: 'effort', off: true, title: 'Réceptionner du stock',
+    { scene: 'warehouse', emo: 'effort', off: true, view: 'stock', sel: '#newLot', pos: 'bottom', title: 'Réceptionner du stock',
       text: "Deux secondes, je vais chercher les cartons ! — Pendant ce temps : cette action ouvre le formulaire livre, origine, quantité, date." },
-    { scene: 'emptyCounter', emo: 'alert', off: true, dove: 'talk', doveX: 20, doveY: 84, title: 'Surveiller les niveaux',
-      text: "« D'ici je vois les écrans ! » — disponibles, stock bas, rupture. Sélectionnez une ligne pour les lots et l'historique." },
-    { scene: 'shop', emo: 'effort', enter: true, title: 'Gérer le catalogue',
+    { scene: 'levels', emo: 'alert', off: true, dove: 'talk', doveX: 66, doveY: 66, view: 'stock', sel: '#fs', pos: 'bottom', title: 'Surveiller les niveaux',
+      text: "« D'ici je vois les états ! » — disponibles, stock bas, rupture. Sélectionnez une ligne pour les lots et l'historique." },
+    { scene: 'catalog', emo: 'effort', enter: true, view: 'catalog', sel: '#nb', pos: 'bottom', title: 'Gérer le catalogue',
       text: "Me revoilà, cartons rangés ! Le catalogue est votre rayonnage numérique : fiches livres et packs, création en haut d'écran." },
-    { scene: 'ledger', emo: 'think', zoom: 'close', title: 'Consulter les ventes',
+    { scene: 'ledger', emo: 'think', view: 'sales', sel: '#view .table-wrap', pos: 'top', title: 'Consulter les ventes',
       text: "Là, on réfléchit à deux fois : l'annulation d'une vente restitue le stock. Réservez-la aux vraies erreurs." },
-    { scene: 'vault', emo: 'count', title: 'Suivre la trésorerie',
+    { scene: 'vault', emo: 'count', view: 'treasury', sel: '#view .grid.g4', pos: 'bottom', title: 'Suivre la trésorerie',
       text: "Chaque pièce compte : espèces en caisse, paiements à régulariser, sommes à déposer — associées au libraire." },
-    { scene: 'night', emo: 'shield', title: 'Protéger les données',
+    { scene: 'night', emo: 'shield', view: 'audit', sel: '#bk', pos: 'bottom', title: 'Protéger les données',
       text: "La nuit, je monte la garde : journaux et sauvegardes ici. Créez un snapshot avant toute opération importante." },
-    { scene: 'desk', emo: 'busy', title: 'Données et Excel',
+    { scene: 'sheet', emo: 'busy', view: 'data', sel: '#view .card', pos: 'top', title: 'Données et Excel',
       text: "On remet de l'ordre : imports/exports, origines de stock et listes personnalisables vivent dans cette rubrique." },
-    { scene: 'stage', emo: 'cheer', dove: 'fly', doveX: 128, doveY: 20, title: 'Régie Live',
+    { scene: 'stage', emo: 'cheer', dove: 'fly', doveX: 130, doveY: 20, sel: '#btnFocusMode', pos: 'bottom', title: 'Régie Live',
       text: "Le grand soir : pendant le culte, activez la Régie Live (F11) et suivez en direct les scans des smartphones !" },
-    { scene: 'split', emo: 'wink', title: 'Thème',
+    { scene: 'split', emo: 'wink', sel: '#btnThemeToggle', pos: 'bottom', title: 'Thème',
       text: "Jour ou nuit, selon votre goût : clair, sombre ou automatique (F10)." },
-    { scene: 'finale', emo: 'party', dove: 'fly', doveX: 120, doveY: 16, title: "C'est parti !",
+    { scene: 'finale', emo: 'party', dove: 'fly', doveX: 124, doveY: 14, title: "C'est parti !",
       text: "Vous êtes prêt ! Céleste et moi restons là : cliquez sur « ? Aide » en bas à droite pour revoir cette visite." }
   ];
 
-  var list = [], idx = 0, active = false, navigating = false, root = null;
+  var list = [], idx = 0, active = false, navigating = false, root = null, stageIdx = -1;
 
   function $(id) { return document.getElementById(id); }
 
@@ -345,13 +381,16 @@
     $('tut-prev').style.visibility = idx === 0 ? 'hidden' : 'visible';
     $('tut-next').textContent = idx === list.length - 1 ? 'Terminer' : 'Suivant';
 
-    /* Nouvelle scène à chaque étape : entrée vivante, ou sortie d'Eli s'il quitte la scène */
-    stage.classList.remove('tut-pop', 'tut-exit', 'tut-enter');
-    void stage.offsetWidth;
-    stage.innerHTML = stageSVG(s);
-    if (s.enter) stage.classList.add('tut-enter');
-    else if (s.off) stage.classList.add('tut-exit');
-    else stage.classList.add('tut-pop');
+    /* La scène ne se rejoue qu'au changement d'étape (place() est appelé deux fois par étape) */
+    if (stageIdx !== idx) {
+      stageIdx = idx;
+      stage.classList.remove('tut-pop', 'tut-exit', 'tut-enter');
+      void stage.offsetWidth;
+      stage.innerHTML = stageSVG(s);
+      if (s.enter) stage.classList.add('tut-enter');
+      else if (s.off) stage.classList.add('tut-exit');
+      else stage.classList.add('tut-pop');
+    }
 
     if (!target) {
       root.classList.add('tut-nospot');
@@ -422,6 +461,7 @@
     window.removeEventListener('resize', place);
     window.removeEventListener('scroll', place, true);
     if (root) { root.remove(); root = null; }
+    stageIdx = -1;
   }
 
   function start() {
