@@ -113,8 +113,25 @@ def build():
             "pip",
             "install",
             "--only-binary=:all:",
+            # pywebview >= 4 dépend de proxy_tools, publié uniquement en source :
+            # sans cette exception, pip retombe silencieusement sur pywebview 3.4,
+            # qui ne possède pas webview.settings et casse la fenêtre au lancement.
+            "--no-binary=proxy-tools",
             "-r",
             os.path.join(PROJECT_DIR, "requirements.txt"),
+        ],
+        cwd=PROJECT_DIR,
+        check=True,
+    )
+    # Garde-fou : refuser de produire un binaire avec un pywebview incompatible.
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import webview; assert hasattr(webview, 'settings'), "
+            "'pywebview installe ne possede pas webview.settings'; "
+            "from importlib.metadata import version; "
+            "assert version('pywebview') == '6.2.1', version('pywebview')",
         ],
         cwd=PROJECT_DIR,
         check=True,

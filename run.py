@@ -226,9 +226,21 @@ def main():
         pass
     except Exception as error:
         if getattr(sys, "frozen", False):
+            # Le binaire distribué n'a pas de console : journaliser la trace complète
+            # à côté de l'exécutable pour diagnostiquer les échecs de démarrage.
+            try:
+                import traceback
+
+                crash_log = os.path.join(os.path.dirname(sys.executable), "startup_crash.log")
+                with open(crash_log, "a", encoding="utf-8") as fh:
+                    fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+                    fh.write(traceback.format_exc())
+            except Exception:
+                pass
             message = (
                 "eLib could not start its bundled application window.\n\n"
-                f"Details: {error}"
+                f"Details: {error}\n\n"
+                "La trace complète est enregistrée dans startup_crash.log à côté de eLib.exe."
             )
             if sys.platform == "win32":
                 ctypes.windll.user32.MessageBoxW(None, message, "eLib startup error", 0x10)
