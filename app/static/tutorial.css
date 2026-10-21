@@ -102,43 +102,45 @@
 }
 #tut-help-btn:hover { border-color: var(--icc-purple, #8f16ad); color: var(--icc-purple, #8f16ad); }
 
-/* ---------- Eli, le guide ---------- */
-.tut-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
-.tut-guide-wrap { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.tut-guide { line-height: 0; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45)); }
-.tut-guide svg { display: block; }
-.tut-name {
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: .6px;
-  color: var(--a2, #ca88e3);
-  text-transform: uppercase;
+/* ---------- Mise en scène : Eli, Céleste et les décors ---------- */
+.tut-stage-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  margin: -6px -6px 10px;
+  border: 1px solid var(--line, rgba(226, 192, 242, 0.14));
+  background: #1d0a28;
 }
-.tut-headtext { flex: 1; min-width: 0; }
-.tut-headtext .tut-count { font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--a2, #ca88e3); }
-.tut-headtext h3 {
-  font-family: var(--font-display, inherit);
-  font-size: 17px;
-  font-weight: 800;
-  margin: 2px 0 0;
-  color: var(--text-title, #fff);
-  text-transform: none;
-}
+.tut-stage { line-height: 0; }
+.tut-stage svg { display: block; width: 100%; height: auto; }
 
-/* Entrée vivante à chaque changement de pose */
-.tut-guide.tut-pop { animation: tut-pop .38s cubic-bezier(.34, 1.56, .64, 1); }
+/* Entrées de scène */
+.tut-stage.tut-pop { animation: tut-pop .42s cubic-bezier(.34, 1.56, .64, 1); }
 @keyframes tut-pop {
-  0% { transform: scale(.72) rotate(-5deg); opacity: 0; }
-  60% { transform: scale(1.05) rotate(2deg); opacity: 1; }
+  0% { transform: scale(.86) rotate(-2deg); opacity: 0; }
+  60% { transform: scale(1.03) rotate(1deg); opacity: 1; }
   100% { transform: scale(1) rotate(0deg); }
 }
 
-/* Dernière étape : Eli en grand */
-.tut-card.tut-center .tut-guide svg { width: 96px; height: 96px; }
-.tut-card.tut-center .tut-head { flex-direction: column; text-align: center; gap: 8px; }
-.tut-card.tut-center .tut-headtext h3 { font-size: 19px; }
+/* Eli hors-champ : la scène respire doucement (sa voix vient du bord) */
+.tut-stage.tut-exit { animation: tut-breathe 2.4s ease-in-out infinite; }
+@keyframes tut-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.025); }
+}
+
+/* Retour triomphal d'Eli : il entre depuis la droite */
+.tut-stage.tut-enter { animation: tut-enter .55s cubic-bezier(.2, 1.2, .4, 1); }
+@keyframes tut-enter {
+  0% { transform: translateX(46%); opacity: 0; }
+  70% { transform: translateX(-4%); opacity: 1; }
+  100% { transform: translateX(0); }
+}
+
+/* Carte un peu plus large pour la scène */
+.tut-card { width: min(400px, calc(100vw - 24px)); }
+.tut-card .tut-count { margin-bottom: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .tut-spot, .tut-card { transition: none; }
-  .tut-guide.tut-pop { animation: none; }
+  .tut-stage.tut-pop, .tut-stage.tut-exit, .tut-stage.tut-enter { animation: none; }
 }
