@@ -7,17 +7,9 @@ const DEVICE_KEY = 'librairie_device_key';
 let currentMode = 'sale'; // 'sale' | 'recv'
 
 /* ---------- Gestion dynamique de la hauteur visible du viewport (non-fullscreen / plein écran) ---------- */
-let manualSearchFocused = false;
-let stableViewportHeight = window.innerHeight;
-let searchViewportBlurTimer = null;
-let searchViewportBlurStarted = 0;
 function updateViewportHeight() {
   const vv = window.visualViewport;
-  const layoutHeight = window.innerHeight;
-  if (!manualSearchFocused) stableViewportHeight = layoutHeight;
-  const h = manualSearchFocused
-    ? Math.max(stableViewportHeight, layoutHeight)
-    : vv ? vv.height : layoutHeight;
+  const h = vv ? vv.height : window.innerHeight;
   document.documentElement.style.setProperty('--vvh', `${Math.round(h)}px`);
 }
 updateViewportHeight();
@@ -25,30 +17,16 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', updateViewportHeight);
 }
 window.addEventListener('resize', updateViewportHeight);
-window.addEventListener('orientationchange', () => setTimeout(() => {
-  if (manualSearchFocused) stableViewportHeight = window.innerHeight;
-  updateViewportHeight();
-}, 100));
+window.addEventListener('orientationchange', () => setTimeout(updateViewportHeight, 100));
 window.addEventListener('pageshow', updateViewportHeight);
 window.addEventListener('focus', updateViewportHeight);
 $('#manualCode').addEventListener('focus', () => {
-  manualSearchFocused = true;
-  stableViewportHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--vvh')) || window.innerHeight;
+  document.body.classList.add('search-active');
   updateViewportHeight();
 });
 $('#manualCode').addEventListener('blur', () => {
-  searchViewportBlurStarted = Date.now();
-  const releaseViewportLock = () => {
-    const visibleHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    if (visibleHeight < stableViewportHeight - 120 && Date.now() - searchViewportBlurStarted < 1500) {
-      searchViewportBlurTimer = setTimeout(releaseViewportLock, 80);
-      return;
-    }
-    manualSearchFocused = false;
-    updateViewportHeight();
-  };
-  clearTimeout(searchViewportBlurTimer);
-  searchViewportBlurTimer = setTimeout(releaseViewportLock, 80);
+  document.body.classList.remove('search-active');
+  updateViewportHeight();
 });
 
 const SVG_TAGS = new Set(['svg', 'path', 'line', 'circle', 'polyline', 'polygon', 'rect', 'g']);
@@ -3165,10 +3143,13 @@ async function manualSearch(requestId = ++manualSearchRequest) {
   const q = $('#manualCode').value.trim();
   const box = $('#results'); box.replaceChildren();
   if (!q) return;
-  const normalizedCode = q.replace(/[\s-]/g, '');
-  if (isValidBarcode(normalizedCode)) {
+  if (/^[0-9][0-9\- ]{7,}$/.test(q)) {
+    const normalizedCode = q.replace(/[\s-]/g, '');
     await lookupCode(normalizedCode);
-    if (requestId === manualSearchRequest && $('#manualCode').value.trim() === q) $('#manualCode').value = '';
+    if (requestId === manualSearchRequest && $('#manualCode').value.trim() === q) {
+      $('#manualCode').value = '';
+      $('#manualCode').blur();
+    }
     return;
   }
   try {
@@ -3186,6 +3167,7 @@ async function manualSearch(requestId = ++manualSearchRequest) {
         clearTimeout(manualSearchTimer);
         box.replaceChildren(); 
         $('#manualCode').value = ''; 
+        $('#manualCode').blur();
       }
     }, el('div', { class: 'ci-title', text: b.title + (b.volume ? ' · Vol. ' + b.volume : '') }),
        el('div', { class: 'muted', text: `${b.code} · ${eur(b.price)} · stock ${b.stock}` }))));
@@ -3199,14 +3181,11 @@ function scheduleManualSearch() {
   const requestId = ++manualSearchRequest;
   const box = $('#results');
   box.replaceChildren();
-  if (!q || (q.length < 2 && !isValidBarcode(q.replace(/[\s-]/g, '')))) return;
+  if (!q || (q.length < 2 && !/^[0-9][0-9\- ]{7,}$/.test(q))) return;
   manualSearchTimer = setTimeout(() => manualSearch(requestId), 320);
 }
 $('#manualCode').addEventListener('input', scheduleManualSearch);
-$('#btnSearch').addEventListener('click', () => {
-  clearTimeout(manualSearchTimer);
-  manualSearch();
-});
+$('#btnSearch').addEventListener('click', () => $('#manualCode').blur());
 $('#manualCode').addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     clearTimeout(manualSearchTimer);

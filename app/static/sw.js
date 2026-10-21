@@ -1,5 +1,5 @@
 // Service Worker Librairi-E – Anti-écran blanc & App Shell hors-ligne
-const CACHE_NAME = 'librairie-shell-v22';
+const CACHE_NAME = 'librairie-shell-v23';
 const SHELL_ASSETS = [
   '/mobile',
   '/static/mobile.js',

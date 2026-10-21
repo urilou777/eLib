@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=overlays-content">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#12071a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -225,8 +225,14 @@ button, select, input { font:inherit; color:inherit; }
 }
 .row { display: flex; gap: 8px; width: 100%; max-width: 100%; box-sizing: border-box; }
 .field { flex: 1; padding: 11px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; min-width: 0; }
-.search-icon-btn { width: 46px; min-width: 46px; height: 44px; padding: 10px; flex: 0 0 46px; }
-.search-icon-btn svg { width: 20px; height: 20px; }
+.search-close-btn { display: none; width: 42px; min-width: 42px; height: 42px; padding: 9px; flex: 0 0 42px; }
+.search-close-btn svg { width: 20px; height: 20px; }
+body.search-active #app .search-close-btn { display: inline-flex; }
+body.search-active #app #camContainer,
+body.search-active #app .bottom-bar { display: none !important; }
+body.search-active #app .main-body > :not(.row):not(#results) { display: none !important; }
+body.search-active #app .main-body { padding-top: 6px; gap: 6px; }
+body.search-active #app #results { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; width: 100%; max-width: 100%; box-sizing: border-box; }
 .results { display: flex; flex-direction: column; gap: 6px; }
 .result { text-align: left; background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
@@ -996,8 +1002,8 @@ button, select, input { font:inherit; color:inherit; }
     <div class="row">
       <input class="field" id="manualCode" type="search" enterkeyhint="search" autocomplete="off"
              placeholder="Rechercher livre ou ISBN…">
-      <button class="btn primary search-icon-btn" id="btnSearch" type="button" aria-label="Rechercher" title="Rechercher">
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg>
+      <button class="btn search-close-btn" id="btnSearch" type="button" aria-label="Fermer la recherche et le clavier" title="Fermer la recherche">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"></path></svg>
       </button>
     </div>
     <div class="results" id="results"></div>
@@ -1394,7 +1400,7 @@ button, select, input { font:inherit; color:inherit; }
 <div id="toasts" aria-live="polite"></div>
 
 <script src="/static/vendor/zxing.min.js"></script>
-<script src="/static/mobile.js?v=20261021_mobile_search_v2"></script>
+<script src="/static/mobile.js?v=20261021_mobile_search_v3"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
