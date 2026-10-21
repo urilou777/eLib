@@ -1,10 +1,10 @@
-/* eLib – Visite guidée mise en scène avec Eli le libraire-guide et Céleste la colombe.
+/* eLib – Visite guidée mise en scène avec Eli le libraire-guide et Plume le petit livre volant.
    Décors concrets par étape, navigation réelle entre écrans, projecteur sur l'élément ciblé.
    100 % local, aucun asset externe, aucun emoji. */
 (function () {
   'use strict';
 
-  var KEY = 'librairie_tutorial_done_v5';
+  var KEY = 'librairie_tutorial_done_v6';
 
   var P = {
     cardigan: '#5e2f7d', cardiganDark: '#3f1f57', shirt: '#f4ead9',
@@ -87,24 +87,31 @@
       brows(cfg.b) + eyes(cfg.e) + glasses + mouth(cfg.m) + '</g>';
   }
 
-  /* ---------- Céleste v2 : anatomie de colombe (tête fine, bec court, queue en éventail) ---------- */
-  function dove(pose, x, y, s) {
+  /* ---------- Plume, le petit livre ailé (remplace la colombe, définitivement) ---------- */
+  function plume(pose, x, y, s) {
     s = s || 1;
     var g = '<g transform="translate(' + x + ',' + y + ') scale(' + s + ')">';
-    /* queue en éventail (3 plumes) */
-    g += '<g stroke="' + P.paper + '" stroke-width="2.6" stroke-linecap="round"><path d="M2 2 L-9 -4"/><path d="M1 3 L-10 3"/><path d="M2 4 L-9 10"/></g>';
-    /* corps fuselé */
-    g += '<path d="M0 3 C3 -3 13 -7 20 -5 C25 -4 26 0 22 2 C17 5 6 5 0 3 Z" fill="' + P.cream + '" stroke="' + P.paper + '" stroke-width="1"/>';
-    /* aile repliée, plumes marquées */
-    g += '<path d="M7 0 Q13 -4 19 -1 Q14 3 7 0 Z" fill="' + P.paper + '"/>' +
-         '<path d="M9 -0.5 L17 -1 M9 1 L15 1.2" stroke="' + P.cream + '" stroke-width="0.8" stroke-linecap="round"/>';
-    /* petite tête + petit bec conique */
-    g += '<circle cx="22.5" cy="-6" r="3.4" fill="' + P.cream + '"/>' +
-         '<path d="M25.6 -6.4 L28.6 -5.6 L25.6 -4.9 Z" fill="' + P.glass + '"/>' +
-         '<circle cx="23.4" cy="-6.6" r="0.8" fill="' + P.dark + '"/>';
-    /* aile déployée si elle vole */
-    if (pose === 'fly') g += '<path d="M9 -2 Q3 -12 15 -13 Q19 -8 12 -2 Z" fill="' + P.paper + '"/>';
-    if (pose === 'talk') g += '<path d="M14 -12 Q12 -17 16 -18.5 Q20 -17 18 -12" fill="none" stroke="' + P.gold + '" stroke-width="1.4"/>';
+    /* marque-page doré */
+    g += '<path d="M11 20 L11 26 L14 23.5 L17 26 L17 20" fill="' + P.gold + '"/>';
+    /* corps : petit livre fermé */
+    g += '<rect x="0" y="0" width="28" height="20" rx="3" fill="' + P.book + '"/>' +
+         '<rect x="0" y="0" width="5" height="20" rx="2.5" fill="' + P.deep + '"/>' +
+         '<rect x="25" y="2.5" width="3" height="15" rx="1" fill="' + P.cream + '"/>';
+    /* tranche de pages */
+    g += '<path d="M25 2.5 L28 2.5 L28 17.5 L25 17.5" fill="' + P.paper + '"/>';
+    /* visage : deux yeux ronds et un petit sourire */
+    g += '<circle cx="12" cy="8" r="2" fill="' + P.dark + '"/><circle cx="19" cy="8" r="2" fill="' + P.dark + '"/>' +
+         '<path d="M13 13 Q15.5 15 18 13" fill="none" stroke="' + P.dark + '" stroke-width="1.6" stroke-linecap="round"/>';
+    /* joues */
+    g += '<circle cx="8.5" cy="12" r="1.5" fill="' + P.blush + '" opacity="0.6"/><circle cx="22.5" cy="12" r="1.5" fill="' + P.blush + '" opacity="0.6"/>';
+    /* ailes */
+    if (pose === 'fly') {
+      g += '<path d="M0 6 Q-9 2 -7 -6 Q-1 -3 1 4 Z" fill="' + P.paper + '"/>' +
+           '<path d="M28 6 Q37 2 35 -6 Q29 -3 27 4 Z" fill="' + P.paper + '"/>';
+    } else {
+      g += '<path d="M2 4 Q-4 6 -3 10 Q1 10 3 6 Z" fill="' + P.paper + '"/>';
+    }
+    if (pose === 'talk') g += '<path d="M14 -6 Q12 -11 16 -12.5 Q20 -11 18 -6" fill="none" stroke="' + P.gold + '" stroke-width="1.4"/>';
     g += '</g>';
     return g;
   }
@@ -137,7 +144,7 @@
         '<rect x="8" y="52" width="70" height="4" rx="2" fill="' + P.wood + '"/>' + bookRow(10, 52, 60) +
         '<rect x="104" y="14" width="56" height="38" rx="6" fill="' + P.cardiganDark + '"/>' +
         '<rect x="110" y="20" width="44" height="26" rx="4" fill="' + P.paper + '"/>' +
-        '<text x="132" y="37" text-anchor="middle" font-family="Georgia, serif" font-size="12" font-weight="bold" fill="' + P.deep + '">eLib</text>' +
+        '<path d="M132 26 v14 M125 32 h14" stroke="' + P.deep + '" stroke-width="3" stroke-linecap="round"/>' +
         '<path d="M108 56 q62 10 56 24" fill="none" stroke="' + P.gold + '" stroke-width="1.4" opacity="0.7"/>';
     },
     catalog: function () {
@@ -177,6 +184,7 @@
         '<rect x="0" y="78" width="170" height="7" fill="' + P.woodLight + '"/>' +
         '<g><rect x="46" y="52" width="40" height="28" rx="2" fill="' + P.paper + '" stroke="' + P.wood + '" stroke-width="1.6"/><path d="M46 66 L86 66" stroke="' + P.wood + '" stroke-width="1.4" opacity="0.7"/><rect x="60" y="46" width="12" height="34" rx="1" fill="' + P.gold + '" opacity="0.5"/></g>' +
         '<g><rect x="98" y="60" width="28" height="20" rx="2" fill="' + P.paper + '" stroke="' + P.wood + '" stroke-width="1.6"/><rect x="104" y="56" width="16" height="6" rx="1" fill="' + P.book + '" opacity="0.8"/></g>' +
+        '<g transform="translate(20,42)"><path d="M0 22 Q-2 8 12 6 Q26 8 24 22 Z" fill="' + P.gold + '"/><path d="M0 22 L24 22 L22 26 L2 26 Z" fill="' + P.wood + '"/><g stroke="' + P.paper + '" stroke-width="1.2" stroke-linecap="round"><path d="M8 4 L8 -2 M8 4 L5 -1 M8 4 L11 -1"/></g></g>' +
         '<rect x="128" y="8" width="40" height="72" rx="3" fill="' + P.night + '"/>' +
         '<path d="M132 14 L164 14 M132 22 L164 22" stroke="' + P.cardigan + '" stroke-width="1.6" opacity="0.6"/>' +
         '<g stroke="' + P.gold + '" stroke-width="2" stroke-linecap="round" opacity="0.9"><path d="M144 50 q14 -2 14 -14"/><path d="M144 50 q10 4 10 12"/></g>';
@@ -187,6 +195,7 @@
         '<g><rect x="63" y="14" width="44" height="40" rx="6" fill="' + P.cardiganDark + '"/><rect x="69" y="26" width="20" height="20" rx="2" fill="' + P.book + '" opacity="0.55"/><circle cx="97" cy="46" r="4.4" fill="' + P.low + '"/><path d="M95 44 L99 48 M99 44 L95 48" stroke="' + P.night + '" stroke-width="1.6" stroke-linecap="round"/></g>' +
         '<g><rect x="114" y="14" width="44" height="40" rx="6" fill="' + P.cardiganDark + '"/><rect x="120" y="34" width="20" height="12" rx="2" fill="' + P.book + '" opacity="0.25"/><circle cx="148" cy="46" r="4.4" fill="' + P.out + '"/><path d="M146 44 L150 48 M150 44 L146 48" stroke="' + P.night + '" stroke-width="1.6" stroke-linecap="round"/></g>' +
         '<path d="M34 72 L34 92 M34 92 l-4 -6 M34 92 l4 -6" stroke="' + P.gold + '" stroke-width="1.8" fill="none" stroke-linecap="round" opacity="0.7"/>' +
+        '<g transform="translate(126,74)"><path d="M0 4 Q10 8 18 0 L26 -6 Q27 -1 24 3 Q16 12 4 9 Z" fill="' + P.gold + '" stroke="' + P.wood + '" stroke-width="1"/><path d="M0 4 L-3 9" stroke="' + P.wood + '" stroke-width="2" stroke-linecap="round"/></g>' +
         '<text x="85" y="98" text-anchor="middle" font-family="system-ui, sans-serif" font-size="7" fill="' + P.paper + '" opacity="0.75">disponibles · stock bas · rupture</text>';
     },
     ledger: function () {
@@ -263,49 +272,63 @@
 
   function stageSVG(step) {
     var scene = (SCENES[step.scene] || SCENES.shop)();
-    var eli = '', celeste = '', voice = '';
+    var eli = '', sidekick = '', voice = '';
     if (step.off) {
       voice = offstageVoice(122, 96);
-      if (step.dove) celeste = dove(step.dove, step.doveX || 118, step.doveY || 60, step.doveS || 1.2);
+      if (step.plume) sidekick = plume(step.plume, step.doveX || 118, step.doveY || 60, step.doveS || 1.2);
     } else {
       var t = step.zoom === 'close' ? 'translate(28,44) scale(1.35)' : 'translate(25,14) scale(0.85)';
       eli = '<g transform="' + t + '">' + eliGroup(step.emo) + '</g>';
-      if (step.dove) celeste = dove(step.dove, step.doveX || 118, step.doveY || 24, step.doveS || 1.15);
+      if (step.plume) sidekick = plume(step.plume, step.doveX || 118, step.doveY || 24, step.doveS || 1.15);
     }
-    return '<svg viewBox="0 0 170 120" width="170" height="120" role="img" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">' + scene + eli + celeste + voice + '</svg>';
+    return '<svg viewBox="0 0 170 120" width="170" height="120" role="img" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">' + scene + eli + sidekick + voice + '</svg>';
   }
 
   /* ---------- Étapes : navigation réelle + projecteur RESTAURÉS, décor et pose par étape ---------- */
 
   var STEPS = [
-    { scene: 'shop', emo: 'wave', dove: 'fly', doveX: 116, doveY: 22, title: 'Bienvenue dans eLib',
-      text: "Bonjour, je suis Eli — et voici Céleste, notre colombe ! Suivez-nous, rien ne sera modifié. Échap pour quitter." },
+    { scene: 'shop', emo: 'wave', plume: 'fly', doveX: 118, doveY: 22, title: 'Bienvenue dans eLib',
+      ref: { q: "Ne crains rien, car je t'ai appelé par ton nom", r: 'Ésaïe 43:1' },
+      text: "Bonjour, je suis Eli — et voici Plume, notre petit livre ailé ! Suivez-nous, rien ne sera modifié. Échap pour quitter." },
     { scene: 'chart', emo: 'present', view: 'dashboard', sel: '#dashTabSeg', pos: 'bottom', title: 'Lire le tableau de bord',
+      ref: { q: "Écris la vision, grave-la sur des tables, afin qu'on puisse la lire couramment", r: 'Habakuk 2:2' },
       text: "Voici l'activité d'un coup d'œil : la Synthèse et le Studio. Les filtres de période comparent ventes et stocks." },
     { scene: 'scanScene', emo: 'scan', view: 'pos', sel: '#q', pos: 'bottom', title: 'Trouver un livre',
+      ref: { q: "Cherchez, et vous trouverez", r: 'Matthieu 7:7' },
       text: "Je scrute les rayonnages : tapez un titre ou un ISBN. Un lecteur de code-barres remplit aussi ce champ." },
     { scene: 'counter', emo: 'hold', view: 'pos', sel: '#items', pos: 'left', title: 'Composer le panier',
+      ref: { q: "Il prit les pains, et les distribua", r: 'Jean 6:11' },
       text: "On rassemble, on choisit l'origine de chaque exemplaire et le paiement. Rien n'est enregistré avant « Valider »." },
     { scene: 'warehouse', emo: 'effort', off: true, view: 'stock', sel: '#newLot', pos: 'bottom', title: 'Réceptionner du stock',
-      text: "Deux secondes, je vais chercher les cartons ! — Pendant ce temps : cette action ouvre le formulaire livre, origine, quantité, date." },
-    { scene: 'levels', emo: 'alert', off: true, dove: 'talk', doveX: 66, doveY: 66, view: 'stock', sel: '#fs', pos: 'bottom', title: 'Surveiller les niveaux',
-      text: "« D'ici je vois les états ! » — disponibles, stock bas, rupture. Sélectionnez une ligne pour les lots et l'historique." },
+      ref: { q: "Joseph amassa du blé... une quantité innombrable", r: 'Genèse 41:49' },
+      text: "Deux secondes, je range les sacs de blé ! — Pendant ce temps : cette action ouvre le formulaire livre, origine, quantité, date." },
+    { scene: 'levels', emo: 'alert', off: true, plume: 'talk', doveX: 66, doveY: 64, view: 'stock', sel: '#fs', pos: 'bottom', title: 'Surveiller les niveaux',
+      ref: { q: "La sentinelle... sonne de la trompette", r: 'Ézéchiel 33:6' },
+      text: "« Je sonne l'alerte d'ici ! » — disponibles, stock bas, rupture. Sélectionnez une ligne pour les lots et l'historique." },
     { scene: 'catalog', emo: 'effort', enter: true, view: 'catalog', sel: '#nb', pos: 'bottom', title: 'Gérer le catalogue',
-      text: "Me revoilà, cartons rangés ! Le catalogue est votre rayonnage numérique : fiches livres et packs, création en haut d'écran." },
+      ref: { q: "Que tout se fasse avec ordre", r: '1 Corinthiens 14:40' },
+      text: "Me revoilà, tout est en ordre ! Le catalogue est votre rayonnage numérique : fiches livres et packs, création en haut d'écran." },
     { scene: 'ledger', emo: 'think', view: 'sales', sel: '#view .table-wrap', pos: 'top', title: 'Consulter les ventes',
+      ref: { q: "Enseigne-nous à bien compter nos jours", r: 'Psaume 90:12' },
       text: "Là, on réfléchit à deux fois : l'annulation d'une vente restitue le stock. Réservez-la aux vraies erreurs." },
     { scene: 'vault', emo: 'count', view: 'treasury', sel: '#view .grid.g4', pos: 'bottom', title: 'Suivre la trésorerie',
+      ref: { q: "Là où est ton trésor, là aussi sera ton cœur", r: 'Matthieu 6:21' },
       text: "Chaque pièce compte : espèces en caisse, paiements à régulariser, sommes à déposer — associées au libraire." },
     { scene: 'night', emo: 'shield', view: 'audit', sel: '#bk', pos: 'bottom', title: 'Protéger les données',
+      ref: { q: "Celui qui garde Israël ne sommeille ni ne dort", r: 'Psaume 121:4' },
       text: "La nuit, je monte la garde : journaux et sauvegardes ici. Créez un snapshot avant toute opération importante." },
     { scene: 'sheet', emo: 'busy', view: 'data', sel: '#view .card', pos: 'top', title: 'Données et Excel',
-      text: "On remet de l'ordre : imports/exports, origines de stock et listes personnalisables vivent dans cette rubrique." },
-    { scene: 'stage', emo: 'cheer', dove: 'fly', doveX: 130, doveY: 20, sel: '#btnFocusMode', pos: 'bottom', title: 'Régie Live',
+      ref: { q: "Il appliqua son cœur à étudier... et à mettre en pratique", r: 'Esdras 7:10' },
+      text: "Comme Esdras le scribe, on remet de l'ordre : imports/exports, origines de stock et listes personnalisables." },
+    { scene: 'stage', emo: 'cheer', plume: 'fly', doveX: 130, doveY: 18, sel: '#btnFocusMode', pos: 'bottom', title: 'Régie Live',
+      ref: { q: "Je suis dans la joie quand on me dit : allons à la maison de l'Éternel", r: 'Psaume 122:1' },
       text: "Le grand soir : pendant le culte, activez la Régie Live (F11) et suivez en direct les scans des smartphones !" },
     { scene: 'split', emo: 'wink', sel: '#btnThemeToggle', pos: 'bottom', title: 'Thème',
+      ref: { q: "La nuit brille comme le jour", r: 'Psaume 139:12' },
       text: "Jour ou nuit, selon votre goût : clair, sombre ou automatique (F10)." },
-    { scene: 'finale', emo: 'party', dove: 'fly', doveX: 124, doveY: 14, title: "C'est parti !",
-      text: "Vous êtes prêt ! Céleste et moi restons là : cliquez sur « ? Aide » en bas à droite pour revoir cette visite." }
+    { scene: 'finale', emo: 'party', plume: 'fly', doveX: 126, doveY: 12, title: "C'est parti !",
+      ref: { q: "Tout ce que vous faites, faites-le de bon cœur, comme pour le Seigneur", r: 'Colossiens 3:23' },
+      text: "Vous êtes prêt ! Plume et moi restons là : cliquez sur « ? Aide » en bas à droite pour revoir cette visite." }
   ];
 
   var list = [], idx = 0, active = false, navigating = false, root = null, stageIdx = -1;
@@ -353,6 +376,7 @@
         '<div class="tut-count" id="tut-count"></div>' +
         '<h3 id="tut-title"></h3>' +
         '<p id="tut-text"></p>' +
+        '<div class="tut-ref" id="tut-ref"></div>' +
         '<div class="tut-actions">' +
           '<button type="button" class="tut-skip" id="tut-skip">Passer</button>' +
           '<span class="tut-spacer"></span>' +
@@ -377,6 +401,13 @@
 
     $('tut-title').textContent = s.title;
     $('tut-text').textContent = s.text;
+    var refEl = $('tut-ref');
+    if (s.ref) {
+      refEl.style.display = '';
+      refEl.textContent = '« ' + s.ref.q + ' » — ' + s.ref.r;
+    } else {
+      refEl.style.display = 'none';
+    }
     $('tut-count').textContent = (idx + 1) + ' / ' + list.length;
     $('tut-prev').style.visibility = idx === 0 ? 'hidden' : 'visible';
     $('tut-next').textContent = idx === list.length - 1 ? 'Terminer' : 'Suivant';
@@ -478,7 +509,7 @@
     b.id = 'tut-help-btn';
     b.type = 'button';
     b.textContent = '? Aide';
-    b.title = 'Revoir la visite guidée avec Eli et Céleste';
+    b.title = 'Revoir la visite guidée avec Eli et Plume';
     b.onclick = start;
     document.body.appendChild(b);
   }

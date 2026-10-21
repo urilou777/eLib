@@ -136,6 +136,21 @@
   100% { transform: translateX(0); }
 }
 
+/* Citation biblique de l'étape */
+.tut-ref {
+  margin: 10px 0 0;
+  padding: 7px 10px;
+  border-left: 3px solid var(--a2, #ca88e3);
+  background: rgba(143, 22, 173, 0.10);
+  border-radius: 0 8px 8px 0;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--a2, #ca88e3);
+}
+.tut-ref::first-line { font-style: normal; }
+
 /* Carte un peu plus large pour la scène */
 .tut-card { width: min(400px, calc(100vw - 24px)); }
 .tut-card .tut-count { margin-bottom: 0; }
