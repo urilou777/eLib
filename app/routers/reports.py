@@ -52,6 +52,10 @@ def stats(start: Optional[str] = None, end: Optional[str] = None, moment: Option
             FROM allocations a WHERE {W} GROUP BY m ORDER BY m""", A)
         by_owner_month = db.rows(c, f"""SELECT strftime('%Y-%m',a.date) m, COALESCE(o.name,'Sans stock') owner, COALESCE(o.color,'#8892b0') color, SUM(revenue) revenue
             FROM allocations a LEFT JOIN owners o ON o.id=a.owner_id WHERE {W} GROUP BY m,owner ORDER BY m""", A)
+        # Série brute par jour et par origine : le frontend regroupe en jour/semaine/mois
+        # selon la période choisie (une évolution mensuelle n'a pas de sens sur 1 semaine).
+        by_owner_day = db.rows(c, f"""SELECT a.date d, COALESCE(o.name,'Sans stock') owner, COALESCE(o.color,'#8892b0') color, SUM(revenue) revenue
+            FROM allocations a LEFT JOIN owners o ON o.id=a.owner_id WHERE {W} GROUP BY d,owner ORDER BY d""", A)
         fc_vals = [m["revenue"] for m in monthly][-6:]
         fc = _forecast(fc_vals)
         daily = db.rows(c, f"SELECT a.date d, SUM(revenue) revenue, SUM(qty) qty FROM allocations a WHERE {W} GROUP BY d ORDER BY d", A)
@@ -169,7 +173,7 @@ def stats(start: Optional[str] = None, end: Optional[str] = None, moment: Option
                         "avg_book_price": avg_book_price,
                         "avg_basket": (k["rev"] / nb) if nb else 0,
                         "stock_value": sv["v"], "stock_units": sv["u"], "due_open": due_open},
-                "monthly": monthly, "by_owner_month": by_owner_month, "forecast": fc,
+                "monthly": monthly, "by_owner_month": by_owner_month, "by_owner_day": by_owner_day, "forecast": fc,
                 "daily": daily, "top": top, "by_category": by_cat, "by_publisher": by_pub, "by_owner": by_owner,
                 "payments": pay, "weekday": wd, "by_gender": by_gender, "by_age": by_age, "by_star": by_star, "by_moment": by_moment, "low_stock": low[:30]}
 

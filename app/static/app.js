@@ -524,40 +524,79 @@ $('#nav').addEventListener('keydown', e => {
 
 /* ---------- graphiques SVG ---------- */
 function niceMax(v) { if (v <= 0) return 10; const p = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / p * 2) / 2 * p; }
-function trendChart(el, monthly, fc, ownerMonth) {
-  const months = monthly.map(m => m.month || m.m);
-  if (!months.length) { el.innerHTML = '<div class="empty">Aucune vente sur la période</div>'; return; }
-  const last = months[months.length - 1]; const fut = [];
-  let [y, mo] = last.split('-').map(Number);
-  for (let i = 0; i < fc.length; i++) { mo++; if (mo > 12) { mo = 1; y++ } fut.push(`${y}-${String(mo).padStart(2, '0')}`); }
-  const all = months.concat(fut); const W = 760, H = 280, L = 52, B = 30, T = 14, R = 12;
-  const owners = {}; ownerMonth.forEach(r => { (owners[r.owner] ??= { color: r.color, v: {} }).v[r.m] = r.revenue });
-  const names = Object.keys(owners);
-  const totals = months.map(m => names.reduce((s, n) => s + (owners[n].v[m] || 0), 0));
-  const max = niceMax(Math.max(...totals, ...fc));
-  const bw = (W - L - R) / all.length, X = i => L + i * bw, Y = v => T + (H - T - B) * (1 - v / max);
-  let s = `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none">`;
-  for (let i = 0; i <= 4; i++) { 
-    const v = max * i / 4, y = Y(v); 
-    s += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" class="chart-grid-line"/><text x="${L - 8}" y="${y + 4}" text-anchor="end" class="chart-axis-text">${Math.round(v)}</text>`; 
+/* Évolution du CA par origine : granularité adaptée à la période (jour / semaine / mois) */
+function evolutionChart(el, st, from, to) {
+  const DAY = 864e5, pad = n => String(n).padStart(2, '0');
+  const pd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+  const fd = pd(from), td = pd(to);
+  const span = Math.max(1, Math.round((td - fd) / DAY) + 1);
+  let grain, buckets;
+  if (span <= 10) {
+    grain = 'jour';
+    buckets = [];
+    for (let t = new Date(fd); t <= td; t.setDate(t.getDate() + 1))
+      buckets.push({ label: `${pad(t.getDate())}/${pad(t.getMonth() + 1)}` });
+  } else if (span <= 100) {
+    grain = 'semaine';
+    buckets = [];
+    for (let t = new Date(fd); t <= td; t = new Date(+t + 7 * DAY))
+      buckets.push({ label: `${pad(t.getDate())}/${pad(t.getMonth() + 1)}` });
+  } else {
+    grain = 'mois';
+    buckets = [];
+    let y = fd.getFullYear(), m = fd.getMonth();
+    while (y * 12 + m <= td.getFullYear() * 12 + td.getMonth()) {
+      buckets.push({ label: mlabel(`${y}-${pad(m + 1)}`) });
+      m++; if (m > 11) { m = 0; y++; }
+    }
   }
-  months.forEach((m, i) => {
+  const owners = {};
+  (st.by_owner_day || []).forEach(r => {
+    const o = owners[r.owner] ??= { color: r.color, v: {} };
+    const t = pd(r.d);
+    let idx = grain === 'jour' ? Math.round((t - fd) / DAY)
+      : grain === 'semaine' ? Math.floor((t - fd) / (7 * DAY))
+      : (t.getFullYear() - fd.getFullYear()) * 12 + (t.getMonth() - fd.getMonth());
+    idx = Math.max(0, Math.min(buckets.length - 1, idx));
+    o.v[idx] = (o.v[idx] || 0) + r.revenue;
+  });
+  const names = Object.keys(owners);
+  if (!names.length || !buckets.length) { el.innerHTML = '<div class="empty">Aucune vente sur la période</div>'; return; }
+  const totals = buckets.map((_, i) => names.reduce((s, n) => s + (owners[n].v[i] || 0), 0));
+  const titleEl = $('#cTrendTitle');
+  if (titleEl) titleEl.textContent = `Évolution du CA par origine · par ${grain}${grain === 'mois' ? ' · tendance & prévision' : ' · tendance'}`;
+  const W = 760, H = 280, L = 52, B = 30, T = 14, R = 12;
+  const fut = [];
+  if (grain === 'mois' && (st.forecast || []).length) {
+    let y = td.getFullYear(), m = td.getMonth();
+    st.forecast.forEach(v => { m++; if (m > 11) { m = 0; y++; } fut.push({ v, label: mlabel(`${y}-${pad(m + 1)}`) }); });
+  }
+  const all = buckets.concat(fut);
+  const max = niceMax(Math.max(...totals, ...fut.map(f => f.v)));
+  const bw = Math.min((W - L - R) / all.length, 120), X = i => L + i * bw, Y = v => T + (H - T - B) * (1 - v / max);
+  let s = `<svg viewBox="0 0 ${W} ${H}" class="chart" preserveAspectRatio="none">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4, y = Y(v);
+    s += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" class="chart-grid-line"/><text x="${L - 8}" y="${y + 4}" text-anchor="end" class="chart-axis-text">${Math.round(v)}</text>`;
+  }
+  buckets.forEach((b, i) => {
     let acc = 0;
     names.forEach(n => {
-      const v = owners[n].v[m] || 0, h = (H - T - B) * v / max; acc += v;
-      s += `<rect x="${X(i) + bw * .18}" y="${Y(acc)}" width="${bw * .64}" height="${h}" rx="3" fill="${owners[n].color}" opacity=".88"><title>${mlabel(m)} · ${n} : ${eur(v)}</title></rect>`;
+      const v = owners[n].v[i] || 0, h = (H - T - B) * v / max; acc += v;
+      s += `<rect x="${X(i) + bw * .18}" y="${Y(acc)}" width="${bw * .64}" height="${h}" rx="3" fill="${owners[n].color}" opacity=".88"><title>${b.label} · ${n} : ${eur(v)}</title></rect>`;
     });
   });
-  fut.forEach((m, i) => { 
-    const idx = months.length + i; 
-    s += `<rect x="${X(idx) + bw * .18}" y="${Y(fc[i])}" width="${bw * .64}" height="${(H - T - B) * fc[i] / max}" rx="3" fill="none" class="chart-forecast-bar" stroke-dasharray="4 3"><title>Prévision ${mlabel(m)} : ${eur(fc[i])}</title></rect>`; 
+  fut.forEach((f, i) => {
+    const idx = buckets.length + i;
+    s += `<rect x="${X(idx) + bw * .18}" y="${Y(f.v)}" width="${bw * .64}" height="${(H - T - B) * f.v / max}" rx="3" fill="none" class="chart-forecast-bar" stroke-dasharray="4 3"><title>Prévision ${f.label} : ${eur(f.v)}</title></rect>`;
   });
-  // moyenne mobile 3 mois
-  const ma = totals.map((_, i) => { const sl = totals.slice(Math.max(0, i - 2), i + 1); return sl.reduce((a, b) => a + b, 0) / sl.length });
+  const maWin = Math.min(3, buckets.length);
+  const ma = totals.map((_, i) => { const sl = totals.slice(Math.max(0, i - maWin + 1), i + 1); return sl.reduce((a, b) => a + b, 0) / sl.length; });
   s += `<polyline fill="none" class="chart-trend-line" stroke-width="2.5" stroke-linecap="round" points="${ma.map((v, i) => `${X(i) + bw / 2},${Y(v)}`).join(' ')}"/>`;
   ma.forEach((v, i) => s += `<circle cx="${X(i) + bw / 2}" cy="${Y(v)}" r="3.5" class="chart-trend-dot"/>`);
-  all.forEach((m, i) => { if (all.length < 14 || i % 2 === 0) s += `<text x="${X(i) + bw / 2}" y="${H - 8}" text-anchor="middle" class="chart-axis-text">${mlabel(m)}</text>`; });
-  el.innerHTML = s + '</svg>' + `<div class="legend">${names.map(n => `<span><i style="background:${owners[n].color}"></i>${esc(n)}</span>`).join('')}<span><i class="legend-trend-icon"></i>Tendance (moy. mobile 3 m.)</span><span><i class="legend-forecast-icon"></i>Prévision</span></div>`;
+  all.forEach((b, i) => { if (all.length < 14 || i % 2 === 0) s += `<text x="${X(i) + bw / 2}" y="${H - 8}" text-anchor="middle" class="chart-axis-text">${b.label}</text>`; });
+  const maLbl = grain === 'jour' ? 'moy. mobile 3 j.' : grain === 'semaine' ? 'moy. mobile 3 sem.' : 'moy. mobile 3 m.';
+  el.innerHTML = s + '</svg>' + `<div class="legend">${names.map(n => `<span><i style="background:${owners[n].color}"></i>${esc(n)}</span>`).join('')}<span><i class="legend-trend-icon"></i>Tendance (${maLbl})</span>${fut.length ? '<span><i class="legend-forecast-icon"></i>Prévision</span>' : ''}</div>`;
 }
 function donut(el, data, fmt = eur) {
   const tot = data.reduce((s, d) => s + d.value, 0); if (!tot) { el.innerHTML = '<div class="empty">—</div>'; return; }
@@ -1612,7 +1651,7 @@ VIEWS.dashboard = async () => {
     <!-- Section Évolution & Origines de Stock (placée en haut comme avant) -->
     <div class="grid g2" style="margin-bottom:18px">
       <div class="card card-fill">
-        <h3>Évolution mensuelle du CA par origine · tendance & prévision</h3>
+        <h3 id="cTrendTitle">Évolution du CA par origine</h3>
         <div id="cTrend"></div>
       </div>
       <div class="card card-fill">
@@ -1744,7 +1783,7 @@ VIEWS.dashboard = async () => {
   `;
 
   // Dessin des graphiques
-  trendChart($('#cTrend'), st.monthly, st.forecast, st.by_owner_month);
+  evolutionChart($('#cTrend'), st, from, to);
   donut($('#cOwner'), st.by_owner.map(o => ({ label: o.label, value: o.revenue, color: o.color })));
   hbars($('#cTop'), st.top, 'qty', nf, r => eur(r.revenue));
   hbars($('#cCat'), st.by_category);
