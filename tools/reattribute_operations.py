@@ -9,7 +9,6 @@ import os
 from datetime import datetime
 
 DB_PATH = os.path.abspath("data/librairie.db")
-DIST_DB_PATH = os.path.abspath("dist/data/librairie.db")
 BACKUP_DIR = os.path.abspath("data/sauvegardes")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
@@ -162,12 +161,6 @@ def main():
 
     conn.close()
     print("\nIntégrité validée à 100% !")
-
-    # 7. Synchronisation avec dist/data/librairie.db si présent
-    if os.path.exists(DIST_DB_PATH):
-        print(f"\nCopie de la base mise à jour vers {DIST_DB_PATH}...")
-        shutil.copy2(DB_PATH, DIST_DB_PATH)
-        print("dist/data/librairie.db synchronisé avec succès.")
 
     # 8. Rafraîchissement du miroir Excel
     try:

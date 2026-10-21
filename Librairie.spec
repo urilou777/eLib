@@ -8,6 +8,16 @@ if struct.calcsize("P") != 4:
     raise RuntimeError("La version distribuée doit être construite avec Python Windows 32 bits.")
 
 project_dir = os.path.abspath(SPECPATH)
+
+# Les dossiers par défaut « dist/ » et « build/ » sont supprimés du projet :
+# toute sortie doit passer par tools/build_windows_x86.py (--distpath dist_win32,
+# --workpath build_win32). Un appel manuel « pyinstaller Librairie.spec » sans
+# ces drapeaux est refusé pour ne pas recréer ces dossiers.
+if os.path.abspath(DISTPATH).lower() == os.path.join(project_dir, "dist").lower():
+    raise RuntimeError("Dossier de sortie « dist/ » interdit : lancez tools/build_windows_x86.py (sortie dist_win32).")
+if os.path.abspath(WORKPATH).lower() == os.path.join(project_dir, "build").lower():
+    raise RuntimeError("Dossier de travail « build/ » interdit : lancez tools/build_windows_x86.py (travail build_win32).")
+
 webview_runtime_dir = os.path.join(
     project_dir,
     'build_win32',
