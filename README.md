@@ -106,11 +106,15 @@ La distribution portable se construit à la demande, en local uniquement (elle n
 
 **Important :** `dist_win32\` est un dossier de sortie de compilation, pas un dossier d'exécution. Ne lancez jamais `eLib.exe` depuis `dist_win32\` : l'application créerait son dossier `data/` de travail à côté de l'exécutable et polluerait les artefacts de distribution. Pour tester un build, copiez `eLib.exe` dans un dossier de test séparé (par exemple `C:\eLib_test\`) et lancez-le de là.
 
-Pour produire l'installateur Windows (`eLib-Setup-<version>.exe` : installation dans Program Files (x86), raccourcis du menu Démarrer, entrée gérée par Windows dans « Applications et fonctionnalités », désinstallation propre), lancez :
+Pour produire l'installateur Windows (entrée « Applications et fonctionnalités », désinstallation propre), lancez :
 ```powershell
 python tools\build_installer_win32.py
 ```
-Requiert Inno Setup 6 ou 7. Points propres à la version installée :
+Requiert Inno Setup 6 ou 7. Le script produit deux installateurs :
+- `eLib-Setup-<version>.exe` (~2 Mo) : **amorçage léger** — n'embarque pas `eLib.exe`, le télécharge depuis la release GitHub et vérifie son SHA-256 pendant l'installation (connexion Internet requise au moment de l'installer) ;
+- `eLib-Setup-Offline-<version>.exe` (~333 Mo) : tout embarqué, pour une installation sans Internet.
+
+Points propres à la version installée :
 - les données sont enregistrées dans `C:\ProgramData\eLib` (Program Files n'est pas inscriptible par l'application) ; l'emplacement est écrit dans `elib-data-location.txt` à côté de l'exécutable ;
 - la mise à jour automatique continue de fonctionner sans relance UAC (le dossier d'application est inscriptible par les utilisateurs) ;
 - la désinstallation ne supprime **jamais** le dossier de données ;

@@ -54,20 +54,23 @@ jobs:
           $tag = $env:GITHUB_REF_NAME
           $version = $tag -replace '^v', ''
           $setup = "dist_win32/eLib-Setup-$version.exe"
+          $offline = "dist_win32/eLib-Setup-Offline-$version.exe"
           $notes = @"
           eLib $version - quelle version telecharger ?
 
-          - Nouveau PC (installation classique, Program Files, desinstalleur Windows) : eLib-Setup-$version.exe
+          - Nouveau PC avec Internet (recommande) : eLib-Setup-$version.exe (2 Mo) - il telecharge
+            et verifie eLib depuis GitHub pendant l'installation
+          - Nouveau PC SANS Internet : eLib-Setup-Offline-$version.exe (333 Mo, tout embarque)
           - Cle USB / sans installation : eLib.exe seul - il cree son dossier data/ a cote de lui
-          - Mise a jour : les installations existantes se mettent a jour automatiquement (aucun telechargement manuel)
+          - Mise a jour : les installations existantes se mettent a jour automatiquement
 
           Verifiez l'integrite avec les fichiers .sha256 correspondants si vous savez les utiliser.
           "@
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload release assets." }
           } else {
-            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --notes "$notes"
+            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --notes "$notes"
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release." }
           }

@@ -69,6 +69,19 @@ def find_iscc():
     )
 
 
+def _compile(iscc, extra_defines, label):
+    command = [iscc] + [f"/D{key}={value}" for key, value in extra_defines] + [ISS_PATH]
+    print(f"[Installer-32bit] Compilation {label} : {' '.join(command[1:-1])}", flush=True)
+    subprocess.run(command, cwd=PROJECT_DIR, check=True)
+
+
+def _emit_sha(setup_path):
+    sha_path = setup_path + ".sha256"
+    with open(sha_path, "w", encoding="ascii", newline="\n") as checksum:
+        checksum.write(f"{file_sha256(setup_path)}  {os.path.basename(setup_path)}\n")
+    return sha_path
+
+
 def build_installer():
     if not os.path.isfile(EXE_PATH):
         raise RuntimeError(f"Build first: {EXE_PATH} is missing (run tools/build_windows_x86.py).")
@@ -78,23 +91,26 @@ def build_installer():
     version = app_version()
     iscc = find_iscc()
     print(f"[Installer-32bit] Inno Setup : {iscc}", flush=True)
-    subprocess.run(
-        [iscc, f"/DAppVersion={version}", ISS_PATH],
-        cwd=PROJECT_DIR,
-        check=True,
-    )
 
-    setup_path = os.path.join(DIST_DIR, f"eLib-Setup-{version}.exe")
-    if not os.path.isfile(setup_path):
-        raise RuntimeError(f"Inno Setup n'a pas produit l'attendu : {setup_path}")
+    # Setup web (~2 Mo) : n'embarque pas eLib.exe, le télécharge depuis la release
+    # GitHub et vérifie son SHA-256. L'empreinte attendue est celle de l'exécutable
+    # qui sera publié ; ELIB_PAYLOAD_SHA256 permet de cibler une release déjà publiée.
+    payload_sha = os.environ.get("ELIB_PAYLOAD_SHA256") or file_sha256(EXE_PATH)
+    _compile(iscc, [("AppVersion", version), ("WebSetup", ""), ("PayloadSha256", payload_sha)], "setup web")
+    web_path = os.path.join(DIST_DIR, f"eLib-Setup-{version}.exe")
+    if not os.path.isfile(web_path):
+        raise RuntimeError(f"Inno Setup n'a pas produit l'attendu : {web_path}")
 
-    sha_path = setup_path + ".sha256"
-    with open(sha_path, "w", encoding="ascii", newline="\n") as checksum:
-        checksum.write(f"{file_sha256(setup_path)}  eLib-Setup-{version}.exe\n")
+    # Setup offline (~333 Mo) : embarque eLib.exe pour une installation sans Internet.
+    _compile(iscc, [("AppVersion", version)], "setup offline")
+    offline_path = os.path.join(DIST_DIR, f"eLib-Setup-Offline-{version}.exe")
+    if not os.path.isfile(offline_path):
+        raise RuntimeError(f"Inno Setup n'a pas produit l'attendu : {offline_path}")
 
-    print(f"[Installer-32bit] Installateur : {setup_path}")
-    print(f"[Installer-32bit] Empreinte : {sha_path}")
-    return setup_path
+    for path in (web_path, offline_path):
+        print(f"[Installer-32bit] Installateur : {path}")
+        print(f"[Installer-32bit] Empreinte : {_emit_sha(path)}")
+    return web_path
 
 
 if __name__ == "__main__":

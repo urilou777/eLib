@@ -1,8 +1,15 @@
 ; eLib – script Inno Setup pour la distribution installée (setup.exe).
 ; Construit par tools/build_installer_win32.py qui transmet la version :
-;   ISCC.exe /DAppVersion=x.y.z installer\eLib.iss
+;   ISCC.exe /DAppVersion=x.y.z installer\eLib.iss                -> setup offline (333 Mo)
+;   ISCC.exe /DAppVersion=x.y.z /DWebSetup /DPayloadSha256=...   -> setup web (~2 Mo)
 ;
-; Différences avec les autres distributions :
+; Le mode WebSetup produit un amorçage léger : eLib.exe n'est PAS embarqué,
+; il est téléchargé depuis la release GitHub correspondante et vérifié par
+; SHA-256 pendant l'installation (même modèle de confiance que la mise à jour
+; automatique de l'application). Le mode par défaut embarque eLib.exe pour une
+; installation 100% hors-ligne.
+;
+; Commun aux deux modes :
 ; - installation machine dans Program Files (x86) + entrée « Applications et fonctionnalités » ;
 ; - Program Files n'étant pas inscriptible, les données vivent dans {commonappdata}\eLib
 ;   (C:\ProgramData\eLib) ; l'emplacement est écrit dans elib-data-location.txt à côté
@@ -13,6 +20,16 @@
 
 #ifndef AppVersion
 #define AppVersion "0.0.0"
+#endif
+
+#ifdef WebSetup
+  #ifndef PayloadSha256
+    #error Le mode WebSetup requiert /DPayloadSha256=<sha256 de eLib.exe>.
+  #endif
+  #define PayloadUrl "https://github.com/urilou777/eLib/releases/download/v" + AppVersion + "/eLib.exe"
+  #define OutputName "eLib-Setup-" + AppVersion
+#else
+  #define OutputName "eLib-Setup-Offline-" + AppVersion
 #endif
 
 [Setup]
@@ -29,13 +46,18 @@ DefaultDirName={autopf}\eLib
 DefaultGroupName=eLib
 DisableProgramGroupPage=yes
 OutputDir=..\dist_win32
-OutputBaseFilename=eLib-Setup-{#AppVersion}
+OutputBaseFilename={#OutputName}
 SetupIconFile=..\app\static\app-icon.ico
 WizardStyle=modern
 PrivilegesRequired=admin
+MinVersion=10.0
+#ifdef WebSetup
+Compression=zip
+SolidCompression=no
+#else
 Compression=lzma2/max
 SolidCompression=yes
-MinVersion=10.0
+#endif
 
 [Languages]
 Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
@@ -44,7 +66,12 @@ Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; Flags: unchecked
 
 [Files]
+#ifdef WebSetup
+; eLib.exe téléchargé dans {tmp} par NextButtonClick (SHA-256 vérifié), installé ensuite.
+Source: "{tmp}\eLib.exe"; DestDir: "{app}"; Flags: external ignoreversion
+#else
 Source: "..\dist_win32\eLib.exe"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 
 [Dirs]
 ; Users doit pouvoir écrire : la mise à jour automatique remplace eLib.exe ici.
@@ -64,6 +91,49 @@ Filename: "{app}\eLib.exe"; WorkingDir: "{app}"; Description: "Lancer eLib maint
 Name: "{app}\elib-data-location.txt"; Type: files
 
 [Code]
+#ifdef WebSetup
+var
+  DownloadPage: TDownloadWizardPage;
+
+procedure InitializeWizard;
+begin
+  DownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing), SetupMessage(msgPreparingDesc), nil);
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  Error: String;
+begin
+  if CurPageID = wpReady then
+  begin
+    DownloadPage.Clear;
+    DownloadPage.Add('{#PayloadUrl}', 'eLib.exe', '{#PayloadSha256}');
+    DownloadPage.Show;
+    try
+      try
+        DownloadPage.Download; // télécharge eLib.exe vers {tmp} et vérifie son SHA-256
+        Result := True;
+      except
+        if DownloadPage.AbortedByUser then
+          Log('Téléchargement annulé par l''utilisateur.')
+        else
+        begin
+          Error := Format('%s: %s', [DownloadPage.LastBaseNameOrUrl, GetExceptionMessage]);
+          SuppressibleMsgBox(
+            'Le téléchargement de eLib a échoué (connexion Internet requise). ' + AddPeriod(Error),
+            mbCriticalError, MB_OK, IDOK);
+        end;
+        Result := False;
+      end;
+    finally
+      DownloadPage.Hide;
+    end;
+  end
+  else
+    Result := True;
+end;
+#endif
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   DataPath, MarkerPath: string;
