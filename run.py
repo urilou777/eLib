@@ -160,6 +160,11 @@ def start_https():
 
 
 def main():
+    t0 = time.perf_counter()
+
+    def phase(label):
+        print(f"[perf] {label}: {time.perf_counter() - t0:.2f}s", file=sys.stderr)
+
     configure_low_spec_hardware()
     enable_high_dpi()
     prevent_sleep()
@@ -170,7 +175,23 @@ def main():
     t = threading.Thread(target=server.run, daemon=True)
     t.start()
     wait_port(port)
-    https_server, _ = start_https()
+    phase("serveur HTTP prêt")
+
+    https_holder = {}
+    if headless:
+        # Sans fenêtre, l'URL mobile doit être affichée dès le départ : HTTPS synchrone.
+        srv, _ = start_https()
+        if srv:
+            https_holder["server"] = srv
+        phase("HTTPS prêt (synchrone, mode headless)")
+    else:
+        # La fenêtre ne doit pas attendre la PKI : génération de certificat et
+        # second uvicorn démarrent en parallèle, sans bloquer la peinture.
+        def _https_bg():
+            srv, _ = start_https()
+            if srv:
+                https_holder["server"] = srv
+        threading.Thread(target=_https_bg, daemon=True).start()
 
     try:
         if headless:
@@ -199,6 +220,7 @@ def main():
             window_icon = os.path.join(static_dir, "favicon.ico")
             if not os.path.isfile(window_icon):
                 raise FileNotFoundError(f"The desktop window icon is missing: {window_icon}")
+            phase("lancement de la fenêtre")
             webview.start(icon=window_icon)
     except KeyboardInterrupt:
         pass
@@ -222,8 +244,8 @@ def main():
     finally:
         restore_sleep()
         server.should_exit = True
-        if https_server:
-            https_server.should_exit = True
+        if https_holder.get("server"):
+            https_holder["server"].should_exit = True
 
 
 if __name__ == "__main__":

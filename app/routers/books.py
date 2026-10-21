@@ -4,7 +4,7 @@ import json
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
-from .. import db, ocr
+from .. import db
 from ..api_common import dump_model as _dump, get_current_user
 from ..schemas import BookEnrichIn, BookIn
 from ..services import _books, _mobile_book
@@ -155,6 +155,7 @@ async def ocr_scan(request: Request):
     if not img_bytes:
         raise HTTPException(400, "Aucune image reçue pour l'analyse OCR")
 
+    from .. import ocr  # import différé : numpy/PIL/RapidOCR ne doivent pas ralentir le démarrage
     try:
         result = ocr.scan_book_page(img_bytes)
         if not result.get("ok"):

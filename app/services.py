@@ -8,7 +8,7 @@ import shutil
 from datetime import datetime
 from fastapi import HTTPException
 from typing import Optional
-from . import certs, db, excel_io, security
+from . import db, security
 
 db.init()
 
@@ -122,6 +122,7 @@ def cleanup_old_backups(max_hourly: int = 24, max_daily: int = 30, max_pre_ops: 
 
 def _mirror_loop():
     """Excel toujours à jour en arrière-plan + snapshots SQLite et Excel ultra-sécurisés via .tmp et renommage atomique."""
+    from . import excel_io  # import différé : openpyxl n'est pas nécessaire au démarrage
     last_day = None
     last_hourly_backup = 0
     while True:
@@ -195,20 +196,26 @@ def _books(c, where="1=1", args=()):
             "saving": saving
         })
 
+    # Stocks et compositions de packs en requêtes groupées (anti N+1)
+    pack_stocks = db.pack_stock_map(c)
+    pack_items_by = {}
+    for r in db.rows(c, """SELECT pi.pack_id, pi.book_id, pi.qty, bk.title FROM pack_items pi
+            JOIN books bk ON bk.id=pi.book_id"""):
+        pack_items_by.setdefault(r["pack_id"], []).append(r)
+
     for b in bl:
         b["by_owner"] = byo.get(b["id"], [])
         b["lots"] = lots_by.get(b["id"], [])
         if b["is_pack"]:
-            b["stock"] = db.pack_stock(c, b["id"])
-            b["items"] = db.rows(c, """SELECT pi.book_id,pi.qty,bk.title FROM pack_items pi
-                JOIN books bk ON bk.id=pi.book_id WHERE pi.pack_id=?""", (b["id"],))
+            b["stock"] = pack_stocks.get(b["id"], 0)
+            b["items"] = pack_items_by.get(b["id"], [])
             for it in b["items"]:
                 it["lots"] = lots_by.get(it["book_id"], [])
             b["suggested_packs"] = []
         else:
             s_packs = packs_by_book.get(b["id"], [])
             for sp in s_packs:
-                sp["stock"] = db.pack_stock(c, sp["id"])
+                sp["stock"] = pack_stocks.get(sp["id"], 0)
             b["suggested_packs"] = s_packs
     return bl
 
@@ -313,7 +320,7 @@ def set_master_session_moment(moment: Optional[str]) -> None:
 
 def _mobile_base():
     port, ips = security.state["https_port"], security.local_ips()
-    return f"https://{ips[0]}:{port}" if (port and ips and certs) else None
+    return f"https://{ips[0]}:{port}" if (port and ips) else None
 
 def _mobile_book(c, b):
     if b["is_pack"]:

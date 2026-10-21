@@ -412,6 +412,23 @@ def pack_stock(c, pack_id):
     return max(0, min(book_stock(c, i["book_id"]) // max(1, i["qty"]) for i in items))
 
 
+def pack_stock_map(c):
+    """Stock réalisable de chaque pack en une seule requête groupée.
+
+    Évite le motif N+1 (une requête par pack) dans les listes de livres.
+    Même règle que pack_stock : le nombre de packs vendables est plafonné par
+    le composant le plus rare.
+    """
+    stocks = {}
+    for r in rows(c, f"""SELECT pi.pack_id, max(1, pi.qty) qty,
+            COALESCE((SELECT SUM({LOT_REMAINING}) FROM lots l WHERE l.book_id=pi.book_id),0) stock
+            FROM pack_items pi"""):
+        possible = r["stock"] // r["qty"]
+        cur = stocks.get(r["pack_id"])
+        stocks[r["pack_id"]] = possible if cur is None else min(cur, possible)
+    return {pack_id: max(0, s) for pack_id, s in stocks.items()}
+
+
 def _due_per_unit(lot, owner, price):
     if lot is None:
         return 0.0

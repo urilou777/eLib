@@ -37,7 +37,9 @@ async function api(url, method = 'GET', body) {
   else if (body !== undefined) { o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); }
   const r = await fetch(url, o);
   if (!r.ok) { let d = r.statusText; try { d = (await r.json()).detail || d } catch (e) { } throw new Error(typeof d === 'string' ? d : JSON.stringify(d)); }
-  return r.json();
+  const data = await r.json();
+  if (method !== 'GET') invalidateRefCache();
+  return data;
 }
 function toast(msg, kind = 'ok') {
   const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = msg;
@@ -254,8 +256,17 @@ const stockBadge = b => b.stock <= 0 ? '<span class="badge b-out">Rupture</span>
   b.stock <= b.min_stock ? `<span class="badge b-low">${b.stock} · bas</span>` : `<span class="badge b-ok">${b.stock}</span>`;
 const ownerChips = b => (b.by_owner || []).map(o => `<span class="chip"><i style="background:${o.color}"></i>${esc(o.owner)} ${o.qty}</span>`).join('');
 
-async function loadRef() { 
-  [S.books, S.owners, S.options] = await Promise.all([api('/api/books'), api('/api/owners'), api('/api/options')]); 
+/* ---------- Cache des données de référence (TTL + invalidation) ---------- */
+const REF_TTL_MS = 15000;
+let refCacheAt = 0;
+let refCacheFresh = false;
+function invalidateRefCache() { refCacheFresh = false; }
+
+async function loadRef(force = false) {
+  if (!force && refCacheFresh && Date.now() - refCacheAt < REF_TTL_MS) return;
+  [S.books, S.owners, S.options] = await Promise.all([api('/api/books'), api('/api/owners'), api('/api/options')]);
+  refCacheAt = Date.now();
+  refCacheFresh = true;
 }
 
 /* ---------- Culte / Temps de vente & Mode Focus ---------- */
@@ -4320,11 +4331,13 @@ function handleLiveMessage(msg) {
   } else if (type === 'activity_logged') {
     addLiveFeedRow('activity', data);
   } else if (type === 'sale_registered') {
+    invalidateRefCache();
     playLiveSaleChime();
     showLiveSaleAlert(data);
     addLiveFeedRow('sale', data);
     refreshCurrentViewLive();
   } else if (type === 'metrics_invalidated') {
+    invalidateRefCache();
     refreshCurrentViewLive();
   }
 }
@@ -4414,3 +4427,14 @@ initLiveStream();
 const initialHash = location.hash.replace(/^#/, '');
 const startView = isFocusMode() ? 'pos' : (VIEWS[initialHash] ? initialHash : 'dashboard');
 go(startView, true);
+
+/* Premier rendu terminé : marque l'UI prête et libère les tâches différées du serveur
+   (purge sauvegardes, boucle miroir, échauffement OCR). */
+requestAnimationFrame(() => {
+  try { if (window.performance && performance.mark) performance.mark('ui-ready'); } catch (e) { }
+  fetch('/api/ui/ready', {
+    method: 'POST',
+    headers: { 'X-User': encodeURIComponent(getCurrentUser()) },
+    keepalive: true
+  }).catch(() => { });
+});
