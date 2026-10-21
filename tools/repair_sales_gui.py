@@ -527,7 +527,7 @@ INDEX_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atelier de Scission & Réparation des Ventes · Librairi-E</title>
+<title>Atelier de Scission & Réparation des Ventes · eLib</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1104,7 +1104,7 @@ main.workspace {
     <span style="font-size:22px">🛠️</span>
     <div>
       <h1>Atelier de Scission & Codes-barres Catalogue</h1>
-      <div style="font-size:11px;color:var(--mut)">Librairi-E · Scission des ventes &amp; Renseignement des codes-barres manquants</div>
+      <div style="font-size:11px;color:var(--mut)">eLib · Scission des ventes &amp; Renseignement des codes-barres manquants</div>
     </div>
     <span class="badge-ephemere">Outil Éphémère</span>
   </div>

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0"
-title Librairi-E - Caisse Principale
+title eLib - Caisse Principale
 
 set "PY_EXE="
 if exist "%~dp0runtime_win32\python.exe" set "PY_EXE=%~dp0runtime_win32\python.exe"

@@ -30,7 +30,7 @@ from .routers.sync import (
     delete_active_basket, get_live_baskets, ping, update_active_basket,
 )
 
-app = FastAPI(title="Librairie")
+app = FastAPI(title="eLib")
 
 SLOW_REQUEST_S = 0.1
 

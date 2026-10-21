@@ -147,7 +147,7 @@ Ce script automatique :
 
 Pour la version distribuée, lancez directement `eLib.exe`. Si vous êtes mainteneur et lancez le projet depuis ses sources, double-cliquez sur :
 ```text
-Lancer_Librairie.bat
+Lancer_eLib.bat
 ```
 *(Ou en ligne de commande, avec Python 3.10 32-bit et les dépendances installées : `python run.py`)*
 
@@ -184,9 +184,9 @@ L'interface d'atelier dédiée s'ouvre sur `http://127.0.0.1:8769` avec les 14 v
 ### 🆘 En cas d'imprévu le jour J (Plan B)
 
 * **Le Wi-Fi de l'église bloque les connexions directes entre appareils (isolation client) :**
-  Activez le **Partage de connexion 4G/5G** sur l'un de vos smartphones. Connectez le PC et les autres téléphones sur ce partage de connexion. Lancez `Installer_Mobile.bat` pour prendre en compte la nouvelle IP, et démarrez `Lancer_Librairie.bat`.
+  Activez le **Partage de connexion 4G/5G** sur l'un de vos smartphones. Connectez le PC et les autres téléphones sur ce partage de connexion. Lancez `Installer_Mobile.bat` pour prendre en compte la nouvelle IP, et démarrez `Lancer_eLib.bat`.
 * **Coupure de courant inopinée :**
-  La base SQLite tourne en mode **WAL (Write-Ahead Logging)** : aucune vente n'est corrompue ou perdue. Rallumez simplement le PC et relancez `Lancer_Librairie.bat`.
+  La base SQLite tourne en mode **WAL (Write-Ahead Logging)** : aucune vente n'est corrompue ou perdue. Rallumez simplement le PC et relancez `Lancer_eLib.bat`.
 * **Archivage fin de service :**
   À la fin des cultes, allez dans l'onglet **Données & Excel** > Cliquez sur **💾 Sauvegarde immédiate** ou téléchargez le classeur Excel miroir pour vos archives.
 
@@ -208,12 +208,12 @@ L'interface d'atelier dédiée s'ouvre sur `http://127.0.0.1:8769` avec les 14 v
   - `realtime.py` : LiveHub temps réel (régie des paniers mobiles via SSE).
   - `static/` : Interface web desktop et mobile (HTML5, Vanilla CSS, Vanilla JS, librairie ZXing embarquée hors-ligne).
 - `installer/eLib.iss` : Script Inno Setup de la version installée (Program Files (x86), données dans ProgramData).
-- `Librairie.spec` : Spécification PyInstaller (onefile x86, UPX désactivé, garde-fous sur les dossiers de sortie).
+- `eLib.spec` : Spécification PyInstaller (onefile x86, UPX désactivé, garde-fous sur les dossiers de sortie).
 - `tools/` : Scripts de build et de packaging (`build_windows_x86.py`, `build_installer_win32.py`, `package_portable_win32.py`) ; `tools/oneoff/` : scripts de maintenance ponctuels.
 - `tests/` : Tests unitaires (exécutés contre une copie de la base de développement).
 - `docs/` : Documentation technique hors-ligne (sources CHM, rapport d'audit).
 - `SCHEMA.md` & `ARCHITECTURE_MOBILE.md` : Références de schéma et d'architecture.
 - `setup_mobile.py` & `Installer_Mobile.bat` : Outil de configuration automatique des certificats et du pare-feu.
-- `Lancer_Librairie.bat` : Lanceur double-clic pour la caisse principale (dev, runtime Python 32-bit requis).
+- `Lancer_eLib.bat` : Lanceur double-clic pour la caisse principale (dev, runtime Python 32-bit requis).
 - `Lancer_Atelier_Scission.bat` : Lanceur de l'atelier de scission et gestion des codes-barres.
 - `requirements.txt` : Dépendances Python, dont les versions x86 épinglées de RapidOCR et ONNX Runtime.

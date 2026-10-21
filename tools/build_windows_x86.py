@@ -132,7 +132,7 @@ def build():
             OUTPUT_DIR,
             "--workpath",
             WORK_DIR,
-            os.path.join(PROJECT_DIR, "Librairie.spec"),
+            os.path.join(PROJECT_DIR, "eLib.spec"),
         ],
         cwd=PROJECT_DIR,
         check=True,

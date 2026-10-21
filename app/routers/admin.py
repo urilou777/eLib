@@ -385,7 +385,7 @@ def gdpr_info():
     return {
         "status": "CONFORME",
         "framework": "RGPD UE 2016/679 & Loi Informatique et Libertés",
-        "data_controller": "Librairi-E (Gestion locale privée)",
+        "data_controller": "eLib (Gestion locale privée)",
         "purposes": [
             {"id": "sales", "label": "Encaissement et justificatifs comptables", "basis": "Obligation légale (Code de commerce)", "retention": "10 ans"},
             {"id": "reservations", "label": "Réservations d'ouvrages à la demande", "basis": "Exécution d'une demande de service", "retention": "90 jours après service/annulation"},

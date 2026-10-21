@@ -94,7 +94,7 @@ def build_portable(version=DEFAULT_VERSION):
 
     log(f"Succès ! L'environnement portable Python {version} (32-bit) est prêt.")
     log(f"Emplacement : {RUNTIME_DIR}")
-    log("Lancer_Librairie.bat utilisera automatiquement ce runtime 32-bit.")
+    log("Lancer_eLib.bat utilisera automatiquement ce runtime 32-bit.")
     return 0
 
 

@@ -1,6 +1,6 @@
 # Référentiel Schéma & Modèle de Données (Data Dictionary)
 
-Ce document sert de schéma de référence (`information_schema` / dictionnaire des données) pour la base SQLite `data/librairie.db` et l'application Librairi-E. Il est maintenu à jour à chaque évolution structurelle.
+Ce document sert de schéma de référence (`information_schema` / dictionnaire des données) pour la base SQLite `data/librairie.db` et l'application eLib. Il est maintenu à jour à chaque évolution structurelle.
 
 ---
 

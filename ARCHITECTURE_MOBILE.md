@@ -137,7 +137,7 @@ Pour que vos successeurs **n'aient jamais à générer manuellement un certifica
    Installer_Mobile.bat
    ```
    *(Ce script configure la règle de pare-feu Windows et initialise les certificats)*.
-3. Lancer la caisse avec **`Lancer_Librairie.bat`**.
+3. Lancer la caisse avec **`Lancer_eLib.bat`**.
 
 ---
 

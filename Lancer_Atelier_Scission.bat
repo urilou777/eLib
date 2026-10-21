@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 > nul
-title Atelier de Scission des Ventes - Librairi-E
+title Atelier de Scission des Ventes - eLib
 cd /d "%~dp0"
 
 set "PY_EXE="
@@ -19,7 +19,7 @@ if not defined PY_EXE (
 
 echo.
 echo ========================================================================
-echo   LIBRAIRI-E : ATELIER EPHEMERE DE SCISSION DES VENTES HISTORIQUES
+echo   eLIB : ATELIER EPHEMERE DE SCISSION DES VENTES HISTORIQUES
 echo   Outil autonome et jetable (n'affecte pas le code de production)
 echo ========================================================================
 echo.

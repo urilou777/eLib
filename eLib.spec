@@ -11,7 +11,7 @@ project_dir = os.path.abspath(SPECPATH)
 
 # Les dossiers par défaut « dist/ » et « build/ » sont supprimés du projet :
 # toute sortie doit passer par tools/build_windows_x86.py (--distpath dist_win32,
-# --workpath build_win32). Un appel manuel « pyinstaller Librairie.spec » sans
+# --workpath build_win32). Un appel manuel « pyinstaller eLib.spec » sans
 # ces drapeaux est refusé pour ne pas recréer ces dossiers.
 # WORKPATH n'est pas injecté par toutes les versions de PyInstaller : garde tolérante.
 _distpath = globals().get("DISTPATH", "")
