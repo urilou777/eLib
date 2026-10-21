@@ -14,9 +14,32 @@ def base_dir():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-DATA_DIR = os.path.abspath(
-    os.environ.get("ELIB_DATA_DIR", os.path.join(base_dir(), "data"))
-)
+def _installed_data_dir(exe_dir):
+    """Version installée par setup.exe : Program Files n'est pas inscriptible par
+    l'application, l'installateur écrit donc l'emplacement réel des données
+    (ex. C:\\ProgramData\\eLib) dans un marqueur à côté de l'exécutable.
+    Version portable : pas de marqueur, les données restent à côté du .exe."""
+    marker = os.path.join(exe_dir, "elib-data-location.txt")
+    try:
+        with open(marker, "r", encoding="utf-8-sig") as fh:
+            location = fh.read().strip()
+    except OSError:
+        return None
+    location = os.path.expandvars(location or "")
+    return os.path.abspath(location) if location else None
+
+
+def _data_dir():
+    env = os.environ.get("ELIB_DATA_DIR")
+    if env:
+        return os.path.abspath(env)
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        return _installed_data_dir(exe_dir) or os.path.join(exe_dir, "data")
+    return os.path.join(base_dir(), "data")
+
+
+DATA_DIR = _data_dir()
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "librairie.db")
 LATEST_SCHEMA_VERSION = 2

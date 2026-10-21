@@ -104,6 +104,16 @@ python tools\package_portable_win32.py
 ```
 L'archive est aussi publiée automatiquement en même temps que `eLib.exe` lors d'un tag de version. Le dossier `data/` local n'est jamais inclus dans l'archive.
 
+Pour produire l'installateur Windows (`eLib-Setup-<version>.exe` : installation dans Program Files (x86), raccourcis du menu Démarrer, entrée gérée par Windows dans « Applications et fonctionnalités », désinstallation propre), lancez :
+```powershell
+python tools\build_installer_win32.py
+```
+Requiert Inno Setup 6 ou 7. Points propres à la version installée :
+- les données sont enregistrées dans `C:\ProgramData\eLib` (Program Files n'est pas inscriptible par l'application) ; l'emplacement est écrit dans `elib-data-location.txt` à côté de l'exécutable ;
+- la mise à jour automatique continue de fonctionner sans relance UAC (le dossier d'application est inscriptible par les utilisateurs) ;
+- la désinstallation ne supprime **jamais** le dossier de données ;
+- pour reprendre les données d'une version portable existante, copiez le contenu de l'ancien dossier `data/` vers `C:\ProgramData\eLib` avant le premier lancement.
+
 **Note de maintenance :** la roue ONNX Runtime Windows x86 disponible est ancienne et le projet ONNX Runtime ne prend plus en charge les builds 32-bit actuels. Ces versions sont épinglées pour maintenir la compatibilité x86 et doivent être réévaluées si un runtime x86 plus récent devient disponible.
 
 #### Releases et mises à jour
