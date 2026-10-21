@@ -1312,9 +1312,10 @@ VIEWS.dashboard = async () => {
           <input type="date" id="dTo" value="${effectiveTo}" title="Date de fin" style="border:0;background:transparent;font-size:11px;padding:0;width:94px;height:100%;color:var(--text);cursor:pointer">
         </div>
 
-        <button class="btn ghost sm" id="btnExportMatrix" title="Télécharger le tableau configuré en CSV pour Excel" style="font-size:11.5px;padding:2px 10px;height:32px;border-color:var(--icc-light);color:var(--text-title);display:inline-flex;align-items:center;gap:5px;font-weight:600">
+        <button class="btn ghost sm" id="btnExportMatrix" title="Télécharger le tableau configuré en CSV pour Excel" style="font-size:11.5px;padding:2px 10px;height:32px;width:145px;justify-content:center;border-color:var(--icc-light);color:var(--text-title);display:inline-flex;align-items:center;gap:5px;font-weight:600;flex:0 0 145px">
           <span>📥</span> Exporter CSV
         </button>
+        <span style="flex:0 0 24px"></span>
       </div>
     `;
 
@@ -1380,12 +1381,14 @@ VIEWS.dashboard = async () => {
 
       <!-- Sélecteur de culte avec flèche ICC stylisée -->
       <div style="position:relative;display:inline-flex;align-items:center">
-        <select id="fMoment" style="font-size:11.5px;height:32px;padding:4px 24px 4px 8px;border-radius:8px;max-width:145px">
+        <select id="fMoment" style="font-size:11.5px;height:32px;padding:4px 24px 4px 8px;border-radius:8px;width:145px;flex:0 0 145px">
           <option value="">Tous les cultes</option>
           ${allMoments.map(m => `<option value="${esc(m)}" ${S.moment === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
         </select>
       </div>
-      ${S.moment ? `<button class="btn ghost sm" id="btnClearMoment" title="Retirer le filtre de culte (${esc(S.moment)})" style="font-size:11px;padding:2px 6px;height:32px;border-color:var(--icc-light);color:var(--icc-light);display:inline-flex;align-items:center;gap:2px">✕</button>` : ''}
+      <span style="display:inline-flex;align-items:center;justify-content:center;flex:0 0 24px" title="${S.moment ? esc(S.moment) : ''}">
+        ${S.moment ? `<button class="btn ghost sm" id="btnClearMoment" title="Retirer le filtre de culte (${esc(S.moment)})" style="font-size:11px;padding:2px 6px;height:32px;border-color:var(--icc-light);color:var(--icc-light);display:inline-flex;align-items:center;gap:2px">✕</button>` : ''}
+      </span>
     </div>
   `;
 
