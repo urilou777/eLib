@@ -20,13 +20,13 @@ const SHELL_ASSETS = [
   '/static/fonts.css',
   '/static/vendor/zxing.min.js',
   '/static/manifest.webmanifest',
-  '/static/favicon.ico?v=20261021_e_v1',
-  '/static/favicon-16.png?v=20261021_e_v1',
-  '/static/favicon-32.png?v=20261021_e_v1',
-  '/static/favicon-48.png?v=20261021_e_v1',
-  '/static/favicon-64.png?v=20261021_e_v1',
-  '/static/favicon-192.png?v=20261021_e_v1',
-  '/static/favicon-512.png?v=20261021_e_v1',
+  '/static/favicon.ico?v=20261022_std_v1',
+  '/static/favicon-16.png?v=20261022_std_v1',
+  '/static/favicon-32.png?v=20261022_std_v1',
+  '/static/favicon-48.png?v=20261022_std_v1',
+  '/static/favicon-64.png?v=20261022_std_v1',
+  '/static/favicon-192.png?v=20261022_std_v1',
+  '/static/favicon-512.png?v=20261022_std_v1',
   '/static/e-icon.png?v=20261022_neon_v1'
 ];
 
