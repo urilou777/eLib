@@ -1,5 +1,5 @@
 // Service Worker eLib – Anti-écran blanc & App Shell hors-ligne
-const CACHE_NAME = 'librairie-shell-v24';
+const CACHE_NAME = 'librairie-shell-v25';
 const SHELL_ASSETS = [
   '/mobile',
   '/static/mobile.js',
@@ -26,7 +26,8 @@ const SHELL_ASSETS = [
   '/static/favicon-48.png?v=20261021_e_v1',
   '/static/favicon-64.png?v=20261021_e_v1',
   '/static/favicon-192.png?v=20261021_e_v1',
-  '/static/favicon-512.png?v=20261021_e_v1'
+  '/static/favicon-512.png?v=20261021_e_v1',
+  '/static/e-icon.png?v=20261022_neon_v1'
 ];
 
 self.addEventListener('install', event => {

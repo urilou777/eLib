@@ -450,6 +450,13 @@ html {
   white-space: nowrap;
   margin: 0;
 }
+.topbar-logo {
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.45));
+}
 #topTitleExtra {
   display: inline-flex;
   align-items: center;
