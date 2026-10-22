@@ -82,6 +82,25 @@ def _emit_sha(setup_path):
     return sha_path
 
 
+def _released_payload_sha(version):
+    """SHA de l'exe servi par la release de cette version, si elle existe déjà."""
+    import urllib.request
+
+    url = (
+        "https://github.com/urilou777/eLib/releases/download/v"
+        + version + "/eLib.exe.sha256"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            token = response.read().decode("ascii", errors="ignore").split()
+        token = token[0] if token else ""
+        if len(token) == 64 and all(c in "0123456789abcdef" for c in token):
+            return token
+    except Exception:
+        pass
+    return None
+
+
 def build_installer():
     if not os.path.isfile(EXE_PATH):
         raise RuntimeError(f"Build first: {EXE_PATH} is missing (run tools/build_windows_x86.py).")
@@ -97,7 +116,21 @@ def build_installer():
     # qu'un seul fichier (ce setup) et ne lance qu'un seul exe : le reste est invisible.
     from build_windows_x86 import WEBVIEW2_CAB_SHA256, WEBVIEW2_VERSION
 
-    payload_sha = os.environ.get("ELIB_PAYLOAD_SHA256") or file_sha256(EXE_PATH)
+    # L'empreinte attendue est celle de l'exe RÉELLEMENT SERVI par la release de cette
+    # version : un build local de eLib.exe n'a jamais le même SHA qu'un build CI
+    # (PyInstaller n'est pas reproductible octet par octet). Sans cela, un setup local
+    # échoue TOUJOURS contre la release avec « empreinte incorrecte ».
+    payload_sha = (
+        os.environ.get("ELIB_PAYLOAD_SHA256")
+        or _released_payload_sha(version)
+        or file_sha256(EXE_PATH)
+    )
+    if payload_sha != file_sha256(EXE_PATH):
+        print(
+            f"[Installer-32bit] Empreinte epinglee depuis la release v{version} "
+            f"(l'exe local n'est PAS le payload servi).",
+            flush=True,
+        )
     cab_url = (
         "https://github.com/urilou777/eLib/releases/download/v"
         + version + "/WebView2-Runtime-" + WEBVIEW2_VERSION + ".cab"
