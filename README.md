@@ -158,6 +158,23 @@ Lancer_eLib.bat
 1. L'application démarre le serveur local et s'ouvre dans une fenêtre dédiée (ou votre navigateur sur `http://127.0.0.1:8765`).
 2. Pour le parcours mobile seulement, l'écoute HTTPS utilise le port 8766.
 
+#### Démarrage rapide sur le poste de caisse (recommandé)
+
+Un exécutable non signé est réanalysé par Microsoft Defender à chaque lancement (contrôle de réputation + analyse de l'extraction), ce qui ajoute plusieurs secondes. Sur le poste de caisse — machine privée et maîtrisée — deux mesures, à faire **une seule fois en administrateur** :
+
+```powershell
+# 1. Exclure eLib de l'analyse en temps réel (processus + fichiers qu'il écrit)
+Add-MpPreference -ExclusionProcess 'eLib.exe'
+
+# 2. Lancer eLib à l'ouverture de session : la caisse est prête avant l'arrivée des libraires
+$ws = New-Object -ComObject WScript.Shell
+$sc = $ws.CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\eLib.lnk")
+$sc.TargetPath = "C:\Program Files (x86)\eLib\eLib.exe"
+$sc.Save()
+```
+
+Le démarrage passe alors de 5-6 secondes à environ 1 seconde. La signature Authenticode (en projet) supprimera aussi ces délais sur les postes où l'exclusion n'est pas appliquée.
+
 ---
 
 ### 📲 Scanner Mobile — Appairer les smartphones
