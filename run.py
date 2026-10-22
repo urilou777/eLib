@@ -82,6 +82,41 @@ def restore_sleep():
             pass
 
 
+WINDOW_TITLE = "eLib – Chrétienne et impactante"
+
+
+def apply_neon_titlebar_icon(icon_path):
+    """Réserve le e néon à la barre de titre de la fenêtre (ICON_SMALL).
+
+    La barre des tâches et Alt-Tab (ICON_BIG) conservent l'icône standard
+    passée à pywebview. WM_SETICON est réémis pendant ~20 s car WinForms
+    peut réaffecter l'icône du Form après l'affichage.
+    """
+    if sys.platform != "win32":
+        return
+    user32 = ctypes.windll.user32
+    user32.FindWindowW.restype = ctypes.c_void_p
+    user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.LoadImageW.restype = ctypes.c_void_p
+    user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
+    hwnd = None
+    for _ in range(60):  # attend jusqu'à 30 s l'apparition de la fenêtre
+        hwnd = user32.FindWindowW(None, WINDOW_TITLE)
+        if hwnd:
+            break
+        time.sleep(0.5)
+    if not hwnd:
+        return
+    size = user32.GetSystemMetrics(13)  # SM_CXSMICON
+    for _ in range(40):
+        if not user32.IsWindow(hwnd):
+            return
+        hicon = user32.LoadImageW(None, icon_path, 1, size, size, 0x10)  # IMAGE_ICON | LR_LOADFROMFILE
+        if hicon:
+            user32.SendMessageW(hwnd, 0x80, 0, hicon)  # WM_SETICON / ICON_SMALL
+        time.sleep(0.5)
+
+
 def configure_webview_runtime():
     import webview
 
@@ -214,7 +249,7 @@ def main():
         else:
             webview = configure_webview_runtime()
             window = webview.create_window(
-                "eLib – Chrétienne et impactante",
+                WINDOW_TITLE,
                 url,
                 width=1280,
                 height=760,
@@ -233,6 +268,11 @@ def main():
             window_icon = os.path.join(static_dir, "favicon.ico")
             if not os.path.isfile(window_icon):
                 raise FileNotFoundError(f"The desktop window icon is missing: {window_icon}")
+            neon_icon = os.path.join(static_dir, "e-icon.ico")
+            if os.path.isfile(neon_icon):
+                threading.Thread(
+                    target=apply_neon_titlebar_icon, args=(neon_icon,), daemon=True
+                ).start()
             phase("lancement de la fenêtre")
             webview.start(icon=window_icon)
     except KeyboardInterrupt:
