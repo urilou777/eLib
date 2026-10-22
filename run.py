@@ -88,22 +88,9 @@ def configure_webview_runtime():
     if not getattr(sys, "frozen", False):
         return webview
 
-    # Le runtime WebView2 vit dans un dossier webview2/ à côté de l'exécutable
-    # (installé par l'installateur ou le zip portable). Les anciens builds qui
-    # l'embarquaient dans l'archive restent pris en charge via _MEIPASS.
-    candidates = [
-        os.path.join(os.path.dirname(sys.executable), "webview2"),
-        os.path.join(getattr(sys, "_MEIPASS", ""), "webview2"),
-    ]
-    runtime_dir = next(
-        (d for d in candidates if os.path.isfile(os.path.join(d, "msedgewebview2.exe"))),
-        None,
-    )
-    if not runtime_dir:
-        raise RuntimeError(
-            "The WebView2 Fixed Runtime is missing: expected in 'webview2' next to eLib.exe. "
-            "Reinstall with the eLib installer or copy the webview2 folder beside eLib.exe."
-        )
+    runtime_dir = os.path.join(sys._MEIPASS, "webview2")
+    if not os.path.isfile(os.path.join(runtime_dir, "msedgewebview2.exe")):
+        raise RuntimeError(f"The bundled WebView2 runtime is missing: {runtime_dir}")
 
     webview.settings["WEBVIEW2_RUNTIME_PATH"] = runtime_dir
 

@@ -84,7 +84,7 @@ Ce guide détaille la mise en service complète de la librairie le jour du culte
 
 ### 🖥️ Parcours A — Utiliser l'application distribuée (recommandé)
 
-La distribution de référence est un exécutable Windows x86 nommé `eLib.exe` (~95 Mo) : il embarque Python, RapidOCR, ONNX Runtime et les modèles OCR, mais **pas** le runtime WebView2 — celui-ci est installé à côté par l'installateur (dossier `webview2/`), ce qui rend le démarrage rapide (~3 s au lieu de ~10 s : plus de ré-extraction de 250 Mo à chaque lancement). La distribution portable (`eLib-Portable-<version>.exe`), elle, embarque tout dans un seul fichier et démarre plus lentement — c'est indiqué sur la page de release.
+La distribution est un exécutable Windows x86 autonome nommé `eLib.exe`, qui fonctionne sur Windows 32-bit comme 64-bit. Il embarque Python, RapidOCR, ONNX Runtime, les modèles OCR et le runtime WebView2. **Le PC de caisse n'a besoin ni de Python, ni d'un moteur OCR, ni d'une installation WebView2.** Internet n'est pas requis pour encaisser; il est nécessaire pour vérifier et télécharger les mises à jour.
 
 1. Copiez `eLib.exe` sur le PC de caisse et lancez-le.
 2. Pour reprendre une installation existante sur un nouveau PC, copiez également le dossier `data/` de l'ancien PC à côté de `eLib.exe` avant le lancement. Pour une nouvelle installation, l'application crée ce dossier automatiquement.
@@ -98,11 +98,11 @@ py -3.10-32 tools\build_windows_x86.py
 ```
 Le script installe les dépendances binaires épinglées, télécharge et vérifie le package Microsoft WebView2 Fixed Version x86, puis construit `dist_win32\eLib.exe`. Les bibliothèques natives, le runtime WebView2, les modèles OCR et Python sont intégrés dans l'exécutable. Le runtime WebView2 est volumineux (plus de 250 Mo décompressé) et doit être mis à jour périodiquement avec l'application pour recevoir les correctifs de sécurité. Les utilisateurs finaux n'ont besoin d'aucun de ces outils ni d'une connexion Internet.
 
-Pour produire la distribution portable (`eLib-Portable-<version>.exe` : un seul fichier autonome, tout embarqué, à lancer directement sans installation), lancez :
+Pour produire la distribution portable (`eLib-Portable-<version>.zip` : exécutable + LISEZ-MOI.txt, sans installation), lancez ensuite :
 ```powershell
 python tools\package_portable_win32.py
 ```
-Elle est publiée sur les releases GitHub. Contrepartie assumée et indiquée sur la page de release : son démarrage est plus lent (~10 s, Windows décompresse le runtime embarqué à chaque lancement) que la version installée (~3 s). Le dossier `data/` local n'est jamais inclus.
+La distribution portable se construit à la demande, en local uniquement (elle n'est pas publiée sur les releases GitHub, qui contiennent `eLib.exe` et l'installateur). Le dossier `data/` local n'est jamais inclus dans l'archive.
 
 **Important :** `dist_win32\` est un dossier de sortie de compilation, pas un dossier d'exécution. Ne lancez jamais `eLib.exe` depuis `dist_win32\` : l'application créerait son dossier `data/` de travail à côté de l'exécutable et polluerait les artefacts de distribution. Pour tester un build, copiez `eLib.exe` dans un dossier de test séparé (par exemple `C:\eLib_test\`) et lancez-le de là.
 

@@ -1,26 +1,47 @@
-"""Package the portable distribution: a single self-contained, versioned exe.
+"""Package the portable distribution: eLib.exe + LISEZ-MOI.txt in a versioned zip.
 
-La version portable embarque TOUT (runtime WebView2 inclus) dans un exe unique
-publié directement : un seul fichier à télécharger, un seul exe à lancer, sans
-installation. Contrepartie assumée et documentée dans les notes de release :
-démarrage plus lent (~10 s) que la version installée (~3 s), car Windows doit
-décompresser le runtime embarqué à chaque lancement.
+La version portable est le même exécutable autonome que la version publiée, mais
+distribué sous forme d'archive auto-suffisante à décompresser n'importe où
+(clé USB, dossier Bureau, second PC) sans installation.
 
 Règles strictes :
-- l'exe portable est construit avec ELIB_BUNDLE_RUNTIME=1 (runtime inclus) ;
-- il doit être un binaire x86 (PE machine 0x014C), comme la version publiée ;
-- une empreinte SHA-256 accompagne l'exe au format utilisé par l'updater.
+- l'archive contient UNIQUEMENT eLib.exe et LISEZ-MOI.txt : jamais le dossier
+  data/ voisin (il peut contenir la base réelle de la librairie) ;
+- eLib.exe doit être un binaire x86 (PE machine 0x014C), comme la version publiée ;
+- une empreinte SHA-256 accompagne l'archive au format utilisé par l'updater.
 """
 import hashlib
 import os
 import re
-import shutil
 import struct
-import subprocess
 import sys
+import zipfile
 
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DIST_DIR = os.path.join(PROJECT_DIR, "dist_win32")
+EXE_PATH = os.path.join(DIST_DIR, "eLib.exe")
+
+README_TEXT = """eLib – version portable
+========================
+
+Aucune installation n'est nécessaire : décompressez l'archive où vous voulez
+(Bureau, dossier Documents, clé USB) et double-cliquez sur eLib.exe.
+
+Points importants :
+- Toutes les données (base de la librairie, appairages des téléphones, certificats
+  HTTPS et sauvegardes) sont enregistrées dans le sous-dossier « data » créé à
+  côté de eLib.exe.
+- Pour changer d'ordinateur ou utiliser une clé USB : copiez TOUJOURS le dossier
+  complet (eLib.exe + data), jamais l'exécutable seul.
+- Les sauvegardes automatiques (miroir Excel + instantanés quotidiens de la base)
+  se trouvent dans data\\sauvegardes.
+- WebView2 et les modèles OCR sont intégrés : aucune connexion Internet n'est
+  requise pour utiliser l'application.
+- Les mises à jour restent automatiques : si une nouvelle version est publiée,
+  eLib.exe sera remplacé au redémarrez de l'application, sans toucher à vos
+  données.
+"""
+
 
 def pe_machine(path):
     try:
@@ -55,49 +76,30 @@ def app_version():
 
 
 def package():
-    """Construit l'exe portable autonome (runtime embarqué) puis l'archive.
-
-    La version portable encapsule TOUT dans un seul exécutable : aucun dossier à
-    copier, aucune installation. Contrepartie assumée et documentée : à chaque
-    lancement, Windows doit décompresser le runtime embarqué (~10 s), là où la
-    version installée démarre en ~3 s grâce au dossier webview2/ posé une fois.
-    """
-    portable_exe = os.path.join(DIST_DIR, "eLib-Portable.exe")
-    if not os.path.isfile(portable_exe) or pe_machine(portable_exe) != 0x014C:
-        print("[Portable-32bit] Construction de l'exe autonome (runtime embarque)...", flush=True)
-        env = dict(os.environ, ELIB_BUNDLE_RUNTIME="1")
-        subprocess.run(
-            [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
-             "--distpath", DIST_DIR, "--workpath",
-             os.path.join(PROJECT_DIR, "build_win32"),
-             os.path.join(PROJECT_DIR, "eLib.spec")],
-            cwd=PROJECT_DIR, env=env, check=True,
-        )
-        if not os.path.isfile(portable_exe) or pe_machine(portable_exe) != 0x014C:
-            raise RuntimeError(f"PyInstaller n'a pas produit l'attendu : {portable_exe}")
+    if not os.path.isfile(EXE_PATH):
+        raise RuntimeError(f"Build first: {EXE_PATH} is missing (run tools/build_windows_x86.py).")
+    if pe_machine(EXE_PATH) != 0x014C:
+        raise RuntimeError(f"Expected an x86 executable: {EXE_PATH}")
 
     version = app_version()
-    # Signature Authenticode si un certificat est configuré, avant l'empreinte.
-    from sign_binaries import sign_file
+    zip_name = f"eLib-Portable-{version}.zip"
+    zip_path = os.path.join(DIST_DIR, zip_name)
 
-    sign_file(portable_exe)
+    # Contenu strictement contrôlé : jamais le dossier data/ voisin (base réelle).
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(EXE_PATH, "eLib.exe")
+        archive.writestr("LISEZ-MOI.txt", README_TEXT)
 
-    # Publication directe de l'exe portable (pas de zip : un seul fichier à
-    # télécharger, un seul exe à lancer). La mention « démarrage plus lent »
-    # vit dans les notes de release plutôt que dans un LISEZ-MOI.
-    release_name = f"eLib-Portable-{version}.exe"
-    release_path = os.path.join(DIST_DIR, release_name)
-    if os.path.exists(release_path):
-        os.remove(release_path)
-    shutil.copyfile(portable_exe, release_path)
-
-    sha_path = release_path + ".sha256"
+    digest = file_sha256(zip_path)
+    sha_path = zip_path + ".sha256"
     with open(sha_path, "w", encoding="ascii", newline="\n") as checksum:
-        checksum.write(f"{file_sha256(release_path)}  {release_name}\n")
+        checksum.write(f"{digest}  {zip_name}\n")
 
-    print(f"[Portable-32bit] Exe portable : {release_path}")
+    print(f"[Portable-32bit] Archive : {zip_path}")
     print(f"[Portable-32bit] Empreinte : {sha_path}")
-    return release_path
+    return zip_path
 
 
 if __name__ == "__main__":

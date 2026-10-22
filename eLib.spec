@@ -30,13 +30,6 @@ webview_runtime_dir = os.path.join(
 if not os.path.isfile(os.path.join(webview_runtime_dir, 'msedgewebview2.exe')):
     raise RuntimeError("Bundled WebView2 Fixed Runtime is missing; run tools/build_windows_x86.py.")
 rapid_datas, rapid_bins, rapid_hidden = collect_all('rapidocr_onnxruntime')
-# Distribution rapide (défaut) : le runtime WebView2 n'est PAS embarqué — il vit dans un
-# dossier webview2/ à côté de l'exe (installé par l'installateur). Un onefile de 349 Mo
-# devait se réextraire à chaque lancement (~10 s) ; sans le runtime, ~2-3 s.
-# Distribution portable (ELIB_BUNDLE_RUNTIME=1) : tout embarqué dans un exe unique,
-# fichier unique sans installation — démarrage plus lent, assumé et documenté.
-BUNDLE_RUNTIME = os.environ.get('ELIB_BUNDLE_RUNTIME') == '1'
-# La présence du runtime reste vérifiée car l'installateur et le packager l'embarquent.
 hook_dir = os.path.join(project_dir, 'tools', 'pyinstaller_hooks')
 hiddenimports = [
     'webview',
@@ -63,8 +56,7 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
-if BUNDLE_RUNTIME:
-    a.datas += Tree(webview_runtime_dir, prefix='webview2')
+a.datas += Tree(webview_runtime_dir, prefix='webview2')
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -73,7 +65,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='eLib-Portable' if BUNDLE_RUNTIME else 'eLib',
+    name='eLib',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

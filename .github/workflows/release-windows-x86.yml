@@ -52,19 +52,6 @@ jobs:
           ELIB_SIGN_PWD: ${{ secrets.ELIB_SIGN_PWD }}
         run: python tools/build_installer_win32.py
 
-      - name: Package portable (self-contained exe) and WebView2 runtime cab
-        env:
-          ELIB_SIGN_PFX: ${{ secrets.ELIB_SIGN_PFX }}
-          ELIB_SIGN_PWD: ${{ secrets.ELIB_SIGN_PWD }}
-        shell: pwsh
-        run: |
-          python tools/package_portable_win32.py
-          $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          $webviewVersion = "155.0.4283.62"
-          Copy-Item "build_win32/Microsoft.WebView2.FixedVersionRuntime.$webviewVersion.x86.cab" "dist_win32/WebView2-Runtime-$webviewVersion.cab"
-          $hash = (Get-FileHash -Algorithm SHA256 "dist_win32/WebView2-Runtime-$webviewVersion.cab").Hash.ToLowerInvariant()
-          Set-Content -Path "dist_win32/WebView2-Runtime-$webviewVersion.cab.sha256" -Value "$hash  WebView2-Runtime-$webviewVersion.cab" -Encoding ascii -NoNewline
-
       - name: Publish GitHub Release
         shell: pwsh
         env:
@@ -74,32 +61,26 @@ jobs:
           $version = $tag -replace '^v', ''
           $setup = "dist_win32/eLib-Setup-$version.exe"
           $offline = "dist_win32/eLib-Setup-Offline-$version.exe"
-          $portable = "dist_win32/eLib-Portable-$version.exe"
-          $cab = "dist_win32/WebView2-Runtime-155.0.4283.62.cab"
           $notes = @"
           eLib $version - quelle version telecharger ?
 
           - Nouveau PC avec Internet (recommande) : eLib-Setup-$version.exe (2 Mo) - il telecharge
-            et verifie eLib depuis GitHub pendant l'installation, puis demarre en 2-3 secondes
+            et verifie eLib depuis GitHub pendant l'installation
           - Nouveau PC SANS Internet : eLib-Setup-Offline-$version.exe (333 Mo, tout embarque)
-          - Cle USB / fichier unique sans installation : eLib-Portable-$version.exe - tout est
-            embarque dedans, mais son demarrage est plus lent (environ 10 secondes) car Windows
-            doit le decomprimer a chaque lancement ; ses donnees vivent dans le dossier data/
-            cree a cote de lui
-          - eLib.exe (95 Mo) ne sert qu'aux mises a jour automatiques : ne le telechargez pas seul
+          - Cle USB / sans installation : eLib.exe seul - il cree son dossier data/ a cote de lui
           - Mise a jour : les installations existantes se mettent a jour automatiquement
 
           Verifiez l'integrite avec les fichiers .sha256 correspondants si vous savez les utiliser.
           "@
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" $portable "$portable.sha256" $cab "$cab.sha256" --repo $env:GITHUB_REPOSITORY --clobber
+            gh release upload $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" --repo $env:GITHUB_REPOSITORY --clobber
             if ($LASTEXITCODE -ne 0) { throw "Failed to upload release assets." }
             # Après un re-tag (suppression de tag), GitHub passe la release en brouillon :
             # la republier systématiquement (sans effet si déjà publiée).
             gh release edit $tag --draft=false --repo $env:GITHUB_REPOSITORY
             if ($LASTEXITCODE -ne 0) { throw "Failed to publish the release." }
           } else {
-            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" $portable "$portable.sha256" $cab "$cab.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --notes "$notes"
+            gh release create $tag dist_win32/eLib.exe dist_win32/eLib.exe.sha256 $setup "$setup.sha256" $offline "$offline.sha256" --repo $env:GITHUB_REPOSITORY --title "eLib $tag" --notes "$notes"
             if ($LASTEXITCODE -ne 0) { throw "Failed to create GitHub Release." }
           }

@@ -165,16 +165,6 @@ def build():
 
     sign_file(executable)
 
-    # Poser le runtime WebView2 à côté de l'exe dans dist_win32 : même disposition
-    # que l'installation, pour que le bâtisseur puisse tester dist_win32\eLib.exe
-    # directement et mesurer le démarrage rapide (l'exe ne l'embarque plus).
-    dist_runtime = os.path.join(OUTPUT_DIR, "webview2")
-    if not os.path.isfile(os.path.join(dist_runtime, "msedgewebview2.exe")):
-        import shutil
-
-        shutil.copytree(WEBVIEW2_EXTRACTED_DIR, dist_runtime, dirs_exist_ok=True)
-        print(f"[Windows x86 build] Runtime WebView2 copie a cote de l'exe pour les tests.", flush=True)
-
     print(f"[Windows x86 build] Ready to distribute: {executable}", flush=True)
     print(
         "[Windows x86 build] Python, OCR, models, and WebView2 are bundled; users need no internet.",

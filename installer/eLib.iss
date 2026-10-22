@@ -71,9 +71,6 @@ Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; Flags: un
 Source: "{tmp}\eLib.exe"; DestDir: "{app}"; Flags: external ignoreversion
 #else
 Source: "..\dist_win32\eLib.exe"; DestDir: "{app}"; Flags: ignoreversion
-; Le runtime WebView2 voyage à côté de l'exécutable (invisible pour l'utilisateur) :
-; c'est ce qui rend le démarrage rapide — l'exe n'a plus 250 Mo à réextraire à chaque lancement.
-Source: "..\build_win32\webview2_runtime\Microsoft.WebView2.FixedVersionRuntime.155.0.4283.62.x86\*"; DestDir: "{app}\webview2"; Flags: recursesubdirs createallsubdirs ignoreversion
 #endif
 
 [Dirs]
@@ -92,9 +89,6 @@ Filename: "{app}\eLib.exe"; WorkingDir: "{app}"; Description: "Lancer eLib maint
 [UninstallDelete]
 ; Le marqueur d'emplacement des données part avec l'application (pas avec les données).
 Name: "{app}\elib-data-location.txt"; Type: files
-; Le runtime WebView2 extrait du cab (mode web) n'est pas suivi par le désinstalleur :
-; le retirer explicitement (fichiers programme, jamais de données utilisateur).
-Name: "{app}\webview2"; Type: filesandordirs
 
 [Code]
 #ifdef WebSetup
@@ -114,11 +108,10 @@ begin
   begin
     DownloadPage.Clear;
     DownloadPage.Add('{#PayloadUrl}', 'eLib.exe', '{#PayloadSha256}');
-    DownloadPage.Add('{#WebviewCabUrl}', 'webview2.cab', '{#WebviewCabSha256}');
     DownloadPage.Show;
     try
       try
-        DownloadPage.Download; // télécharge eLib.exe + le runtime WebView2 vers {tmp} (SHA-256 vérifiés)
+        DownloadPage.Download; // télécharge eLib.exe vers {tmp} et vérifie son SHA-256
         Result := True;
       except
         if DownloadPage.AbortedByUser then
@@ -143,33 +136,8 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  DataPath, MarkerPath, CabPath, AppDir, RuntimeDir: string;
-  ResultCode: Integer;
+  DataPath, MarkerPath: string;
 begin
-  if CurStep = ssInstall then
-  begin
-#ifdef WebSetup
-    // Extraire le runtime WebView2 du cab Microsoft (expand.exe, natif Windows)
-    // dans {app}, puis renommer le dossier de version en {app}\webview2.
-    AppDir := ExpandConstant('{app}');
-    ForceDirectories(AppDir);
-    CabPath := ExpandConstant('{tmp}\webview2.cab');
-    if (not FileExists(CabPath)) or (not Exec(ExpandConstant('{cmd}'),
-        '/C expand.exe -F:* "' + CabPath + '" "' + AppDir + '"',
-        AppDir, SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
-    begin
-      SuppressibleMsgBox('L''extraction du runtime WebView2 a échoué (code ' + IntToStr(ResultCode) + ').',
-        mbCriticalError, MB_OK, IDOK);
-      Abort();
-    end;
-    RuntimeDir := AppDir + '\Microsoft.WebView2.FixedVersionRuntime.155.0.4283.62.x86';
-    if DirExists(RuntimeDir) and (not RenameFile(RuntimeDir, AppDir + '\webview2')) then
-    begin
-      SuppressibleMsgBox('Impossible d''installer le dossier webview2.', mbCriticalError, MB_OK, IDOK);
-      Abort();
-    end;
-#endif
-  end;
   if CurStep = ssPostInstall then
   begin
     DataPath := ExpandConstant('{commonappdata}\eLib');
