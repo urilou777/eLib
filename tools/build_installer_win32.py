@@ -92,11 +92,23 @@ def build_installer():
     iscc = find_iscc()
     print(f"[Installer-32bit] Inno Setup : {iscc}", flush=True)
 
-    # Setup web (~2 Mo) : n'embarque pas eLib.exe, le télécharge depuis la release
-    # GitHub et vérifie son SHA-256. L'empreinte attendue est celle de l'exécutable
-    # qui sera publié ; ELIB_PAYLOAD_SHA256 permet de cibler une release déjà publiée.
+    # Setup web (~2 Mo) : n'embarque rien, télécharge eLib.exe et le runtime WebView2
+    # depuis la release GitHub et vérifie leurs SHA-256. L'utilisateur ne télécharge
+    # qu'un seul fichier (ce setup) et ne lance qu'un seul exe : le reste est invisible.
+    from build_windows_x86 import WEBVIEW2_CAB_SHA256, WEBVIEW2_VERSION
+
     payload_sha = os.environ.get("ELIB_PAYLOAD_SHA256") or file_sha256(EXE_PATH)
-    _compile(iscc, [("AppVersion", version), ("WebSetup", ""), ("PayloadSha256", payload_sha)], "setup web")
+    cab_url = (
+        "https://github.com/urilou777/eLib/releases/download/v"
+        + version + "/WebView2-Runtime-" + WEBVIEW2_VERSION + ".cab"
+    )
+    _compile(iscc, [
+        ("AppVersion", version),
+        ("WebSetup", ""),
+        ("PayloadSha256", payload_sha),
+        ("WebviewCabUrl", cab_url),
+        ("WebviewCabSha256", WEBVIEW2_CAB_SHA256),
+    ], "setup web")
     web_path = os.path.join(DIST_DIR, f"eLib-Setup-{version}.exe")
     if not os.path.isfile(web_path):
         raise RuntimeError(f"Inno Setup n'a pas produit l'attendu : {web_path}")
